@@ -1,0 +1,10 @@
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+solana==0.36.6
+anchorpy==0.21.0
+supabase==2.24.0
+python-dotenv==1.0.0
+pydantic==2.12.5
+pydantic-settings==2.12.0
+httpx>=0.26.0,<0.29.0
+
