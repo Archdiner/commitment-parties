@@ -20,6 +20,10 @@ Before you begin, ensure you have the following installed:
 
 See [docs/SETUP.md](docs/SETUP.md) for complete installation instructions.
 
+> **Windows users**
+> - Recommended: install **WSL2 + Ubuntu** and run all Rust/Solana/Anchor commands from the Linux shell, following `docs/SETUP.md` as-is.  
+> - If you stay on native Windows, `docs/SETUP.md` includes **Windows-specific notes** for Python venv activation, Node installation, PATH configuration, and running shell scripts with `bash`.
+
 ### Installation
 
 1. **Clone the repository**

@@ -6,9 +6,17 @@ After completing setup, test each component in this order.
 
 First, verify everything is set up:
 
-```bash
-./scripts/verify-install.sh
-```
+- **macOS / WSL2:**
+
+  ```bash
+  ./scripts/verify-install.sh
+  ```
+
+- **Windows (Git Bash or WSL2 recommended):**
+
+  ```bash
+  bash scripts/verify-install.sh
+  ```
 
 Should show all green checkmarks (or at least no errors).
 

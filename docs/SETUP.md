@@ -5,16 +5,19 @@ Complete step-by-step guide to set up your development environment for Commitmen
 ## Prerequisites Checklist
 
 Before starting, ensure you have:
-- macOS (this guide is optimized for macOS with zsh)
-- Homebrew installed (for Node.js if needed)
-- Terminal access
+- macOS **or Windows 10/11**
+- Terminal access (Terminal/iTerm on macOS, **Windows Terminal / PowerShell / Git Bash** on Windows)
 - Internet connection
+
+> **Windows recommendation:** The smoothest path is **WSL2 + Ubuntu**.  
+> - If you use WSL2, you can follow the **macOS/bash commands almost verbatim** inside your Ubuntu shell.  
+> - If you prefer *native* Windows (PowerShell/CMD), see the Windows notes in each step below.
 
 ## Step 1: Install Rust & Cargo
 
 Rust is required for building Solana smart contracts with Anchor.
 
-### Installation
+### Installation (macOS / WSL2)
 
 ```bash
 # Install Rust using rustup
@@ -23,9 +26,9 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 Follow the prompts. The installer will configure Rust for you.
 
-### Add to PATH
+### Add to PATH (macOS / WSL2)
 
-Add Rust to your PATH by adding this line to `~/.zshrc`:
+Add Rust to your PATH by adding this line to `~/.zshrc` or `~/.bashrc`:
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -46,11 +49,26 @@ cargo --version
 
 You should see version numbers for both commands.
 
+### Windows Native Notes (Rust)
+
+If you are **not** using WSL2:
+
+- Use the official Windows installer from `https://www.rust-lang.org/tools/install` (it gives you `rustup-init.exe`).
+- When prompted, accept the default installation.
+- After install, open a **new PowerShell** and verify:
+
+```powershell
+rustc --version
+cargo --version
+```
+
+If commands are not found, add Rust’s `bin` folder (usually `C:\Users\<you>\.cargo\bin`) to your **System PATH** via *System Properties → Environment Variables*.
+
 ## Step 2: Install Solana CLI
 
 The Solana CLI is essential for interacting with the Solana network, deploying programs, and managing wallets.
 
-### Installation
+### Installation (macOS / WSL2)
 
 **Option 1: Homebrew (Recommended for macOS, especially if curl SSL fails)**
 
@@ -68,9 +86,9 @@ sh -c "$(curl -sSfL https://release.solana.com/stable/install)"
 
 If you get SSL errors with curl, use Option 1 (Homebrew) instead.
 
-### Add to PATH (Only if using Option 2)
+### Add to PATH (Only if using Option 2, macOS / WSL2)
 
-If you used the official installer, add Solana CLI to your PATH by adding this line to `~/.zshrc`:
+If you used the official installer, add Solana CLI to your PATH by adding this line to `~/.zshrc` or `~/.bashrc`:
 
 ```bash
 export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
@@ -120,6 +138,15 @@ solana airdrop 2
 
 If you need more, you can repeat this command (there's a limit per day).
 
+### Windows Native Notes (Solana)
+
+If you are **not** using WSL2:
+
+- Install Solana from the official Windows installer:  
+  Download from `https://docs.solana.com/cli/install-solana-cli-tools` and follow Windows instructions.
+- Add the install directory (e.g. `C:\Users\<you>\.local\solana\install\active_release\bin`) to your **System PATH**.
+- Run all Solana/Anchor commands from **PowerShell** or **Git Bash**.
+
 ## Step 3: Install Anchor Framework
 
 Anchor is the framework we use to build Solana smart contracts.
@@ -131,6 +158,9 @@ cargo install --git https://github.com/coral-xyz/anchor avm --locked --force
 ```
 
 This may take several minutes. AVM allows you to manage multiple Anchor versions.
+
+> **Windows note:** AVM and Anchor work best inside **WSL2**.  
+> If you’re on native Windows, strongly consider using WSL2 Ubuntu for all Rust/Solana/Anchor work and only use Windows for editors (VS Code, Cursor).
 
 ### Install Latest Anchor
 
@@ -160,11 +190,27 @@ npm --version
 
 If both commands show version numbers, you're good to go!
 
-### Install via Homebrew (if needed)
+### Install on macOS (Homebrew)
 
 ```bash
 brew install node
 ```
+
+### Install on Windows
+
+Choose one:
+
+- **Option 1: Node.js installer (easiest)**
+  - Download from `https://nodejs.org/` (LTS version).
+  - Run the installer and accept defaults.
+- **Option 2: nvm-windows (version manager)**
+  - Install from `https://github.com/coreybutler/nvm-windows`.
+  - Then in a new PowerShell:
+
+  ```powershell
+  nvm install 20
+  nvm use 20
+  ```
 
 ### Verify Installation
 
@@ -180,28 +226,43 @@ We use Python for both the FastAPI backend and the AI agent.
 ### Verify Python Version
 
 ```bash
-python3 --version
+python3 --version  # macOS / WSL2
+python --version   # Windows
 ```
 
-You need Python 3.8 or higher. macOS typically comes with Python 3.x.
+You need Python 3.8 or higher.
 
 ### Create Virtual Environment
 
 Navigate to the project root:
 
 ```bash
-cd /Users/asadr/Desktop/personalProjects/commitment-parties
-python3 -m venv venv
+cd /path/to/commitment-parties           # macOS / WSL2
+python3 -m venv venv                     # macOS / WSL2
+python -m venv venv                      # Windows
 ```
 
 ### Activate Virtual Environment
 
-```bash
-source venv/bin/activate
-```
+- **macOS / WSL2 (bash/zsh):**
 
-You should see `(venv)` in your terminal prompt.
+  ```bash
+  source venv/bin/activate
+  ```
 
+- **Windows PowerShell:**
+
+  ```powershell
+  .\venv\Scripts\Activate.ps1
+  ```
+
+- **Windows Command Prompt (cmd.exe):**
+
+  ```bat
+  venv\Scripts\activate.bat
+  ```
+
+You should see `(venv)` in your terminal prompt.  
 **Important:** Always activate the virtual environment before working on the project.
 
 ### Install Python Packages
@@ -237,8 +298,11 @@ You should see all packages listed.
 Run the verification script:
 
 ```bash
-chmod +x scripts/verify-install.sh
+chmod +x scripts/verify-install.sh     # macOS / WSL2
 ./scripts/verify-install.sh
+
+# Windows (Git Bash or WSL2):
+bash scripts/verify-install.sh
 ```
 
 This script checks that all tools are properly installed and configured.
