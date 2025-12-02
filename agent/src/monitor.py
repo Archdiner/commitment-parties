@@ -198,12 +198,26 @@ class Monitor:
                     try:
                         if event.get("type") != "PushEvent":
                             continue
-                        created_at = event.get("created_at")
-                        if not created_at:
+                        created_at_str = event.get("created_at")
+                        if not created_at_str:
                             continue
-                        # created_at is ISO 8601 string; simple range check
-                        if not (start_str <= created_at <= end_str):
-                            continue
+                        
+                        # Parse the ISO 8601 timestamp and compare as datetime objects
+                        # GitHub returns timestamps like "2025-12-02T17:30:00Z"
+                        try:
+                            event_time = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
+                            if event_time.tzinfo is None:
+                                # If no timezone, assume UTC
+                                event_time = event_time.replace(tzinfo=timezone.utc)
+                        except (ValueError, AttributeError):
+                            # Fallback to string comparison if parsing fails
+                            if not (start_str <= created_at_str <= end_str):
+                                continue
+                        else:
+                            # Use datetime comparison for accuracy
+                            if not (start_of_day <= event_time < end_of_day):
+                                continue
+                        
                         payload = event.get("payload") or {}
                         commits = payload.get("commits") or []
                         # Light anti-gamification: count only commits with non-trivial messages
@@ -559,6 +573,10 @@ class Monitor:
                                     logger.warning(
                                         "Verifier not available, skipping DCA on-chain submission"
                                     )
+                        
+                        except Exception as e:
+                            logger.error(f"Error processing DCA pool {pool.get('pool_id')}: {e}", exc_info=True)
+                            continue
 
                 await asyncio.sleep(settings.DCA_CHECK_INTERVAL)
             
