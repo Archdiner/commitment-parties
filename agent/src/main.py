@@ -54,9 +54,9 @@ class CommitmentAgent:
             await self.solana_client.initialize()
             
             # Initialize monitoring components
-            self.monitor = Monitor(self.solana_client)
             self.verifier = Verifier(self.solana_client)
             self.distributor = Distributor(self.solana_client)
+            self.monitor = Monitor(self.solana_client, self.verifier, self.distributor)
             self.social = SocialManager()
             
             logger.info("Agent initialized successfully")

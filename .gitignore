@@ -29,6 +29,7 @@ out/
 # IDE
 .vscode/
 .idea/
+.cursor/
 *.swp
 *.swo
 *.sublime-project
@@ -74,6 +75,7 @@ coverage/
 *.bak
 *.swp
 *~
+.last_pool_id
 
 # Database
 *.db

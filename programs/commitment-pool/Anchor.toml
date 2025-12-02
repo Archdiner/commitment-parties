@@ -6,7 +6,7 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-commitment_pool = "8Qk9e6QJgJ52BsRV58BPByTS1LenzZNQRo7Ehnqhg5zJ"
+commitment_pool = "GSvoKxVHbtAY2mAAU4RM3PVQC3buLSjRm24N7QhAoieH"
 
 [registry]
 url = "https://api.apr.dev"
