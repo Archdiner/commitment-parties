@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
+import { getPools, getUserParticipations, getPool } from '@/lib/api';
+import { getPersistedWalletAddress, persistWalletAddress, clearPersistedWalletAddress } from '@/lib/wallet';
 import {
   Wallet,
   Trophy,
@@ -33,7 +35,8 @@ import {
   Grid,
   Medal,
   User,
-  Info
+  Info,
+  CheckCircle
 } from 'lucide-react';
 
 // --- CONFIGURATION ---
@@ -167,11 +170,13 @@ const Navbar = ({
 const PoolCard = ({
   pool,
   onJoin,
-  joining
+  joining,
+  isParticipant = false
 }: {
   pool: Pool;
   onJoin: (id: string, onChainAddr?: string, currentParticipants?: number) => void;
   joining: string | null;
+  isParticipant?: boolean;
 }) => (
   <div className="group bg-white rounded-2xl border border-gray-200 p-6 hover:border-emerald-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all duration-300 relative overflow-hidden flex flex-col h-full shadow-sm">
     <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-100 transition-opacity duration-500 transform group-hover:scale-110">
@@ -243,25 +248,35 @@ const PoolCard = ({
       </div>
     </div>
 
-    <button
-      onClick={() => onJoin(pool.id, pool.onChainAddress, pool.participants)}
-      disabled={pool.participants >= pool.maxParticipants || !!joining}
-      className={`w-full mt-4 py-3 font-bold rounded-xl transition-all duration-200 flex justify-center items-center gap-2 relative z-10 shadow-md ${
-        pool.participants >= pool.maxParticipants
-          ? 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200 shadow-none'
-          : 'bg-emerald-600 text-white hover:bg-emerald-700 hover:shadow-lg hover:shadow-emerald-200'
-      }`}
-    >
-      {joining === pool.id ? (
-        <>
-          <Loader2 className="w-4 h-4 animate-spin" /> Confirming Tx...
-        </>
-      ) : pool.participants >= pool.maxParticipants ? (
-        'Pool Full'
-      ) : (
-        'Join Pool'
-      )}
-    </button>
+    {isParticipant ? (
+      <Link
+        href={`/pools/${pool.id}`}
+        className="w-full mt-4 py-3 font-bold rounded-xl transition-all duration-200 flex justify-center items-center gap-2 relative z-10 shadow-md bg-blue-600 text-white hover:bg-blue-700 hover:shadow-lg"
+      >
+        <CheckCircle className="w-4 h-4" />
+        View Progress
+      </Link>
+    ) : (
+      <button
+        onClick={() => onJoin(pool.id, pool.onChainAddress, pool.participants)}
+        disabled={pool.participants >= pool.maxParticipants || !!joining}
+        className={`w-full mt-4 py-3 font-bold rounded-xl transition-all duration-200 flex justify-center items-center gap-2 relative z-10 shadow-md ${
+          pool.participants >= pool.maxParticipants
+            ? 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200 shadow-none'
+            : 'bg-emerald-600 text-white hover:bg-emerald-700 hover:shadow-lg hover:shadow-emerald-200'
+        }`}
+      >
+        {joining === pool.id ? (
+          <>
+            <Loader2 className="w-4 h-4 animate-spin" /> Confirming Tx...
+          </>
+        ) : pool.participants >= pool.maxParticipants ? (
+          'Pool Full'
+        ) : (
+          'Join Pool'
+        )}
+      </button>
+    )}
   </div>
 );
 
@@ -393,6 +408,7 @@ const FiltersSidebar = ({
 export default function PoolsPage() {
   const [user, setUser] = useState<any>(null);
   const [pools, setPools] = useState<Pool[]>([]);
+  const [userParticipations, setUserParticipations] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState({
@@ -429,23 +445,99 @@ export default function PoolsPage() {
     initAuth();
   }, []);
 
-  // Fetch Pools
+  // Fetch Pools and User Participations
   useEffect(() => {
-    const fetchPools = async () => {
-      const { data, error } = await supabase
-        .from('pools')
-        .select('*')
-        .order('created_at', { ascending: false });
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        // Fetch pools (this excludes pools user is already in)
+        const poolsData = await getPools({ 
+          limit: 100,
+          wallet: walletConnected ? walletAddress : undefined,
+        });
+        
+        // Convert backend response to frontend Pool format
+        let frontendPools: Pool[] = poolsData.map(p => ({
+          id: p.pool_id.toString(),
+          name: p.name,
+          goalType: p.goal_type.includes('Lifestyle') || p.goal_type.includes('lifestyle') ? 'Lifestyle' : 'Crypto',
+          description: p.description || '',
+          stakeAmount: p.stake_amount,
+          durationDays: p.duration_days,
+          participants: p.participant_count,
+          maxParticipants: p.max_participants,
+          created_at: p.created_at,
+          onChainAddress: p.pool_pubkey,
+          creatorId: p.creator_wallet,
+        }));
 
-      if (data) {
-        setPools(data as Pool[]);
-        setLoading(false);
-      } else {
+        // If wallet is connected, also fetch pools user is part of
+        if (walletConnected && walletAddress) {
+          try {
+            const participations = await getUserParticipations(walletAddress);
+            const participationPoolIds = new Set(participations.map(p => p.pool_id));
+            setUserParticipations(participationPoolIds);
+
+            // Fetch full pool data for participation pools that aren't in the main list
+            const existingPoolIds = new Set(frontendPools.map(p => p.id));
+            const missingPoolIds = participations
+              .filter(p => !existingPoolIds.has(p.pool_id.toString()))
+              .map(p => p.pool_id);
+
+            // Fetch full pool data for missing pools
+            const missingPoolsData = await Promise.all(
+              missingPoolIds.map(async (poolId) => {
+                try {
+                  const poolData = await getPool(poolId);
+                  return {
+                    id: poolData.pool_id.toString(),
+                    name: poolData.name,
+                    goalType: poolData.goal_type.includes('Lifestyle') || poolData.goal_type.includes('lifestyle') ? 'Lifestyle' : 'Crypto',
+                    description: poolData.description || '',
+                    stakeAmount: poolData.stake_amount,
+                    durationDays: poolData.duration_days,
+                    participants: poolData.participant_count,
+                    maxParticipants: poolData.max_participants,
+                    created_at: poolData.created_at,
+                    onChainAddress: poolData.pool_pubkey,
+                    creatorId: poolData.creator_wallet,
+                  };
+                } catch (err) {
+                  console.error(`Error fetching pool ${poolId}:`, err);
+                  return null;
+                }
+              })
+            );
+
+            // Add successfully fetched pools
+            const validMissingPools = missingPoolsData.filter(p => p !== null) as Pool[];
+            frontendPools = [...frontendPools, ...validMissingPools];
+          } catch (err) {
+            console.error("Error fetching participations:", err);
+            setUserParticipations(new Set());
+          }
+        } else {
+          setUserParticipations(new Set());
+        }
+        
+        setPools(frontendPools);
+      } catch (err) {
+        console.error("Error fetching pools:", err);
+      } finally {
         setLoading(false);
       }
     };
 
-    fetchPools();
+    fetchData();
+  }, [walletConnected, walletAddress]);
+
+  // Restore wallet connection from localStorage
+  useEffect(() => {
+    const saved = getPersistedWalletAddress();
+    if (saved) {
+      setWalletConnected(true);
+      setWalletAddress(saved);
+    }
   }, []);
 
   const handleConnectWallet = async () => {
@@ -453,6 +545,7 @@ export default function PoolsPage() {
       setWalletConnected(false);
       setWalletAddress('');
       setBalance(null);
+      clearPersistedWalletAddress();
       return;
     }
 
@@ -468,6 +561,7 @@ export default function PoolsPage() {
       setWalletAddress(pubKey);
       setWalletConnected(true);
       setBalance(2.45);
+      persistWalletAddress(pubKey);
 
     } catch (err) {
       console.error(err);
@@ -693,6 +787,7 @@ export default function PoolsPage() {
                     pool={pool}
                     onJoin={handleJoinPool}
                     joining={joiningPoolId}
+                    isParticipant={userParticipations.has(parseInt(pool.id))}
                   />
                 ))}
               </div>
