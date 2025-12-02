@@ -5,11 +5,15 @@ Loads configuration from environment variables.
 """
 
 import os
+from pathlib import Path
 from typing import Optional
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
-load_dotenv()
+# Look for .env in the agent/ directory (parent of src/)
+agent_dir = Path(__file__).parent.parent
+env_path = agent_dir / ".env"
+load_dotenv(dotenv_path=env_path)
 
 
 class Settings:
@@ -17,7 +21,8 @@ class Settings:
     
     # Solana configuration
     SOLANA_RPC_URL: str = os.getenv("SOLANA_RPC_URL", "https://api.devnet.solana.com")
-    PROGRAM_ID: str = os.getenv("PROGRAM_ID", "")
+    # Default to the devnet program ID from Anchor.toml; can be overridden via env.
+    PROGRAM_ID: str = os.getenv("PROGRAM_ID", "GSvoKxVHbtAY2mAAU4RM3PVQC3buLSjRm24N7QhAoieH")
     
     # Agent wallet
     AGENT_PRIVATE_KEY: Optional[str] = os.getenv("AGENT_PRIVATE_KEY", None)
@@ -39,6 +44,12 @@ class Settings:
     HODL_CHECK_INTERVAL: int = int(os.getenv("HODL_CHECK_INTERVAL", "3600"))  # 1 hour
     LIFESTYLE_CHECK_INTERVAL: int = int(os.getenv("LIFESTYLE_CHECK_INTERVAL", "300"))  # 5 minutes
     DISTRIBUTION_CHECK_INTERVAL: int = int(os.getenv("DISTRIBUTION_CHECK_INTERVAL", "3600"))  # 1 hour
+    
+    # Test pool configuration (optional - for demo/testing)
+    TEST_POOL_ID: Optional[int] = None
+    test_pool_id_str = os.getenv("TEST_POOL_ID", None)
+    if test_pool_id_str:
+        TEST_POOL_ID = int(test_pool_id_str)
     
     # Environment
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
