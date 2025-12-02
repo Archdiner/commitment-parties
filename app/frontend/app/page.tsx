@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
+import { getPools } from '@/lib/api';
+import { getPersistedWalletAddress, persistWalletAddress, clearPersistedWalletAddress } from '@/lib/wallet';
 import {
   Wallet,
   Trophy,
@@ -494,19 +496,40 @@ export default function HomePage() {
     initAuth();
   }, []);
 
+  // Restore wallet connection from localStorage
+  useEffect(() => {
+    const saved = getPersistedWalletAddress();
+    if (saved) {
+      setWalletConnected(true);
+      setWalletAddress(saved);
+    }
+  }, []);
+
   // Fetch featured pools
   useEffect(() => {
     const fetchPools = async () => {
-      const { data, error } = await supabase
-        .from('pools')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(6);
-
-      if (data) {
-        setPools(data as Pool[]);
-        setLoading(false);
-      } else {
+      try {
+        const poolsData = await getPools({ limit: 6 });
+        
+        // Convert backend response to frontend Pool format
+        const frontendPools: Pool[] = poolsData.map(p => ({
+          id: p.pool_id.toString(),
+          name: p.name,
+          goalType: p.goal_type.includes('Lifestyle') || p.goal_type.includes('lifestyle') ? 'Lifestyle' : 'Crypto',
+          description: p.description || '',
+          stakeAmount: p.stake_amount,
+          durationDays: p.duration_days,
+          participants: p.participant_count,
+          maxParticipants: p.max_participants,
+          created_at: p.created_at,
+          onChainAddress: p.pool_pubkey,
+          creatorId: p.creator_wallet,
+        }));
+        
+        setPools(frontendPools);
+      } catch (err) {
+        console.error("Error fetching pools:", err);
+      } finally {
         setLoading(false);
       }
     };
@@ -519,6 +542,7 @@ export default function HomePage() {
       setWalletConnected(false);
       setWalletAddress('');
       setBalance(null);
+      clearPersistedWalletAddress();
       return;
     }
 
@@ -535,6 +559,7 @@ export default function HomePage() {
       setWalletAddress(pubKey);
       setWalletConnected(true);
       setBalance(2.45);
+      persistWalletAddress(pubKey);
 
     } catch (err) {
       console.error(err);

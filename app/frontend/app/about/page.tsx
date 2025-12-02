@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
+import { getPersistedWalletAddress, persistWalletAddress, clearPersistedWalletAddress } from '@/lib/wallet';
 import {
   Wallet,
   Trophy,
@@ -469,11 +470,20 @@ export default function AboutPage() {
   const [walletAddress, setWalletAddress] = useState('');
   const [balance, setBalance] = useState<number | null>(null);
 
+  useEffect(() => {
+    const saved = getPersistedWalletAddress();
+    if (saved) {
+      setWalletConnected(true);
+      setWalletAddress(saved);
+    }
+  }, []);
+
   const handleConnectWallet = async () => {
     if (walletConnected) {
       setWalletConnected(false);
       setWalletAddress('');
       setBalance(null);
+      clearPersistedWalletAddress();
       return;
     }
 
@@ -489,6 +499,7 @@ export default function AboutPage() {
       setWalletAddress(pubKey);
       setWalletConnected(true);
       setBalance(2.45);
+      persistWalletAddress(pubKey);
 
     } catch (err) {
       console.error(err);
