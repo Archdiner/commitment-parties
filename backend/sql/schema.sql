@@ -119,6 +119,17 @@ CREATE TABLE IF NOT EXISTS checkins (
 );
 
 
+-- Pool invites table (for private pools)
+CREATE TABLE IF NOT EXISTS pool_invites (
+    id SERIAL PRIMARY KEY,
+    pool_id BIGINT REFERENCES pools(pool_id) ON DELETE CASCADE,
+    invitee_wallet VARCHAR(44) NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW(),
+    
+    UNIQUE(pool_id, invitee_wallet)
+);
+
+
 -- Payouts table (settlement records)
 CREATE TABLE IF NOT EXISTS payouts (
     id SERIAL PRIMARY KEY,
@@ -179,6 +190,12 @@ CREATE INDEX IF NOT EXISTS idx_checkins_participant ON checkins(participant_wall
 CREATE INDEX IF NOT EXISTS idx_checkins_pool_participant ON checkins(pool_id, participant_wallet);
 
 
+-- Pool invites indexes
+CREATE INDEX IF NOT EXISTS idx_pool_invites_pool ON pool_invites(pool_id);
+CREATE INDEX IF NOT EXISTS idx_pool_invites_wallet ON pool_invites(invitee_wallet);
+CREATE INDEX IF NOT EXISTS idx_pool_invites_pool_wallet ON pool_invites(pool_id, invitee_wallet);
+
+
 -- Payouts indexes
 CREATE INDEX IF NOT EXISTS idx_payouts_pool ON payouts(pool_id);
 CREATE INDEX IF NOT EXISTS idx_payouts_recipient ON payouts(recipient_wallet);
@@ -236,6 +253,7 @@ COMMENT ON TABLE pools IS 'Commitment pools with goals and stakes';
 COMMENT ON TABLE participants IS 'Tracks individual participation in pools';
 COMMENT ON TABLE verifications IS 'Daily verification logs for all participants';
 COMMENT ON TABLE checkins IS 'Daily check-ins for lifestyle challenges (user-submitted)';
+COMMENT ON TABLE pool_invites IS 'Invites for private pools';
 COMMENT ON TABLE payouts IS 'Record of all payouts from pool settlements';
 COMMENT ON TABLE pool_events IS 'Activity feed for pool events';
 

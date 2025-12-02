@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 import logging
 
-from routers import pools, checkins
+from routers import pools, checkins, users, invites, ai_onchain
 from config import settings
 
 # Configure logging
@@ -49,6 +49,9 @@ app.add_middleware(
 # Include routers
 app.include_router(pools.router, prefix="/api/pools", tags=["pools"])
 app.include_router(checkins.router, prefix="/api/checkins", tags=["checkins"])
+app.include_router(users.router, prefix="/api/users", tags=["users"])
+app.include_router(invites.router, prefix="/api/pools", tags=["invites"])
+app.include_router(ai_onchain.router, prefix="/api/ai/onchain", tags=["ai_onchain"])
 
 
 @app.get("/health")
