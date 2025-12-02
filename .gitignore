@@ -77,6 +77,10 @@ coverage/
 *~
 .last_pool_id
 
+# Utility scripts (potentially dangerous)
+scripts/delete_all_pools.py
+scripts/verify_deletion.py
+
 # Database
 *.db
 *.sqlite
