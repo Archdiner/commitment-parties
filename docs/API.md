@@ -47,12 +47,13 @@ List active commitment pools.
     "pool_id": 1234567890,
     "pool_pubkey": "ABC123...",
     "creator_wallet": "XYZ789...",
-    "name": "Daily DCA Challenge",
-    "description": "DCA $10 daily for 7 days",
-    "goal_type": "DailyDCA",
+    "name": "HODL SOL Challenge",
+    "description": "HODL at least 1 SOL for 7 days",
+    "goal_type": "hodl_token",
     "goal_metadata": {
-      "amount": 10000000,
-      "token_mint": "So11111111111111111111111111111111111111112"
+      "token_mint": "So11111111111111111111111111111111111111112",
+      "min_balance": 1000000000,
+      "check_frequency": "hourly"
     },
     "stake_amount": 0.5,
     "duration_days": 7,
@@ -91,12 +92,13 @@ Create a new commitment pool.
   "pool_id": 1234567890,
   "pool_pubkey": "ABC123...",
   "creator_wallet": "XYZ789...",
-  "name": "Daily DCA Challenge",
-  "description": "DCA $10 daily for 7 days",
-  "goal_type": "DailyDCA",
+  "name": "HODL SOL Challenge",
+  "description": "HODL at least 1 SOL for 7 days",
+  "goal_type": "hodl_token",
   "goal_metadata": {
-    "amount": 10000000,
-    "token_mint": "So11111111111111111111111111111111111111112"
+    "token_mint": "So11111111111111111111111111111111111111112",
+    "min_balance": 1000000000,
+    "check_frequency": "hourly"
   },
   "stake_amount": 0.5,
   "duration_days": 7,
@@ -105,6 +107,57 @@ Create a new commitment pool.
   "start_timestamp": 1704067200,
   "end_timestamp": 1704672000,
   "is_public": true
+}
+```
+
+Example lifestyle habit (GitHub commits) pool:
+
+```json
+{
+  "pool_id": 987654321,
+  "pool_pubkey": "GITHUB123...",
+  "creator_wallet": "XYZ789...",
+  "name": "Daily GitHub Commit",
+  "description": "At least 1 commit per day",
+  "goal_type": "lifestyle_habit",
+  "goal_metadata": {
+    "habit_type": "github_commits",
+    "github_username": "alice",
+    "repo": "alice/commitment-parties",
+    "min_commits_per_day": 1
+  },
+  "stake_amount": 0.1,
+  "duration_days": 7,
+  "max_participants": 50,
+  "charity_address": "CHARITY123...",
+  "start_timestamp": 1704067200,
+  "end_timestamp": 1704672000,
+  "is_public": true
+}
+```
+
+Example lifestyle habit (screen-time with screenshot upload) pool:
+
+```json
+{
+  "pool_id": 555555555,
+  "pool_pubkey": "SCREEN123...",
+  "creator_wallet": "XYZ789...",
+  "name": "Low Screen Time",
+  "description": "Keep daily screen time under 2 hours",
+  "goal_type": "lifestyle_habit",
+  "goal_metadata": {
+    "habit_type": "screen_time",
+    "max_hours": 2,
+    "verification_method": "screenshot_upload"
+  },
+  "stake_amount": 0.2,
+  "duration_days": 7,
+  "max_participants": 20,
+  "charity_address": "CHARITY123...",
+  "start_timestamp": 1704067200,
+  "end_timestamp": 1704672000,
+  "is_public": false
 }
 ```
 
@@ -227,7 +280,10 @@ curl -X POST http://localhost:8000/api/pools \
     "creator_wallet": "XYZ789...",
     "name": "Daily DCA Challenge",
     "goal_type": "DailyDCA",
-    "goal_metadata": {"amount": 10000000},
+    "goal_metadata": {
+      "token_mint": "So11111111111111111111111111111111111111112",
+      "min_trades_per_day": 1
+    },
     "stake_amount": 0.5,
     "duration_days": 7,
     "max_participants": 10,
