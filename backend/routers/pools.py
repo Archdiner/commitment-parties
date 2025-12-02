@@ -107,6 +107,39 @@ async def get_pool(pool_id: int) -> PoolResponse:
 async def create_pool(pool_data: PoolCreate) -> PoolResponse:
     """Create a new commitment pool."""
     try:
+        # Ensure creator user exists (auto-create if not)
+        creator_wallet = pool_data.creator_wallet
+        try:
+            users = await execute_query(
+                table="users",
+                operation="select",
+                filters={"wallet_address": creator_wallet},
+                limit=1
+            )
+            
+            if not users:
+                # Auto-create user
+                user_data = {
+                    "wallet_address": creator_wallet,
+                    "username": None,
+                    "twitter_handle": None,
+                    "reputation_score": 100,
+                    "total_games": 0,
+                    "games_completed": 0,
+                    "total_earned": 0.0,
+                    "streak_count": 0
+                }
+                await execute_query(
+                    table="users",
+                    operation="insert",
+                    data=user_data
+                )
+                logger.info(f"Auto-created user {creator_wallet}")
+        except Exception as e:
+            # User might already exist (race condition), continue anyway
+            if "unique" not in str(e).lower() and "duplicate" not in str(e).lower():
+                logger.warning(f"Error checking/creating user: {e}")
+        
         # Convert to dict for database insertion
         pool_dict = pool_data.model_dump()
         pool_dict["status"] = "pending"

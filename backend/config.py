@@ -7,10 +7,14 @@ Uses pydantic-settings for type-safe environment variable loading.
 from pydantic_settings import BaseSettings
 from typing import List
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
-load_dotenv()
+# Get the directory where this config file is located
+backend_dir = Path(__file__).parent
+env_path = backend_dir / ".env"
+load_dotenv(dotenv_path=env_path)
 
 
 class Settings(BaseSettings):
