@@ -7,8 +7,10 @@ Monitors pools and participants to verify goal completion.
 import asyncio
 import logging
 from typing import List, Dict, Any, Optional
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import time
+
+import httpx
 
 from solana_client import SolanaClient
 from verify import Verifier
@@ -52,7 +54,300 @@ class Monitor:
         except Exception as e:
             logger.error(f"Error calculating current day: {e}", exc_info=True)
             return None
-    
+
+    async def verify_github_commits(self, pool: Dict[str, Any], participant: Dict[str, Any]) -> bool:
+        """
+        Verify that a participant has made enough GitHub commits for the current UTC day.
+
+        Uses the participant's VERIFIED GitHub username (from users table), not pool metadata.
+        This ensures only the actual GitHub account owner can participate.
+
+        Expects the following shape in pool['goal_metadata']:
+        {
+            "habit_type": "github_commits",
+            "repo": "alice/commitment-parties",  # optional
+            "min_commits_per_day": 1
+        }
+
+        The participant's verified GitHub username is fetched from the users table
+        based on their wallet_address.
+
+        If "repo" is provided, we count commits by this author to that repo.
+        If "repo" is omitted/empty, we fall back to counting PushEvent commits
+        across all public repos for this user for the current day.
+        """
+        try:
+            goal_metadata = pool.get("goal_metadata") or {}
+            habit_type = goal_metadata.get("habit_type")
+            if habit_type != "github_commits":
+                logger.warning(f"verify_github_commits called for non-github pool {pool.get('pool_id')}")
+                return False
+
+            # Get participant's wallet address
+            participant_wallet = participant.get("wallet_address")
+            if not participant_wallet:
+                logger.warning(
+                    "Participant missing wallet_address for pool %s",
+                    pool.get("pool_id")
+                )
+                return False
+
+            # Fetch verified GitHub username from users table
+            users = await execute_query(
+                table="users",
+                operation="select",
+                filters={"wallet_address": participant_wallet},
+                limit=1
+            )
+
+            if not users or not users[0].get("verified_github_username"):
+                logger.warning(
+                    "Participant %s has not verified their GitHub username for pool %s",
+                    participant_wallet,
+                    pool.get("pool_id")
+                )
+                return False
+
+            github_username = users[0].get("verified_github_username")
+            repo = (goal_metadata.get("repo") or "").strip()
+            min_commits_per_day = int(goal_metadata.get("min_commits_per_day", 1))
+
+            logger.info(
+                "Verifying GitHub commits for pool=%s, wallet=%s, verified_github=%s",
+                pool.get("pool_id"),
+                participant_wallet,
+                github_username
+            )
+
+            # Compute current UTC day window
+            now_utc = datetime.now(timezone.utc)
+            start_of_day = datetime(
+                now_utc.year, now_utc.month, now_utc.day, tzinfo=timezone.utc
+            )
+            end_of_day = start_of_day + timedelta(days=1)
+
+            # If a specific repo is configured, count commits in that repo only
+            if repo:
+                owner, _, repo_name = repo.partition("/")
+                if not owner or not repo_name:
+                    logger.warning(
+                        "Invalid GitHub repo format for pool %s: %s",
+                        pool.get("pool_id"),
+                        repo,
+                    )
+                    return False
+
+                url = f"https://api.github.com/repos/{owner}/{repo_name}/commits"
+                params = {
+                    "author": github_username,
+                    "since": start_of_day.isoformat(),
+                    "until": end_of_day.isoformat(),
+                }
+
+                async with httpx.AsyncClient(timeout=10) as client:
+                    response = await client.get(
+                        url,
+                        params=params,
+                        headers={
+                            "Accept": "application/vnd.github+json",
+                        },
+                    )
+
+                if response.status_code != 200:
+                    logger.warning(
+                        "GitHub API error for pool %s, user=%s, repo=%s: "
+                        "status=%s, body=%s",
+                        pool.get("pool_id"),
+                        github_username,
+                        repo,
+                        response.status_code,
+                        response.text,
+                    )
+                    return False
+
+                commits = response.json() or []
+                commit_count = len(commits)
+            else:
+                # No repo specified: use user events API and count PushEvent commits
+                events_url = f"https://api.github.com/users/{github_username}/events"
+                async with httpx.AsyncClient(timeout=10) as client:
+                    response = await client.get(
+                        events_url,
+                        headers={
+                            "Accept": "application/vnd.github+json",
+                        },
+                    )
+
+                if response.status_code != 200:
+                    logger.warning(
+                        "GitHub events API error for pool %s, user=%s: "
+                        "status=%s, body=%s",
+                        pool.get("pool_id"),
+                        github_username,
+                        response.status_code,
+                        response.text,
+                    )
+                    return False
+
+                events = response.json() or []
+                start_str = start_of_day.isoformat()
+                end_str = end_of_day.isoformat()
+
+                commit_count = 0
+                for event in events:
+                    try:
+                        if event.get("type") != "PushEvent":
+                            continue
+                        created_at = event.get("created_at")
+                        if not created_at:
+                            continue
+                        # created_at is ISO 8601 string; simple range check
+                        if not (start_str <= created_at <= end_str):
+                            continue
+                        payload = event.get("payload") or {}
+                        commits = payload.get("commits") or []
+                        # Light anti-gamification: count only commits with non-trivial messages
+                        for commit in commits:
+                            msg = (commit.get("message") or "").strip()
+                            if len(msg) >= 5:
+                                commit_count += 1
+                    except Exception as parse_err:
+                        logger.debug("Error parsing GitHub event: %s", parse_err)
+
+            passed = commit_count >= min_commits_per_day
+
+            logger.info(
+                "GitHub verification: pool=%s, wallet=%s, user=%s, repo=%s, "
+                "commits_today=%s, min_required=%s, passed=%s",
+                pool.get("pool_id"),
+                participant.get("wallet_address"),
+                github_username,
+                repo or "*any*",
+                commit_count,
+                min_commits_per_day,
+                passed,
+            )
+
+            return passed
+
+        except Exception as e:
+            logger.error(f"Error verifying GitHub commits: {e}", exc_info=True)
+            return False
+
+    async def verify_screentime(self, pool_id: int, wallet: str, day: int) -> bool:
+        """
+        Verify that a participant submitted a successful screen-time check-in
+        for the specified day with a non-empty screenshot URL.
+        """
+        try:
+            results = await execute_query(
+                table="checkins",
+                operation="select",
+                filters={
+                    "pool_id": pool_id,
+                    "participant_wallet": wallet,
+                    "day": day,
+                    "success": True,
+                },
+                limit=1,
+            )
+
+            if not results:
+                logger.info(
+                    "Screen-time verification: no successful check-in found for "
+                    "pool=%s, wallet=%s, day=%s",
+                    pool_id,
+                    wallet,
+                    day,
+                )
+                return False
+
+            checkin = results[0]
+            screenshot_url = (checkin.get("screenshot_url") or "").strip()
+            passed = bool(screenshot_url)
+
+            logger.info(
+                "Screen-time verification: pool=%s, wallet=%s, day=%s, "
+                "success=%s, screenshot_url_present=%s",
+                pool_id,
+                wallet,
+                day,
+                checkin.get("success"),
+                bool(screenshot_url),
+            )
+
+            return passed
+
+        except Exception as e:
+            logger.error(f"Error verifying screen-time check-in: {e}", exc_info=True)
+            return False
+
+    async def verify_dca_participant(
+        self, pool: Dict[str, Any], participant: Dict[str, Any], current_day: int
+    ) -> bool:
+        """
+        Approximate DCA verification for a participant.
+
+        For hackathon MVP, we treat "DCA" as making at least N on-chain
+        transactions per UTC day from the participant wallet. This is a
+        proxy for daily trading activity rather than a strict swap parser.
+
+        Expected metadata (optional, for clarity):
+        {
+            "goal_type": "DailyDCA",
+            "goal_metadata": {
+                "token_mint": "So111...1112",
+                "min_trades_per_day": 1
+            }
+        }
+        """
+        try:
+            goal_metadata = pool.get("goal_metadata") or {}
+            min_trades_per_day = int(goal_metadata.get("min_trades_per_day", 1))
+
+            wallet = participant.get("wallet_address")
+            if not wallet:
+                return False
+
+            # Compute current UTC day window
+            now_utc = datetime.now(timezone.utc)
+            start_of_day = datetime(
+                now_utc.year, now_utc.month, now_utc.day, tzinfo=timezone.utc
+            )
+            end_of_day = start_of_day + timedelta(days=1)
+
+            start_ts = int(start_of_day.timestamp())
+            end_ts = int(end_of_day.timestamp())
+
+            # Fetch recent transactions for the wallet
+            txs = await self.solana_client.get_transactions(wallet, limit=100)
+            todays_txs = [
+                tx
+                for tx in txs
+                if tx.get("block_time") is not None
+                and start_ts <= int(tx["block_time"]) < end_ts
+            ]
+
+            trades_today = len(todays_txs)
+            passed = trades_today >= min_trades_per_day
+
+            logger.info(
+                "DCA verification: pool=%s, wallet=%s, day=%s, "
+                "trades_today=%s, min_required=%s, passed=%s",
+                pool.get("pool_id"),
+                wallet,
+                current_day,
+                trades_today,
+                min_trades_per_day,
+                passed,
+            )
+
+            return passed
+
+        except Exception as e:
+            logger.error(f"Error verifying DCA participant: {e}", exc_info=True)
+            return False
+
     async def verify_hodl_participant(self, wallet: str, token_mint: str, min_balance: int) -> bool:
         """
         Check if wallet holds minimum token balance.
@@ -190,16 +485,81 @@ class Monitor:
         
         while True:
             try:
-                # TODO: Implement DCA monitoring logic
-                # 1. Query database for active DCA pools
-                # 2. For each participant, check their wallet transactions
-                # 3. Verify if they made a swap today via Jupiter/Raydium
-                # 4. Check if swap amount >= required amount
-                # 5. Submit verification to smart contract
-                
                 logger.info("Checking DCA pools...")
-                
-                # Placeholder: Sleep for interval
+
+                # Get all active pools and filter to DCA-style crypto goals
+                all_pools = await self.get_active_pools()
+                dca_pools = [
+                    p
+                    for p in all_pools
+                    if p.get("goal_type") in ("DailyDCA", "dca_trade")
+                ]
+
+                if not dca_pools:
+                    logger.info("No active DCA pools found")
+                else:
+                    logger.info("Found %d active DCA pools", len(dca_pools))
+
+                    for pool in dca_pools:
+                        try:
+                            pool_id = pool.get("pool_id")
+                            start_timestamp = pool.get("start_timestamp")
+
+                            if not pool_id:
+                                logger.warning("Invalid DCA pool data: %s", pool)
+                                continue
+
+                            current_day = self._calculate_current_day(start_timestamp)
+                            if current_day is None:
+                                logger.info("DCA pool %s hasn't started yet", pool_id)
+                                continue
+
+                            participants = await self.get_pool_participants(pool_id)
+                            if not participants:
+                                logger.info(
+                                    "DCA pool %s has no active participants", pool_id
+                                )
+                                continue
+
+                            logger.info(
+                                "Verifying %d participants for DCA pool %s, day %s",
+                                len(participants),
+                                pool_id,
+                                current_day,
+                            )
+
+                            for participant in participants:
+                                wallet = participant.get("wallet_address")
+                                if not wallet:
+                                    continue
+
+                                passed = await self.verify_dca_participant(
+                                    pool, participant, current_day
+                                )
+
+                                if self.verifier:
+                                    pool_pubkey = pool.get("pool_pubkey")
+                                    if pool_pubkey:
+                                        signature = await self.verifier.submit_verification(
+                                            pool_id=pool_id,
+                                            participant_wallet=wallet,
+                                            day=current_day,
+                                            passed=passed,
+                                        )
+                                        if signature:
+                                            logger.info(
+                                                "DCA verification submitted for "
+                                                "pool=%s, wallet=%s, day=%s, passed=%s",
+                                                pool_id,
+                                                wallet,
+                                                current_day,
+                                                passed,
+                                            )
+                                else:
+                                    logger.warning(
+                                        "Verifier not available, skipping DCA on-chain submission"
+                                    )
+
                 await asyncio.sleep(settings.DCA_CHECK_INTERVAL)
             
             except Exception as e:
@@ -327,6 +687,7 @@ class Monitor:
                         try:
                             pool_id = pool.get("pool_id")
                             start_timestamp = pool.get("start_timestamp")
+                            goal_metadata = pool.get("goal_metadata") or {}
                             
                             if not pool_id:
                                 logger.warning(f"Invalid pool data: {pool}")
@@ -349,16 +710,28 @@ class Monitor:
                                 f"Verifying {len(participants)} participants for pool {pool_id}, day {current_day}"
                             )
                             
+                            habit_type = goal_metadata.get("habit_type")
+
                             # Verify each participant
                             for participant in participants:
                                 wallet = participant.get("wallet_address")
                                 if not wallet:
                                     continue
-                                
-                                # Check if check-in exists for today
-                                passed = await self.verify_lifestyle_participant(
-                                    pool_id, wallet, current_day
-                                )
+
+                                # Route verification based on lifestyle habit type
+                                if habit_type == "github_commits":
+                                    passed = await self.verify_github_commits(
+                                        pool, participant
+                                    )
+                                elif habit_type == "screen_time":
+                                    passed = await self.verify_screentime(
+                                        pool_id, wallet, current_day
+                                    )
+                                else:
+                                    # Fallback to generic lifestyle check-in verification
+                                    passed = await self.verify_lifestyle_participant(
+                                        pool_id, wallet, current_day
+                                    )
                                 
                                 # Submit verification to smart contract
                                 if self.verifier:
