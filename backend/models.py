@@ -11,9 +11,65 @@ from datetime import datetime
 
 # Pool Models
 class GoalTypeBase(BaseModel):
-    """Base goal type model"""
-    goal_type: str = Field(..., description="Type of goal (DailyDCA, HodlToken, LifestyleHabit)")
-    goal_metadata: Dict[str, Any] = Field(..., description="Goal-specific metadata")
+    """
+    Base goal type model.
+
+    The backend stores goal configuration as a flexible JSON `goal_metadata` object.
+    We currently support two main goal families:
+
+    1) Crypto goals (on-chain, trade/balance based)
+       - HODL token balance:
+         {
+             "goal_type": "hodl_token",
+             "goal_metadata": {
+                 "token_mint": "So111...1112",
+                 "min_balance": 1000000000,
+                 "check_frequency": "hourly"
+             }
+         }
+       - DCA / trade activity (approximate, per-day trades):
+         {
+             "goal_type": "DailyDCA",
+             "goal_metadata": {
+                 "token_mint": "So111...1112",
+                 "min_trades_per_day": 1
+             }
+         }
+
+    2) Lifestyle goals (off-chain habits, extensible)
+       - GitHub commits:
+         {
+             "goal_type": "lifestyle_habit",
+             "goal_metadata": {
+                 "habit_type": "github_commits",
+                 "github_username": "alice",
+                 "repo": "alice/commitment-parties",  // optional; if omitted, any repo counts
+                 "min_commits_per_day": 1
+             }
+         }
+       - Screen-time (screenshot-based):
+         {
+             "goal_type": "lifestyle_habit",
+             "goal_metadata": {
+                 "habit_type": "screen_time",
+                 "max_hours": 2,
+                 "verification_method": "screenshot_upload"
+             }
+         }
+       - Future lifestyle types can add new `habit_type` values under
+         the same `goal_type="lifestyle_habit"` umbrella.
+    """
+    goal_type: str = Field(
+        ...,
+        description=(
+            "Type of goal "
+            "(e.g. 'hodl_token', 'lifestyle_habit', or experimental types like 'DailyDCA')"
+        ),
+    )
+    goal_metadata: Dict[str, Any] = Field(
+        ...,
+        description="Goal-specific metadata; shape depends on goal_type (see class docstring)",
+    )
 
 
 class PoolCreate(BaseModel):
@@ -43,6 +99,43 @@ class PoolCreate(BaseModel):
     start_timestamp: int = Field(..., description="Pool start timestamp")
     end_timestamp: int = Field(..., description="Pool end timestamp")
     is_public: bool = Field(True, description="Whether pool is public")
+
+
+class PoolConfirmRequest(BaseModel):
+    """Request model for confirming pool creation after on-chain transaction"""
+    pool_id: int = Field(..., description="Unique pool ID")
+    pool_pubkey: str = Field(..., description="On-chain pool public key", max_length=44)
+    transaction_signature: str = Field(..., description="Transaction signature from Solana")
+    creator_wallet: str = Field(..., description="Wallet address of pool creator", max_length=44)
+    name: str = Field(..., description="Pool name", max_length=100)
+    description: Optional[str] = Field(None, description="Pool description")
+    goal_type: str = Field(..., description="Type of goal")
+    goal_metadata: Dict[str, Any] = Field(..., description="Goal-specific metadata")
+    stake_amount: float = Field(..., gt=0, description="Stake amount in SOL")
+    duration_days: int = Field(..., ge=1, le=30, description="Duration in days")
+    max_participants: int = Field(..., ge=1, le=100, description="Maximum participants")
+    min_participants: int = Field(1, ge=1, description="Minimum participants")
+    distribution_mode: str = Field(
+        "competitive",
+        description="Distribution mode: competitive, charity, split",
+        max_length=20,
+    )
+    split_percentage_winners: int = Field(
+        100,
+        ge=0,
+        le=100,
+        description="Percentage of losers stakes to winners; remainder to charity",
+    )
+    charity_address: str = Field(..., description="Charity wallet address", max_length=44)
+    start_timestamp: int = Field(..., description="Pool start timestamp")
+    end_timestamp: int = Field(..., description="Pool end timestamp")
+    is_public: bool = Field(True, description="Whether pool is public")
+
+
+class JoinPoolConfirmRequest(BaseModel):
+    """Request model for confirming pool join after on-chain transaction"""
+    transaction_signature: str = Field(..., description="Transaction signature from Solana")
+    participant_wallet: str = Field(..., description="Participant wallet address", max_length=44)
 
 
 class PoolResponse(BaseModel):
@@ -106,6 +199,7 @@ class UserResponse(BaseModel):
     wallet_address: str
     username: Optional[str]
     twitter_handle: Optional[str]
+    verified_github_username: Optional[str]
     reputation_score: int
     streak_count: int
     total_games: int
@@ -116,6 +210,22 @@ class UserResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# GitHub Verification Models
+class GitHubVerifyRequest(BaseModel):
+    """Request model for GitHub verification"""
+    wallet_address: str = Field(..., description="Wallet address to verify", max_length=44)
+    github_username: str = Field(..., description="GitHub username to verify", max_length=100)
+    gist_id: str = Field(..., description="GitHub Gist ID containing verification signature", max_length=100)
+    signature: str = Field(..., description="Signed message from wallet", max_length=200)
+
+
+class GitHubVerifyResponse(BaseModel):
+    """Response model for GitHub verification"""
+    verified: bool
+    message: str
+    github_username: Optional[str] = None
 
 
 # Error Models
