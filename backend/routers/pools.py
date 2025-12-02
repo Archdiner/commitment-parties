@@ -318,6 +318,85 @@ async def confirm_pool_creation(pool_data: PoolConfirmRequest) -> PoolResponse:
         raise HTTPException(status_code=500, detail="Failed to confirm pool creation")
 
 
+@router.get(
+    "/{pool_id}/participants/{wallet}/verifications",
+    summary="Get participant verification status",
+    description="Get all verifications for a participant in a pool",
+)
+async def get_participant_verifications(
+    pool_id: int,
+    wallet: str,
+) -> dict:
+    """Get verification status for a participant."""
+    try:
+        # Get participant info
+        participants = await execute_query(
+            table="participants",
+            operation="select",
+            filters={
+                "pool_id": pool_id,
+                "wallet_address": wallet
+            },
+            limit=1
+        )
+        
+        if not participants:
+            raise HTTPException(status_code=404, detail="Participant not found in pool")
+        
+        participant = participants[0]
+        
+        # Get all verifications
+        verifications = await execute_query(
+            table="verifications",
+            operation="select",
+            filters={
+                "pool_id": pool_id,
+                "participant_wallet": wallet
+            }
+        )
+        
+        # Get pool info for context
+        pools = await execute_query(
+            table="pools",
+            operation="select",
+            filters={"pool_id": pool_id},
+            limit=1
+        )
+        
+        pool = pools[0] if pools else {}
+        current_time = int(time.time())
+        start_timestamp = pool.get("start_timestamp", 0)
+        current_day = None
+        if start_timestamp and current_time >= start_timestamp:
+            days_elapsed = (current_time - start_timestamp) // 86400
+            current_day = days_elapsed + 1
+        
+        return {
+            "pool_id": pool_id,
+            "wallet_address": wallet,
+            "days_verified": participant.get("days_verified", 0),
+            "status": participant.get("status", "active"),
+            "current_day": current_day,
+            "verifications": [
+                {
+                    "day": v.get("day"),
+                    "passed": v.get("passed"),
+                    "verification_type": v.get("verification_type"),
+                    "verified_at": v.get("verified_at")
+                }
+                for v in verifications
+            ],
+            "total_verifications": len(verifications),
+            "passed_verifications": len([v for v in verifications if v.get("passed")])
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching verifications: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to fetch verifications: {str(e)}")
+
+
 @router.delete(
     "/",
     summary="Delete all pools (for testing/cleanup)",

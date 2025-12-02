@@ -733,6 +733,95 @@ class Monitor:
                                         pool_id, wallet, current_day
                                     )
                                 
+                                # Store verification in database
+                                try:
+                                    # Check if verification already exists for this day
+                                    existing_verifications = await execute_query(
+                                        table="verifications",
+                                        operation="select",
+                                        filters={
+                                            "pool_id": pool_id,
+                                            "participant_wallet": wallet,
+                                            "day": current_day
+                                        },
+                                        limit=1
+                                    )
+                                    
+                                    if not existing_verifications:
+                                        # Store new verification
+                                        verification_data = {
+                                            "pool_id": pool_id,
+                                            "participant_wallet": wallet,
+                                            "day": current_day,
+                                            "passed": passed,
+                                            "verification_type": habit_type or "lifestyle_habit",
+                                            "proof_data": {
+                                                "verified_at": datetime.now(timezone.utc).isoformat(),
+                                                "habit_type": habit_type
+                                            }
+                                        }
+                                        await execute_query(
+                                            table="verifications",
+                                            operation="insert",
+                                            data=verification_data
+                                        )
+                                        logger.info(
+                                            f"Stored verification in database: pool={pool_id}, "
+                                            f"wallet={wallet}, day={current_day}, passed={passed}"
+                                        )
+                                    else:
+                                        # Update existing verification if result changed
+                                        existing = existing_verifications[0]
+                                        if existing.get("passed") != passed:
+                                            await execute_query(
+                                                table="verifications",
+                                                operation="update",
+                                                filters={
+                                                    "pool_id": pool_id,
+                                                    "participant_wallet": wallet,
+                                                    "day": current_day
+                                                },
+                                                data={"passed": passed}
+                                            )
+                                            logger.info(
+                                                f"Updated verification in database: pool={pool_id}, "
+                                                f"wallet={wallet}, day={current_day}, passed={passed}"
+                                            )
+                                    
+                                    # Update days_verified in participants table
+                                    # Count all passed verifications for this participant
+                                    all_verifications = await execute_query(
+                                        table="verifications",
+                                        operation="select",
+                                        filters={
+                                            "pool_id": pool_id,
+                                            "participant_wallet": wallet,
+                                            "passed": True
+                                        }
+                                    )
+                                    days_verified = len(all_verifications)
+                                    
+                                    # Update participant's days_verified
+                                    await execute_query(
+                                        table="participants",
+                                        operation="update",
+                                        filters={
+                                            "pool_id": pool_id,
+                                            "wallet_address": wallet
+                                        },
+                                        data={"days_verified": days_verified}
+                                    )
+                                    logger.info(
+                                        f"Updated days_verified for participant: pool={pool_id}, "
+                                        f"wallet={wallet}, days_verified={days_verified}"
+                                    )
+                                    
+                                except Exception as db_err:
+                                    logger.error(
+                                        f"Error updating database after verification: {db_err}",
+                                        exc_info=True
+                                    )
+                                
                                 # Submit verification to smart contract
                                 if self.verifier:
                                     pool_pubkey = pool.get("pool_pubkey")
@@ -745,8 +834,9 @@ class Monitor:
                                         )
                                         if signature:
                                             logger.info(
-                                                f"Verification submitted for pool={pool_id}, "
-                                                f"wallet={wallet}, day={current_day}, passed={passed}"
+                                                f"Verification submitted on-chain for pool={pool_id}, "
+                                                f"wallet={wallet}, day={current_day}, passed={passed}, "
+                                                f"signature={signature}"
                                             )
                                 else:
                                     logger.warning("Verifier not available, skipping on-chain submission")

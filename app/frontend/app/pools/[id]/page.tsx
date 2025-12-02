@@ -14,7 +14,7 @@ import {
   requestAirdrop,
 } from '@/lib/solana';
 import { getPersistedWalletAddress, persistWalletAddress, clearPersistedWalletAddress } from '@/lib/wallet';
-import { confirmPoolJoin, getPool, submitCheckIn, getUserCheckIns, CheckInResponse, getUserParticipations, getGitHubUsername } from '@/lib/api';
+import { confirmPoolJoin, getPool, submitCheckIn, getUserCheckIns, CheckInResponse, getUserParticipations, getGitHubUsername, getParticipantVerifications } from '@/lib/api';
 import { useRouter } from 'next/navigation';
 import {
   Wallet,
@@ -522,6 +522,8 @@ const GitHubStatusSection = ({
 }) => {
   const [githubUsername, setGithubUsername] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [verificationStatus, setVerificationStatus] = useState<any>(null);
+  const [loadingVerifications, setLoadingVerifications] = useState(false);
 
   useEffect(() => {
     const fetchGitHubStatus = async () => {
@@ -539,6 +541,29 @@ const GitHubStatusSection = ({
       fetchGitHubStatus();
     }
   }, [walletAddress]);
+
+  // Fetch verification status if participant
+  useEffect(() => {
+    const fetchVerificationStatus = async () => {
+      if (!isParticipant || !walletAddress || !pool.id) return;
+      
+      setLoadingVerifications(true);
+      try {
+        const poolIdNum = parseInt(pool.id);
+        const status = await getParticipantVerifications(poolIdNum, walletAddress);
+        setVerificationStatus(status);
+      } catch (err) {
+        console.error('Error fetching verification status:', err);
+      } finally {
+        setLoadingVerifications(false);
+      }
+    };
+
+    fetchVerificationStatus();
+    // Refresh every 30 seconds to show latest verifications
+    const interval = setInterval(fetchVerificationStatus, 30000);
+    return () => clearInterval(interval);
+  }, [isParticipant, walletAddress, pool.id]);
 
   const repo = pool.goal_metadata?.repo;
   const minCommits = pool.goal_metadata?.min_commits_per_day || 1;
@@ -581,11 +606,69 @@ const GitHubStatusSection = ({
           </div>
 
           {isParticipant && (
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <p className="text-blue-700 text-sm">
-                <strong>Note:</strong> Your commits are automatically verified daily. No manual check-in required!
-                The system tracks your commits and verifies them automatically.
-              </p>
+            <div className="space-y-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <p className="text-blue-700 text-sm">
+                  <strong>Note:</strong> Your commits are automatically verified daily. No manual check-in required!
+                  The system tracks your commits and verifies them automatically.
+                </p>
+              </div>
+              
+              {loadingVerifications ? (
+                <div className="bg-slate-50 rounded-lg p-4 flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+                  <span className="text-sm text-slate-600">Loading verification status...</span>
+                </div>
+              ) : verificationStatus && (
+                <div className="bg-slate-50 rounded-lg p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-slate-700">Current Day:</span>
+                    <span className="text-sm font-bold text-slate-900">
+                      {verificationStatus.current_day ? `Day ${verificationStatus.current_day}` : 'Not started'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-slate-700">Days Verified:</span>
+                    <span className="text-sm font-bold text-emerald-600">
+                      {verificationStatus.days_verified} / {pool.durationDays}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-slate-700">Verifications Recorded:</span>
+                    <span className="text-sm font-bold text-slate-900">
+                      {verificationStatus.passed_verifications} passed, {verificationStatus.total_verifications} total
+                    </span>
+                  </div>
+                  
+                  {verificationStatus.verifications && verificationStatus.verifications.length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-slate-200">
+                      <p className="text-xs font-semibold text-slate-600 mb-2">Recent Verifications:</p>
+                      <div className="space-y-1">
+                        {verificationStatus.verifications
+                          .sort((a: any, b: any) => b.day - a.day)
+                          .slice(0, 5)
+                          .map((v: any) => (
+                            <div key={v.day} className="flex items-center justify-between text-xs">
+                              <span className="text-slate-600">Day {v.day}</span>
+                              <span className={`font-medium ${v.passed ? 'text-emerald-600' : 'text-red-600'}`}>
+                                {v.passed ? '✓ Passed' : '✗ Failed'}
+                              </span>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {verificationStatus.total_verifications === 0 && (
+                    <div className="mt-3 pt-3 border-t border-slate-200">
+                      <p className="text-xs text-amber-600">
+                        <AlertCircle className="w-3 h-3 inline mr-1" />
+                        No verifications yet. The agent checks commits every 5 minutes. Make sure you've pushed commits today!
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>

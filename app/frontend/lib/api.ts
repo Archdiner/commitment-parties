@@ -383,3 +383,32 @@ export async function getGitHubRepos(wallet: string): Promise<{ repositories: Gi
   return fetchApi<{ repositories: GitHubRepo[]; message?: string }>(`/api/users/${wallet}/github/repos`);
 }
 
+/**
+ * Verification status interface
+ */
+export interface VerificationStatus {
+  pool_id: number;
+  wallet_address: string;
+  days_verified: number;
+  status: string;
+  current_day: number | null;
+  verifications: Array<{
+    day: number;
+    passed: boolean;
+    verification_type: string;
+    verified_at: string;
+  }>;
+  total_verifications: number;
+  passed_verifications: number;
+}
+
+/**
+ * Get participant verification status
+ */
+export async function getParticipantVerifications(
+  poolId: number,
+  wallet: string
+): Promise<VerificationStatus> {
+  return fetchApi<VerificationStatus>(`/api/pools/${poolId}/participants/${wallet}/verifications`);
+}
+
