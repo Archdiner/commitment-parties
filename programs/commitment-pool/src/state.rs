@@ -100,7 +100,7 @@ pub enum ParticipantStatus {
 }
 
 /// Distribution mode enum
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq, Debug)]
 pub enum DistributionMode {
     Competitive,  // Losers' stakes go to winners
     Charity,      // Losers' stakes go to charity

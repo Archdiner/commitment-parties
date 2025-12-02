@@ -56,14 +56,14 @@ pub fn handler(
     pool.participant_count = 0;
     pool.total_staked = 0;
     pool.charity_address = charity_address;
-    pool.distribution_mode = distribution_mode;
+    pool.distribution_mode = distribution_mode.clone();
     pool.pool_status = PoolStatus::Pending;
     pool.start_timestamp = clock.unix_timestamp;
     pool.end_timestamp = clock.unix_timestamp + (duration_days as i64 * 86400);
     pool.bump = ctx.bumps.pool;
     
     msg!("Pool created: {} (mode: {:?}, min: {}, max: {})", 
-         pool_id, distribution_mode, min_participants, max_participants);
+         pool_id, pool.distribution_mode, min_participants, max_participants);
     Ok(())
 }
 

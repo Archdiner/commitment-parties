@@ -5,8 +5,9 @@ pub mod instructions;
 pub mod state;
 
 use instructions::*;
+use state::*;
 
-declare_id!("8Qk9e6QJgJ52BsRV58BPByTS1LenzZNQRo7Ehnqhg5zJ");
+declare_id!("GSvoKxVHbtAY2mAAU4RM3PVQC3buLSjRm24N7QhAoieH");
 
 #[program]
 pub mod commitment_pool {
