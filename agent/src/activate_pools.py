@@ -7,12 +7,21 @@ Monitors pending pools and activates them when their scheduled start time arrive
 import asyncio
 import logging
 import time
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from database import execute_query
 from config import settings
 
 logger = logging.getLogger(__name__)
+
+# Import SocialManager for automatic tweeting (circular import handled via Optional)
+_social_manager: Optional[Any] = None
+
+
+def set_social_manager(social_manager):
+    """Set the social manager instance for automatic tweeting"""
+    global _social_manager
+    _social_manager = social_manager
 
 
 class PoolActivator:
@@ -90,6 +99,20 @@ class PoolActivator:
                             data={"status": "active"}
                         )
                         activated_count += 1
+                        
+                        # Post tweet about new pool (only for scheduled pools, not immediate start)
+                        if _social_manager:
+                            try:
+                                from social import SocialEventType
+                                # Only tweet if pool is public and has a scheduled start (not immediate)
+                                if pool.get("is_public", True) and scheduled_start:
+                                    await _social_manager.post_event_update(
+                                        SocialEventType.POOL_CREATED,
+                                        pool_id
+                                    )
+                                    logger.info(f"Posted new pool tweet for pool {pool_id}")
+                            except Exception as e:
+                                logger.warning(f"Failed to post tweet for new pool {pool_id}: {e}")
                 
                 if activated_count > 0:
                     logger.info(f"Activated {activated_count} pool(s)")

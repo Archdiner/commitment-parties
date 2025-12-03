@@ -304,3 +304,4 @@ Potential revenue model:
 
 **Key Insight:** Solo challenges use yield as the reward mechanism, while multi-player pools use redistribution of losers' stakes. This ensures there's always a meaningful reward structure.
 
+

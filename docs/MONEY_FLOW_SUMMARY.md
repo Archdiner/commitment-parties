@@ -115,3 +115,4 @@ This is separate from money flow - it's about engagement and accountability.
 | Charity | 2+ | Yield only | Stake + yield | 0 (→ charity) |
 | Split | 2+ | Losers + yield | Stake + (split %) | 0 (→ winners/charity) |
 
+

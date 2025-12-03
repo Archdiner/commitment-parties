@@ -8,9 +8,15 @@ AI-powered agent that posts engaging updates about challenges.
 import logging
 import asyncio
 import time
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import tweepy
 from datetime import datetime, timezone
 import random
+from enum import Enum
+from dataclasses import dataclass
+from collections import deque
 
 try:
     import tweepy
@@ -35,38 +41,71 @@ else:
     logger = logging.getLogger(__name__)
 
 
+class SocialEventType(str, Enum):
+    """Types of social events that can trigger tweets."""
+    POOL_CREATED = "pool_created"
+    POOL_MIDWAY = "pool_midway"
+    POOL_COMPLETED = "pool_completed"
+
+
+@dataclass
+class TweetTask:
+    """Represents a tweet task in the queue."""
+    event_type: SocialEventType
+    pool_id: int
+    created_at: float
+    retry_count: int = 0
+    max_retries: int = 5
+    next_retry_at: Optional[float] = None
+
+
+@dataclass
+class TwitterAccount:
+    """Represents a Twitter account with its own rate limits."""
+    account_id: int
+    client: Any  # tweepy.Client - using Any to avoid circular import
+    api_key: str
+    api_secret: str
+    access_token: str
+    access_token_secret: str
+    rate_limit_remaining: int = 300  # Track remaining quota
+    rate_limit_limit: int = 300  # Total limit per window
+    rate_limit_reset_time: Optional[float] = None  # When limit resets (Unix timestamp)
+    rate_limit_until: Optional[float] = None  # When we can use this account again
+
+
 class SocialManager:
     """Manages social media interactions with AI-powered content generation"""
     
     def __init__(self):
         self.twitter_enabled = False
-        self.twitter_client = None
+        self.twitter_client = None  # Keep for backward compatibility
         self.ai_client = None
-        self.last_post_time = {}  # Track last post time per pool
+        self.last_post_time: Dict[int, float] = {}  # Track last post time per pool
         self.post_interval = 3600  # Post updates every hour per pool
+        # Event-level rate limiting (per pool, per event type)
+        self.last_event_post_time: Dict[Tuple[int, SocialEventType], float] = {}
+        # URL bases
+        self.app_base_url = getattr(settings, "APP_BASE_URL", "https://app.commitment-parties.xyz")
+        self.action_base_url = getattr(
+            settings,
+            "ACTION_BASE_URL",
+            "https://api.commitment-parties.xyz/solana/actions",
+        )
         
-        # Initialize Twitter client
+        # Tweet queue for non-blocking posts
+        self.tweet_queue: asyncio.Queue = asyncio.Queue()
+        self.queue_worker_running = False
+        self.rate_limit_until: Optional[float] = None  # Track when rate limit resets (global fallback)
+        self.retry_delays = [60, 300, 900, 1800, 3600]  # Exponential backoff: 1min, 5min, 15min, 30min, 1hr
+        
+        # Multiple Twitter accounts
+        self.twitter_accounts: List[TwitterAccount] = []
+        self.current_account_index = 0
+        
+        # Initialize Twitter accounts
         if TWITTER_AVAILABLE:
-            self.twitter_enabled = bool(
-                settings.TWITTER_API_KEY and
-                settings.TWITTER_API_SECRET and
-                settings.TWITTER_ACCESS_TOKEN and
-                settings.TWITTER_ACCESS_TOKEN_SECRET
-            )
-            
-            if self.twitter_enabled:
-                try:
-                    self.twitter_client = tweepy.Client(
-                        consumer_key=settings.TWITTER_API_KEY,
-                        consumer_secret=settings.TWITTER_API_SECRET,
-                        access_token=settings.TWITTER_ACCESS_TOKEN,
-                        access_token_secret=settings.TWITTER_ACCESS_TOKEN_SECRET,
-                        wait_on_rate_limit=True
-                    )
-                    logger.info("Twitter client initialized successfully")
-                except Exception as e:
-                    logger.error(f"Failed to initialize Twitter client: {e}")
-                    self.twitter_enabled = False
+            self._initialize_twitter_accounts()
         
         # Initialize AI client (optional - for enhanced tweet generation)
         if OPENAI_AVAILABLE:
@@ -78,33 +117,152 @@ class SocialManager:
                 except Exception as e:
                     logger.warning(f"OpenAI not configured: {e}")
     
+    def _initialize_twitter_accounts(self):
+        """Initialize all configured Twitter accounts."""
+        accounts_config = []
+        
+        # Account 1 (primary)
+        if (settings.TWITTER_API_KEY and settings.TWITTER_API_SECRET and
+            settings.TWITTER_ACCESS_TOKEN and settings.TWITTER_ACCESS_TOKEN_SECRET):
+            accounts_config.append({
+                'id': 1,
+                'key': settings.TWITTER_API_KEY,
+                'secret': settings.TWITTER_API_SECRET,
+                'token': settings.TWITTER_ACCESS_TOKEN,
+                'token_secret': settings.TWITTER_ACCESS_TOKEN_SECRET,
+            })
+        
+        # Account 2 (secondary)
+        if (hasattr(settings, 'TWITTER_API_KEY_2') and settings.TWITTER_API_KEY_2 and
+            hasattr(settings, 'TWITTER_API_SECRET_2') and settings.TWITTER_API_SECRET_2 and
+            hasattr(settings, 'TWITTER_ACCESS_TOKEN_2') and settings.TWITTER_ACCESS_TOKEN_2 and
+            hasattr(settings, 'TWITTER_ACCESS_TOKEN_SECRET_2') and settings.TWITTER_ACCESS_TOKEN_SECRET_2):
+            accounts_config.append({
+                'id': 2,
+                'key': settings.TWITTER_API_KEY_2,
+                'secret': settings.TWITTER_API_SECRET_2,
+                'token': settings.TWITTER_ACCESS_TOKEN_2,
+                'token_secret': settings.TWITTER_ACCESS_TOKEN_SECRET_2,
+            })
+        
+        # Initialize clients
+        for config in accounts_config:
+            try:
+                client = tweepy.Client(
+                    consumer_key=config['key'],
+                    consumer_secret=config['secret'],
+                    access_token=config['token'],
+                    access_token_secret=config['token_secret'],
+                    wait_on_rate_limit=False  # We handle rate limits ourselves
+                )
+                
+                account = TwitterAccount(
+                    account_id=config['id'],
+                    client=client,
+                    api_key=config['key'],
+                    api_secret=config['secret'],
+                    access_token=config['token'],
+                    access_token_secret=config['token_secret'],
+                )
+                
+                self.twitter_accounts.append(account)
+                logger.info(f"Twitter account {config['id']} initialized successfully")
+            except Exception as e:
+                logger.error(f"Failed to initialize Twitter account {config['id']}: {e}")
+        
+        if self.twitter_accounts:
+            self.twitter_enabled = True
+            # Set primary client for backward compatibility
+            self.twitter_client = self.twitter_accounts[0].client
+            logger.info(f"Initialized {len(self.twitter_accounts)} Twitter account(s)")
+        else:
+            self.twitter_enabled = False
+            logger.warning("No Twitter accounts configured")
+    
+    def get_next_available_account(self) -> Optional[TwitterAccount]:
+        """Get the next available Twitter account with rate limit capacity."""
+        if not self.twitter_accounts:
+            return None
+        
+        current_time = time.time()
+        
+        # Try each account in rotation
+        for i in range(len(self.twitter_accounts)):
+            idx = (self.current_account_index + i) % len(self.twitter_accounts)
+            account = self.twitter_accounts[idx]
+            
+            # Check if account is rate limited
+            if account.rate_limit_until and current_time < account.rate_limit_until:
+                continue
+            
+            # Check if account has remaining quota (with safety margin)
+            if account.rate_limit_remaining > 5:  # Keep 5 tweet buffer
+                self.current_account_index = idx
+                return account
+        
+        # All accounts rate limited or low quota
+        return None
+    
     def create_blink(self, pool_id: int, pool_pubkey: Optional[str] = None) -> str:
         """
         Create a Solana Blink (Action) URL for joining a pool.
         
-        Blinks are Solana Actions that can be embedded in tweets,
-        allowing users to join pools directly from Twitter.
+        This should point to a Solana Action endpoint that returns
+        the transaction to join the pool. When shared on Twitter/X,
+        this URL can be rendered as a Blink button.
         
         Args:
             pool_id: ID of the pool
-            pool_pubkey: Optional on-chain pool public key
+            pool_pubkey: Optional on-chain pool public key (currently unused,
+                         but kept for future customization)
         
         Returns:
-            Blink URL
+            Blink/Action URL
         """
-        # Solana Blinks format: https://x.com/i/flow/[action_id]
-        # For commitment pools, we create an action that triggers join_pool
+        # Example: https://api.commitment-parties.xyz/solana/actions/join-pool?pool_id=123
+        return f"{self.action_base_url}/join-pool?pool_id={pool_id}"
+
+    def create_app_link(self, pool_id: int) -> str:
+        """
+        Create a link to the pool page in the web app.
         
-        if pool_pubkey:
-            # Use the pool pubkey for on-chain action
-            # Format: solana-action://join_pool?pool={pubkey}&cluster=devnet
-            base_url = "https://x.com/i/flow"
-            # In production, you'd register this action with Solana Actions
-            # For now, we'll use a direct link format
-            return f"{base_url}/commitment-pool-{pool_id}"
-        else:
-            # Fallback to simple pool link
-            return f"https://blink.solana.com/pool/{pool_id}"
+        Args:
+            pool_id: ID of the pool
+        
+        Returns:
+            App URL to view pool details
+        """
+        return f"{self.app_base_url}/pools/{pool_id}"
+
+    @staticmethod
+    def _truncate_body(text: str, max_len: int) -> str:
+        """Truncate a text body to max_len characters with ellipsis if needed."""
+        if len(text) <= max_len:
+            return text
+        if max_len <= 3:
+            return text[:max_len]
+        return text[: max_len - 3].rstrip() + "..."
+
+    def build_full_tweet(self, body: str, blink_url: str, app_url: str) -> str:
+        """
+        Combine a tweet body with Blink and app links, respecting Twitter's limit.
+        
+        We conservatively enforce 280 characters including both URLs.
+        If needed, the body is truncated to make room for links.
+        """
+        trailer = f"\n\n🔗 Join: {blink_url}\n🌐 Details: {app_url}"
+        max_len = 280
+        if len(body) + len(trailer) <= max_len:
+            return body + trailer
+        
+        # Try truncating body while keeping both links
+        available = max_len - len(trailer) - 3  # 3 for "..."
+        if available <= 0:
+            # As a last resort, drop the app link and keep only the Blink
+            trailer = f"\n\n🔗 Join: {blink_url}"
+            available = max_len - len(trailer) - 3
+        truncated_body = self._truncate_body(body, max_len=available)
+        return truncated_body + trailer
     
     def generate_tweet_content(self, pool: Dict[str, Any], stats: Dict[str, Any]) -> str:
         """
@@ -193,6 +351,151 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
         
         return tweet
     
+    def _format_signup_deadline(self, pool: Dict[str, Any]) -> str:
+        """Format the sign-up deadline based on recruitment or start times."""
+        recruitment_hours = pool.get("recruitment_period_hours")
+        start_ts = pool.get("start_timestamp")
+        end_ts = pool.get("end_timestamp")
+        ts: Optional[int] = None
+        if recruitment_hours and start_ts:
+            # Approximate recruitment end as start time
+            ts = start_ts
+        elif start_ts:
+            ts = start_ts
+        elif end_ts:
+            ts = end_ts
+        if not ts:
+            return "soon"
+        dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+        return dt.strftime("%b %d, %H:%M UTC")
+
+    def _format_winner_handle(self, participant: Dict[str, Any]) -> str:
+        """Format a short handle for a winner, based on wallet address."""
+        wallet = participant.get("wallet_address") or ""
+        if not wallet or len(wallet) < 8:
+            return "winner"
+        return f"{wallet[:4]}...{wallet[-4:]}"
+
+    def generate_new_pool_tweet(self, pool: Dict[str, Any], stats: Dict[str, Any]) -> str:
+        """
+        Generate tweet text for a newly created/activated pool.
+        
+        Includes brief description, sign-up close time, potential prize, and stake required.
+        """
+        name = pool.get("name", "New Challenge")
+        description = pool.get("description") or ""
+        goal_metadata = pool.get("goal_metadata") or {}
+        if not description and isinstance(goal_metadata, dict):
+            # Try to extract a short description from goal metadata
+            description = goal_metadata.get("habit_name") or goal_metadata.get("habit_type") or ""
+        description_snippet = self._truncate_body(description, max_len=80)
+        stake = float(pool.get("stake_amount", 0.0))
+        participant_count = stats.get("participant_count", pool.get("participant_count", 0))
+        max_participants = pool.get("max_participants") or participant_count or 0
+        potential_prize = stake * float(max_participants or 0)
+        signup_deadline = self._format_signup_deadline(pool)
+        
+        base = (
+            f"🎉 New challenge: {name}\n"
+            f"{description_snippet}\n"
+            f"💰 Stake: {stake:.2f} SOL to join\n"
+            f"🏆 Potential pool: ~{potential_prize:.2f} SOL\n"
+            f"⏰ Sign-up closes: {signup_deadline}"
+        )
+        return self._truncate_body(base, max_len=220)
+
+    def generate_midway_tweet(self, pool: Dict[str, Any], stats: Dict[str, Any]) -> str:
+        """
+        Generate tweet text for a mid-challenge update.
+        
+        Highlights how many participants remain and time left.
+        """
+        name = pool.get("name", "Challenge")
+        active = stats.get("active_participants", 0)
+        total = stats.get("participant_count", 0)
+        days_left = stats.get("days_remaining", 0)
+        total_staked = stats.get("total_staked", float(pool.get("total_staked", 0.0)))
+        base = (
+            f"⚡ {name} is halfway through!\n"
+            f"👥 {active}/{total} still in the game\n"
+            f"💰 {total_staked:.2f} SOL on the line\n"
+            f"⏳ {days_left} days left"
+        )
+        return self._truncate_body(base, max_len=220)
+
+    def generate_completed_tweet(self, pool: Dict[str, Any], stats: Dict[str, Any], winners: List[Dict[str, Any]]) -> str:
+        """
+        Generate tweet text for the end of a challenge with podium-style winners.
+        """
+        name = pool.get("name", "Challenge")
+        total_staked = stats.get("total_staked", float(pool.get("total_staked", 0.0)))
+        emojis = ["🥇", "🥈", "🥉"]
+        podium_lines: List[str] = []
+        for i, participant in enumerate(winners[:3]):
+            handle = self._format_winner_handle(participant)
+            reward = participant.get("final_reward")
+            try:
+                reward_val = float(reward) if reward is not None else None
+            except (TypeError, ValueError):
+                reward_val = None
+            if reward_val is not None and reward_val > 0:
+                line = f"{emojis[i]} {handle} (+{reward_val:.2f} SOL)"
+            else:
+                line = f"{emojis[i]} {handle}"
+            podium_lines.append(line)
+        if not podium_lines:
+            podium_text = "🏅 Congrats to everyone who stuck it out!"
+        else:
+            podium_text = "\n".join(podium_lines)
+        base = (
+            f"🏁 {name} has finished!\n"
+            f"💰 Final pool: {total_staked:.2f} SOL\n"
+            f"{podium_text}"
+        )
+        return self._truncate_body(base, max_len=220)
+    
+    def _is_pool_at_midway(self, pool: Dict[str, Any]) -> bool:
+        """
+        Check if a pool is at or past its midway point.
+        
+        Midway is defined as: elapsed time >= 50% of total duration
+        But we only post once, so we check if we're between 45% and 75% of the way through.
+        
+        Args:
+            pool: Pool data from database
+            
+        Returns:
+            True if pool is at midway point (between 45% and 75% complete)
+        """
+        current_time = int(time.time())
+        start_time = pool.get("start_timestamp")
+        end_time = pool.get("end_timestamp")
+        
+        if not start_time or not end_time:
+            return False
+        
+        # Calculate total duration and elapsed time
+        total_duration = end_time - start_time
+        elapsed_time = current_time - start_time
+        
+        if total_duration <= 0 or elapsed_time < 0:
+            return False
+        
+        # Calculate percentage complete
+        percent_complete = (elapsed_time / total_duration) * 100
+        
+        # Midway point: between 45% and 75% complete
+        # This gives us a window to post the midway tweet
+        is_at_midway = 45 <= percent_complete <= 75
+        
+        if is_at_midway:
+            logger.debug(
+                f"Pool {pool.get('pool_id')} is at midway point: "
+                f"{percent_complete:.1f}% complete ({elapsed_time}/{total_duration} seconds)"
+            )
+        
+        return is_at_midway
+    
     async def get_pool_stats(self, pool: Dict[str, Any]) -> Dict[str, Any]:
         """
         Calculate interesting statistics for a pool.
@@ -250,6 +553,50 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
                 "days_elapsed": 0,
             }
     
+    async def _get_pool(self, pool_id: int) -> Optional[Dict[str, Any]]:
+        """Fetch a single pool from the database."""
+        try:
+            pools = await execute_query(
+                table="pools",
+                operation="select",
+                filters={"pool_id": pool_id},
+                limit=1,
+            )
+            return pools[0] if pools else None
+        except Exception as e:
+            logger.error(f"Error fetching pool {pool_id}: {e}", exc_info=True)
+            return None
+
+    async def _get_winners(self, pool_id: int) -> List[Dict[str, Any]]:
+        """
+        Fetch winners for a completed pool.
+        
+        We consider participants with status 'winner' or 'completed' as winners.
+        """
+        try:
+            participants = await execute_query(
+                table="participants",
+                operation="select",
+                filters={"pool_id": pool_id},
+            )
+            winners = [
+                p
+                for p in participants
+                if p.get("status") in ("winner", "completed")
+            ]
+            # Sort by final_reward if available
+            def reward_key(p: Dict[str, Any]) -> float:
+                val = p.get("final_reward")
+                try:
+                    return float(val) if val is not None else 0.0
+                except (TypeError, ValueError):
+                    return 0.0
+            winners.sort(key=reward_key, reverse=True)
+            return winners[:3]
+        except Exception as e:
+            logger.error(f"Error fetching winners for pool {pool_id}: {e}", exc_info=True)
+            return []
+
     async def post_pool_update(self, pool_id: int, pool: Optional[Dict[str, Any]] = None) -> Optional[str]:
         """
         Post an update about a specific pool to Twitter.
@@ -310,11 +657,32 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
                 tweet_text = tweet_text[:max_tweet_len - 3] + "..."
                 full_tweet = f"{tweet_text}\n\n🔗 Join: {blink_url}"
             
-            # Post to Twitter
+            # Post to Twitter - use new account system if available
             logger.info(f"Posting update for pool {pool_id} to Twitter")
-            response = self.twitter_client.create_tweet(text=full_tweet)
             
-            tweet_id = response.data.get("id") if response.data else None
+            # Try to use new account system first
+            account = self.get_next_available_account()
+            if account:
+                try:
+                    response = account.client.create_tweet(text=full_tweet)
+                    # Update rate limit tracking
+                    rate_limit_info = self._extract_rate_limit_headers(response)
+                    if rate_limit_info['remaining'] is not None:
+                        account.rate_limit_remaining = rate_limit_info['remaining']
+                except tweepy.Unauthorized:
+                    logger.error(
+                        f"Twitter account {account.account_id} authentication failed (401 Unauthorized). "
+                        f"Check credentials in agent/.env - they may be invalid or expired."
+                    )
+                    return None
+            elif self.twitter_client:
+                # Fallback to old client (backward compatibility)
+                response = self.twitter_client.create_tweet(text=full_tweet)
+            else:
+                logger.error("No Twitter client available")
+                return None
+            
+            tweet_id = response.data.get("id") if response and response.data else None
             
             if tweet_id:
                 self.last_post_time[pool_id] = time.time()
@@ -324,6 +692,12 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
                 logger.warning(f"Tweet posted but no ID returned for pool {pool_id}")
             return None
         
+        except tweepy.Unauthorized as e:
+            logger.error(
+                f"Twitter authentication failed (401 Unauthorized) for pool {pool_id}. "
+                f"Check Twitter credentials in agent/.env - they may be invalid, expired, or the app permissions may have changed."
+            )
+            return None
         except tweepy.TooManyRequests:
             logger.warning("Twitter rate limit reached, skipping post")
             return None
@@ -331,14 +705,370 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
             logger.error(f"Error posting to Twitter: {e}", exc_info=True)
             return None
     
+    async def post_event_update(
+        self,
+        event_type: SocialEventType,
+        pool_id: int,
+    ) -> Optional[str]:
+        """
+        Queue a tweet for a specific social event (new, midway, completed).
+        
+        This is the main entry point for event-driven tweets.
+        Returns immediately after queuing - doesn't block on actual posting.
+        """
+        try:
+            if not self.twitter_enabled or not self.twitter_client:
+                logger.info("Twitter not configured, skipping social event post")
+                return None
+            
+            key = (pool_id, event_type)
+            last = self.last_event_post_time.get(key, 0.0)
+            # Reuse post_interval for event-level spacing
+            if time.time() - last < self.post_interval:
+                logger.debug(f"Skipping event {event_type} for pool {pool_id} (too recent)")
+                return None
+            
+            # Validate pool before queuing
+            pool = await self._get_pool(pool_id)
+            if not pool:
+                logger.warning(f"Pool {pool_id} not found for event {event_type}")
+                return None
+            
+            status = pool.get("status")
+            
+            # Skip immediate start pools for POOL_CREATED events
+            if event_type is SocialEventType.POOL_CREATED:
+                recruitment_hours = pool.get("recruitment_period_hours", 24)
+                scheduled_start = pool.get("scheduled_start_time")
+                # Immediate start pools have recruitment_period_hours == 0 or no scheduled_start_time
+                if recruitment_hours == 0 or scheduled_start is None:
+                    logger.debug(
+                        f"Skipping POOL_CREATED tweet for pool {pool_id} "
+                        f"(immediate start pool - recruitment_hours={recruitment_hours}, "
+                        f"scheduled_start={scheduled_start})"
+                    )
+                    return None
+                if status not in ("pending", "active"):
+                    logger.debug(f"Skipping event {event_type} for pool {pool_id} (status={status})")
+                    return None
+            elif event_type is SocialEventType.POOL_MIDWAY:
+                if status not in ("pending", "active"):
+                    logger.debug(f"Skipping event {event_type} for pool {pool_id} (status={status})")
+                    return None
+            elif event_type is SocialEventType.POOL_COMPLETED:
+                if status not in ("completed", "ended", "finished"):
+                    logger.debug(f"Skipping completed event for pool {pool_id} (status={status})")
+                    return None
+            
+            # Queue the tweet task (non-blocking)
+            task = TweetTask(
+                event_type=event_type,
+                pool_id=pool_id,
+                created_at=time.time(),
+                retry_count=0
+            )
+            await self.tweet_queue.put(task)
+            logger.info(f"Queued {event_type.value} tweet for pool {pool_id} (queue size: {self.tweet_queue.qsize()})")
+            
+            # Return a placeholder - actual tweet ID will be logged by worker
+            return "queued"
+            
+        except Exception as e:
+            logger.error(f"Error queuing event update for pool {pool_id}: {e}", exc_info=True)
+            return None
+    
+    async def _tweet_queue_worker(self):
+        """
+        Background worker that processes the tweet queue.
+        Handles rate limits, retries, and exponential backoff.
+        """
+        if self.queue_worker_running:
+            return
+        self.queue_worker_running = True
+        logger.info("Tweet queue worker started")
+        
+        while True:
+            try:
+                # Check if we're rate limited
+                current_time = time.time()
+                if self.rate_limit_until and current_time < self.rate_limit_until:
+                    wait_time = self.rate_limit_until - current_time
+                    logger.debug(f"Rate limited, waiting {wait_time:.0f} seconds")
+                    await asyncio.sleep(min(wait_time, 60))  # Check every minute max
+                    continue
+                
+                # Get next task (with timeout to check rate limits periodically)
+                try:
+                    task: TweetTask = await asyncio.wait_for(
+                        self.tweet_queue.get(), 
+                        timeout=60.0
+                    )
+                except asyncio.TimeoutError:
+                    continue
+                
+                # Check if task should be retried now
+                if task.next_retry_at and current_time < task.next_retry_at:
+                    # Put it back and wait
+                    await self.tweet_queue.put(task)
+                    await asyncio.sleep(min(task.next_retry_at - current_time, 60))
+                    continue
+                
+                # Process the tweet
+                tweet_id = await self._process_tweet_task(task)
+                
+                if tweet_id:
+                    # Success - mark as posted
+                    key = (task.pool_id, task.event_type)
+                    self.last_event_post_time[key] = time.time()
+                    logger.info(f"Successfully posted tweet {tweet_id} for pool {task.pool_id} ({task.event_type.value})")
+                else:
+                    # Failed - retry or give up
+                    if task.retry_count < task.max_retries:
+                        task.retry_count += 1
+                        delay = self.retry_delays[min(task.retry_count - 1, len(self.retry_delays) - 1)]
+                        task.next_retry_at = current_time + delay
+                        await self.tweet_queue.put(task)
+                        logger.warning(
+                            f"Tweet failed for pool {task.pool_id}, retrying in {delay}s "
+                            f"(attempt {task.retry_count}/{task.max_retries})"
+                        )
+                    else:
+                        logger.error(
+                            f"Tweet failed for pool {task.pool_id} after {task.max_retries} retries, giving up"
+                        )
+                
+                # Mark task as done
+                self.tweet_queue.task_done()
+                
+            except Exception as e:
+                logger.error(f"Error in tweet queue worker: {e}", exc_info=True)
+                await asyncio.sleep(60)  # Wait before retrying
+    
+    def _extract_rate_limit_headers(self, response) -> Dict[str, Any]:
+        """Extract rate limit information from Twitter API response headers."""
+        rate_limit_info = {
+            'remaining': None,
+            'limit': None,
+            'reset_time': None
+        }
+        
+        try:
+            # Tweepy v4+ stores response in response attribute
+            if hasattr(response, 'response') and response.response:
+                headers = getattr(response.response, 'headers', {})
+            elif hasattr(response, 'headers'):
+                headers = response.headers
+            else:
+                return rate_limit_info
+            
+            # Extract rate limit headers
+            remaining = headers.get('x-rate-limit-remaining')
+            limit = headers.get('x-rate-limit-limit')
+            reset = headers.get('x-rate-limit-reset')
+            
+            if remaining is not None:
+                try:
+                    rate_limit_info['remaining'] = int(remaining)
+                except (ValueError, TypeError):
+                    pass
+            
+            if limit is not None:
+                try:
+                    rate_limit_info['limit'] = int(limit)
+                except (ValueError, TypeError):
+                    pass
+            
+            if reset is not None:
+                try:
+                    rate_limit_info['reset_time'] = float(reset)
+                except (ValueError, TypeError):
+                    pass
+        except Exception as e:
+            logger.debug(f"Error extracting rate limit headers: {e}")
+        
+        return rate_limit_info
+    
+    async def _process_tweet_task(self, task: TweetTask) -> Optional[str]:
+        """Process a single tweet task - actually posts to Twitter using account rotation."""
+        # Get available account
+        account = self.get_next_available_account()
+        if not account:
+            # All accounts rate limited - find earliest reset time
+            reset_times = [
+                a.rate_limit_reset_time for a in self.twitter_accounts
+                if a.rate_limit_reset_time
+            ]
+            if reset_times:
+                min_reset = min(reset_times)
+                self.rate_limit_until = min_reset
+                wait_time = min_reset - time.time()
+                logger.warning(
+                    f"All Twitter accounts rate limited. "
+                    f"Will retry after {wait_time:.0f} seconds "
+                    f"(Account 1: {self.twitter_accounts[0].rate_limit_remaining if self.twitter_accounts else 0} remaining, "
+                    f"Account 2: {self.twitter_accounts[1].rate_limit_remaining if len(self.twitter_accounts) > 1 else 'N/A'} remaining)"
+                )
+            else:
+                # Fallback to 15 minutes
+                self.rate_limit_until = time.time() + 900
+                logger.warning("All Twitter accounts rate limited. Will retry after 900 seconds")
+            return None
+        
+        try:
+            pool = await self._get_pool(task.pool_id)
+            if not pool:
+                logger.warning(f"Pool {task.pool_id} not found, skipping tweet")
+                return None
+            
+            stats = await self.get_pool_stats(pool)
+            
+            # Generate tweet content
+            if task.event_type is SocialEventType.POOL_CREATED:
+                body = self.generate_new_pool_tweet(pool, stats)
+            elif task.event_type is SocialEventType.POOL_MIDWAY:
+                body = self.generate_midway_tweet(pool, stats)
+            elif task.event_type is SocialEventType.POOL_COMPLETED:
+                winners = await self._get_winners(task.pool_id)
+                body = self.generate_completed_tweet(pool, stats, winners)
+            else:
+                logger.warning(f"Unknown social event type: {task.event_type}")
+                return None
+            
+            pool_pubkey = pool.get("pool_pubkey")
+            blink_url = self.create_blink(task.pool_id, pool_pubkey)
+            app_url = self.create_app_link(task.pool_id)
+            full_tweet = self.build_full_tweet(body, blink_url, app_url)
+            
+            logger.info(
+                f"Posting {task.event_type.value} update for pool {task.pool_id} "
+                f"using Twitter account {account.account_id} "
+                f"(remaining: {account.rate_limit_remaining}/{account.rate_limit_limit})"
+            )
+            
+            # Post using the selected account
+            response = account.client.create_tweet(text=full_tweet)
+            
+            # Extract and update rate limit info from response headers
+            rate_limit_info = self._extract_rate_limit_headers(response)
+            if rate_limit_info['remaining'] is not None:
+                account.rate_limit_remaining = rate_limit_info['remaining']
+                logger.debug(
+                    f"Account {account.account_id} rate limit: "
+                    f"{account.rate_limit_remaining}/{rate_limit_info.get('limit', account.rate_limit_limit)} remaining"
+                )
+            else:
+                # Estimate - decrement by 1
+                account.rate_limit_remaining = max(0, account.rate_limit_remaining - 1)
+            
+            if rate_limit_info['limit'] is not None:
+                account.rate_limit_limit = rate_limit_info['limit']
+            
+            if rate_limit_info['reset_time'] is not None:
+                account.rate_limit_reset_time = rate_limit_info['reset_time']
+                # Clear rate_limit_until if we have a reset time
+                if account.rate_limit_remaining > 0:
+                    account.rate_limit_until = None
+            
+            tweet_id = response.data.get("id") if response and response.data else None
+            
+            if tweet_id:
+                logger.info(
+                    f"Successfully posted tweet {tweet_id} for pool {task.pool_id} "
+                    f"using account {account.account_id} "
+                    f"(remaining: {account.rate_limit_remaining}/{account.rate_limit_limit})"
+                )
+                return tweet_id
+            else:
+                logger.warning(f"Tweet posted but no ID returned for pool {task.pool_id}")
+                return None
+                
+        except tweepy.Unauthorized as e:
+            # Invalid credentials - don't retry, mark account as invalid
+            logger.error(
+                f"Twitter account {account.account_id} authentication failed (401 Unauthorized). "
+                f"Check credentials in agent/.env - account may need to be re-authenticated."
+            )
+            account.rate_limit_until = time.time() + 3600  # Don't retry for 1 hour
+            account.rate_limit_remaining = 0
+            return None
+        except tweepy.TooManyRequests as e:
+            # This account is rate limited - extract reset time from headers
+            reset_time = time.time() + 900  # Default 15 minutes
+            
+            # Try to extract from exception
+            if hasattr(e, 'response') and e.response:
+                headers = getattr(e.response, 'headers', {})
+                reset_header = headers.get('x-rate-limit-reset')
+                if reset_header:
+                    try:
+                        reset_time = float(reset_header)
+                    except (ValueError, TypeError):
+                        pass
+            
+            account.rate_limit_until = reset_time
+            account.rate_limit_remaining = 0
+            
+            # Also try to get remaining/limit from headers
+            if hasattr(e, 'response') and e.response:
+                headers = getattr(e.response, 'headers', {})
+                remaining = headers.get('x-rate-limit-remaining')
+                limit = headers.get('x-rate-limit-limit')
+                if remaining is not None:
+                    try:
+                        account.rate_limit_remaining = int(remaining)
+                    except (ValueError, TypeError):
+                        pass
+                if limit is not None:
+                    try:
+                        account.rate_limit_limit = int(limit)
+                    except (ValueError, TypeError):
+                        pass
+                if reset_header:
+                    try:
+                        account.rate_limit_reset_time = float(reset_header)
+                    except (ValueError, TypeError):
+                        pass
+            
+            wait_time = reset_time - time.time()
+            logger.warning(
+                f"Twitter account {account.account_id} rate limited. "
+                f"Will retry after {wait_time:.0f} seconds "
+                f"(reset at: {datetime.fromtimestamp(reset_time, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')})"
+            )
+            
+            # Try next account if available (only once to prevent infinite loop)
+            if task.retry_count < 1 and len(self.twitter_accounts) > 1:
+                next_account = self.get_next_available_account()
+                if next_account and next_account != account:
+                    logger.info(f"Retrying with account {next_account.account_id}")
+                    task.retry_count += 1
+                    return await self._process_tweet_task(task)
+            
+            return None
+        except Exception as e:
+            logger.error(f"Error processing tweet task for pool {task.pool_id}: {e}", exc_info=True)
+            return None
+    
+    async def start_queue_worker(self):
+        """Start the tweet queue worker (called from main agent)."""
+        if self.twitter_enabled and not self.queue_worker_running:
+            await self._tweet_queue_worker()
+    
     async def post_updates(self):
         """
         Post pool updates to Twitter periodically.
         
         Runs continuously, posting updates about active pools.
-        Posts are rate-limited per pool to avoid spam.
+        Uses the queue system for non-blocking posts with automatic retries.
         """
         logger.info("Starting social media update loop...")
+        
+        # Start queue worker if Twitter is enabled
+        if self.twitter_enabled:
+            asyncio.create_task(self._tweet_queue_worker())
+            logger.info("Tweet queue worker started")
+        else:
+            logger.info("Twitter not enabled, queue worker not started")
         
         while True:
             try:
@@ -361,18 +1091,37 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
                 
                 logger.info(f"Found {len(pools)} active pools to potentially post about")
                 
-                # Post updates for pools that haven't been posted recently
-                posted_count = 0
+                # Queue updates for pools that are actually at the midway point
+                queued_count = 0
                 for pool in pools:
                     pool_id = pool.get("pool_id")
-                    if pool_id:
-                        tweet_id = await self.post_pool_update(pool_id, pool)
-                        if tweet_id:
-                            posted_count += 1
-                            # Small delay between posts to avoid rate limits
-                            await asyncio.sleep(60)  # 1 minute between posts
+                    if not pool_id:
+                        continue
+                    
+                    # Check if we've posted recently (rate limiting)
+                    key = (pool_id, SocialEventType.POOL_MIDWAY)
+                    last = self.last_event_post_time.get(key, 0.0)
+                    if time.time() - last < self.post_interval:
+                        continue  # Skip if posted recently
+                    
+                    # Check if pool is actually at the midway point
+                    if not self._is_pool_at_midway(pool):
+                        continue  # Skip if not at midway point
+                    
+                    # Queue a midway update (non-blocking)
+                    result = await self.post_event_update(
+                        SocialEventType.POOL_MIDWAY,
+                        pool_id
+                    )
+                    if result:
+                        queued_count += 1
+                        # Small delay between queuing to avoid overwhelming queue
+                        await asyncio.sleep(5)  # 5 seconds between queuing
                 
-                logger.info(f"Posted {posted_count} updates. Sleeping for 1 hour...")
+                if queued_count > 0:
+                    logger.info(f"Queued {queued_count} pool updates (queue size: {self.tweet_queue.qsize()})")
+                else:
+                    logger.debug("No pool updates queued (all pools posted recently)")
                 
                 # Sleep for 1 hour before next check
                 await asyncio.sleep(3600)

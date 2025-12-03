@@ -86,3 +86,4 @@ pub fn handler(ctx: Context<JoinPool>) -> Result<()> {
     Ok(())
 }
 
+

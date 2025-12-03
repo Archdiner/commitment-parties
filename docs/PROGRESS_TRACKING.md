@@ -184,3 +184,4 @@ WHERE pool_id = POOL_ID AND wallet_address = 'WALLET';
 - [ ] Database has verification records
 - [ ] Frontend is fetching latest data (check network tab)
 
+

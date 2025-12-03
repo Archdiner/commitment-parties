@@ -15,7 +15,7 @@ agent_dir = Path(__file__).parent
 src_dir = agent_dir / "src"
 sys.path.insert(0, str(src_dir))
 
-from social import SocialManager
+from social import SocialManager, SocialEventType
 from config import settings
 
 logging.basicConfig(
@@ -59,7 +59,7 @@ async def test_social_agent():
     print(f"   Blink URL: {blink_url}")
     
     # Test tweet generation (without actually posting)
-    print("\n📝 Testing tweet generation...")
+    print("\n📝 Testing generic tweet generation...")
     test_pool = {
         "pool_id": pool_id,
         "name": "Daily DCA Challenge",
@@ -82,13 +82,35 @@ async def test_social_agent():
     }
     
     tweet = social.generate_tweet_content(test_pool, test_stats)
-    print(f"   Generated tweet ({len(tweet)} chars):")
+    print(f"   Generic tweet ({len(tweet)} chars):")
     print(f"   {tweet}")
     
-    # Test full tweet with Blink
-    full_tweet = f"{tweet}\n\n🔗 Join: {blink_url}"
-    print(f"\n   Full tweet with Blink ({len(full_tweet)} chars):")
-    print(f"   {full_tweet}")
+    # Test new-pool event tweet body
+    print("\n🆕 Testing new-pool event tweet...")
+    new_body = social.generate_new_pool_tweet(test_pool, test_stats)
+    app_url = social.create_app_link(pool_id)
+    full_new = social.build_full_tweet(new_body, blink_url, app_url)
+    print(f"   New-pool tweet ({len(full_new)} chars):")
+    print(f"   {full_new}")
+    
+    # Test midway tweet body
+    print("\n⏳ Testing midway event tweet...")
+    midway_body = social.generate_midway_tweet(test_pool, test_stats)
+    full_midway = social.build_full_tweet(midway_body, blink_url, app_url)
+    print(f"   Midway tweet ({len(full_midway)} chars):")
+    print(f"   {full_midway}")
+    
+    # Test completed tweet body
+    print("\n🏁 Testing completed event tweet...")
+    winners = [
+        {"wallet_address": "WinnerWallet111111111111111111111111111111", "final_reward": 3.0},
+        {"wallet_address": "WinnerWallet222222222222222222222222222222", "final_reward": 1.5},
+        {"wallet_address": "WinnerWallet333333333333333333333333333333", "final_reward": 1.0},
+    ]
+    completed_body = social.generate_completed_tweet(test_pool, test_stats, winners)
+    full_completed = social.build_full_tweet(completed_body, blink_url, app_url)
+    print(f"   Completed tweet ({len(full_completed)} chars):")
+    print(f"   {full_completed}")
     
     # Ask if user wants to post a test tweet
     print("\n" + "=" * 50)

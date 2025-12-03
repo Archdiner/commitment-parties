@@ -98,3 +98,4 @@ After setup:
 4. Should redirect to GitHub authorization
 5. After authorizing, should redirect back and show verified status
 
+

@@ -85,3 +85,4 @@ echo "🔍 Verify on Solscan:"
 echo "   https://solscan.io/account/$PROGRAM_ID?cluster=$(echo $CLUSTER | grep -o 'devnet\|mainnet')"
 echo ""
 
+

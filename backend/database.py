@@ -105,3 +105,4 @@ async def execute_query(
         logger.error(f"Database query error: {e}", exc_info=True)
         raise
 
+

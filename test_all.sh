@@ -132,3 +132,4 @@ echo "  3. Setup Supabase and test database"
 echo "  4. Deploy smart contracts to devnet"
 echo ""
 
+

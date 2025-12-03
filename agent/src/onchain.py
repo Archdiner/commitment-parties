@@ -402,3 +402,4 @@ class OnChainClient:
             logger.error(f"Error getting vault balance: {e}")
             return 0
 
+

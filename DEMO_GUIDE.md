@@ -222,3 +222,4 @@ uvicorn main:app --reload
 3. **Real Testing**: Test with multiple participants
 4. **Distribution**: Wait for pool to end, trigger distribution
 
+

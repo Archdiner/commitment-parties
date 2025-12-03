@@ -372,12 +372,38 @@ class Monitor:
             logger.error(f"Error verifying GitHub commits: {e}", exc_info=True)
             return False
 
-    async def verify_screentime(self, pool_id: int, wallet: str, day: int) -> bool:
+    async def verify_screentime(self, pool_id: int, wallet: str, day: int, pool: Optional[Dict[str, Any]] = None) -> bool:
         """
         Verify that a participant submitted a successful screen-time check-in
         for the specified day with a non-empty screenshot URL.
+        
+        IMPORTANT: Only check-ins submitted BEFORE the day ends are valid.
+        The check-in timestamp must be before challenge_day_end.
         """
         try:
+            # Get pool info if not provided (for day boundary calculation)
+            if pool is None:
+                pools = await execute_query(
+                    table="pools",
+                    operation="select",
+                    filters={"pool_id": pool_id},
+                    limit=1
+                )
+                if not pools:
+                    logger.warning(f"Pool {pool_id} not found for screen-time verification")
+                    return False
+                pool = pools[0]
+            
+            start_timestamp = pool.get("scheduled_start_time") or pool.get("start_timestamp")
+            if not start_timestamp:
+                logger.warning(f"Pool {pool_id} missing start_timestamp")
+                return False
+            
+            # Calculate day boundaries
+            start_datetime = datetime.fromtimestamp(start_timestamp, tz=timezone.utc)
+            challenge_day_start = start_datetime + timedelta(days=day - 1)
+            challenge_day_end = challenge_day_start + timedelta(days=1)
+            
             results = await execute_query(
                 table="checkins",
                 operation="select",
@@ -402,16 +428,50 @@ class Monitor:
 
             checkin = results[0]
             screenshot_url = (checkin.get("screenshot_url") or "").strip()
+            
+            # Verify check-in was submitted before day ended
+            checkin_timestamp = checkin.get("timestamp")
+            if checkin_timestamp:
+                # Parse timestamp (could be string or datetime)
+                if isinstance(checkin_timestamp, str):
+                    try:
+                        checkin_time = datetime.fromisoformat(checkin_timestamp.replace('Z', '+00:00'))
+                        if checkin_time.tzinfo is None:
+                            checkin_time = checkin_time.replace(tzinfo=timezone.utc)
+                    except (ValueError, AttributeError):
+                        logger.warning(f"Could not parse check-in timestamp: {checkin_timestamp}")
+                        checkin_time = None
+                elif isinstance(checkin_timestamp, datetime):
+                    checkin_time = checkin_timestamp
+                    if checkin_time.tzinfo is None:
+                        checkin_time = checkin_time.replace(tzinfo=timezone.utc)
+                else:
+                    checkin_time = None
+                
+                if checkin_time and checkin_time >= challenge_day_end:
+                    # Check-in was submitted after day ended - invalid
+                    logger.warning(
+                        "Screen-time verification: check-in submitted after day ended "
+                        "pool=%s, wallet=%s, day=%s, checkin_time=%s, day_end=%s",
+                        pool_id,
+                        wallet,
+                        day,
+                        checkin_time.isoformat(),
+                        challenge_day_end.isoformat(),
+                    )
+                    return False
+            
             passed = bool(screenshot_url)
 
             logger.info(
                 "Screen-time verification: pool=%s, wallet=%s, day=%s, "
-                "success=%s, screenshot_url_present=%s",
+                "success=%s, screenshot_url_present=%s, valid_timing=%s",
                 pool_id,
                 wallet,
                 day,
                 checkin.get("success"),
                 bool(screenshot_url),
+                checkin_time < challenge_day_end if checkin_time else "unknown",
             )
 
             return passed
@@ -537,19 +597,46 @@ class Monitor:
             logger.error(f"Error checking HODL balance: {e}", exc_info=True)
             return False
     
-    async def verify_lifestyle_participant(self, pool_id: int, wallet: str, day: int) -> bool:
+    async def verify_lifestyle_participant(self, pool_id: int, wallet: str, day: int, pool: Optional[Dict[str, Any]] = None) -> bool:
         """
         Check if participant submitted check-in for the specified day.
+        
+        IMPORTANT: Only check-ins submitted BEFORE the day ends are valid.
+        The check-in timestamp must be before challenge_day_end.
         
         Args:
             pool_id: Pool ID
             wallet: Participant wallet address
             day: Day number to check
+            pool: Optional pool dictionary (will fetch if not provided)
         
         Returns:
-            True if check-in exists and is successful, False otherwise
+            True if check-in exists, is successful, and was submitted before day ended
         """
         try:
+            # Get pool info if not provided (for day boundary calculation)
+            if pool is None:
+                pools = await execute_query(
+                    table="pools",
+                    operation="select",
+                    filters={"pool_id": pool_id},
+                    limit=1
+                )
+                if not pools:
+                    logger.warning(f"Pool {pool_id} not found for lifestyle verification")
+                    return False
+                pool = pools[0]
+            
+            start_timestamp = pool.get("scheduled_start_time") or pool.get("start_timestamp")
+            if not start_timestamp:
+                logger.warning(f"Pool {pool_id} missing start_timestamp")
+                return False
+            
+            # Calculate day boundaries
+            start_datetime = datetime.fromtimestamp(start_timestamp, tz=timezone.utc)
+            challenge_day_start = start_datetime + timedelta(days=day - 1)
+            challenge_day_end = challenge_day_start + timedelta(days=1)
+            
             # Query database for check-in
             results = await execute_query(
                 table="checkins",
@@ -572,9 +659,37 @@ class Monitor:
             checkin = results[0]
             success = checkin.get("success", False)
             
+            # Verify check-in was submitted before day ended
+            checkin_timestamp = checkin.get("timestamp")
+            if checkin_timestamp:
+                # Parse timestamp (could be string or datetime)
+                if isinstance(checkin_timestamp, str):
+                    try:
+                        checkin_time = datetime.fromisoformat(checkin_timestamp.replace('Z', '+00:00'))
+                        if checkin_time.tzinfo is None:
+                            checkin_time = checkin_time.replace(tzinfo=timezone.utc)
+                    except (ValueError, AttributeError):
+                        logger.warning(f"Could not parse check-in timestamp: {checkin_timestamp}")
+                        checkin_time = None
+                elif isinstance(checkin_timestamp, datetime):
+                    checkin_time = checkin_timestamp
+                    if checkin_time.tzinfo is None:
+                        checkin_time = checkin_time.replace(tzinfo=timezone.utc)
+                else:
+                    checkin_time = None
+                
+                if checkin_time and checkin_time >= challenge_day_end:
+                    # Check-in was submitted after day ended - invalid
+                    logger.warning(
+                        f"Lifestyle verification: check-in submitted after day ended "
+                        f"pool={pool_id}, wallet={wallet}, day={day}, "
+                        f"checkin_time={checkin_time.isoformat()}, day_end={challenge_day_end.isoformat()}"
+                    )
+                    return False
+            
             logger.info(
                 f"Lifestyle verification: pool={pool_id}, wallet={wallet}, "
-                f"day={day}, success={success}"
+                f"day={day}, success={success}, valid_timing={checkin_time < challenge_day_end if checkin_time else 'unknown'}"
             )
             
             return success
@@ -898,9 +1013,13 @@ class Monitor:
         Monitor lifestyle habit pools.
         
         Checks for daily check-ins from participants.
-        Runs every 5 minutes.
+        Runs daily, with a grace period after each day ends for verification processing.
+        
+        IMPORTANT: Users must submit their proof BEFORE the day ends. The grace period
+        is ONLY for the agent to process and verify submissions that were made during
+        the day. Submissions made during the grace period are NOT accepted.
         """
-        logger.info("Starting lifestyle pool monitoring...")
+        logger.info("Starting lifestyle pool monitoring (daily checks with grace period)...")
         
         while True:
             try:
@@ -926,28 +1045,33 @@ class Monitor:
                                 logger.warning(f"Invalid pool data: {pool}")
                                 continue
                             
-                            # Check grace period - don't verify until grace period has passed
+                            # Check initial grace period - don't verify until pool grace period has passed
                             grace_period_minutes = pool.get("grace_period_minutes")
                             if grace_period_minutes is None:
                                 grace_period_minutes = 5  # Default 5 minutes if not set
                             
                             current_time = int(time.time())
-                            grace_period_end = start_timestamp + (grace_period_minutes * 60)
-                            time_until_grace_end = grace_period_end - current_time
                             
-                            logger.debug(
-                                f"Pool {pool_id} grace period check: "
-                                f"start_timestamp={start_timestamp}, "
-                                f"grace_period_minutes={grace_period_minutes}, "
-                                f"grace_period_end={grace_period_end}, "
-                                f"current_time={current_time}, "
-                                f"time_until_grace_end={time_until_grace_end}s"
-                            )
+                            # First check if pool has started
+                            if current_time < start_timestamp:
+                                logger.debug(
+                                    f"Pool {pool_id} hasn't started yet. "
+                                    f"Start: {datetime.fromtimestamp(start_timestamp, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}, "
+                                    f"Current: {datetime.fromtimestamp(current_time, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}"
+                                )
+                                continue
                             
-                            if current_time < grace_period_end:
+                            # Now check initial grace period (only applies AFTER pool starts)
+                            initial_grace_period_end = start_timestamp + (grace_period_minutes * 60)
+                            
+                            if current_time < initial_grace_period_end:
+                                # Calculate actual time remaining
+                                time_remaining = initial_grace_period_end - current_time
+                                minutes_remaining = time_remaining / 60
+                                
                                 logger.info(
-                                    f"Pool {pool_id} still in grace period "
-                                    f"({grace_period_minutes} minutes, {time_until_grace_end}s remaining). "
+                                    f"Pool {pool_id} still in initial grace period "
+                                    f"({minutes_remaining:.1f} minutes remaining). "
                                     f"Skipping verification until grace period ends."
                                 )
                                 continue
@@ -958,6 +1082,68 @@ class Monitor:
                                 logger.info(f"Pool {pool_id} hasn't started yet (scheduled: {scheduled_start}, start: {start_timestamp})")
                                 continue
                             
+                            # Calculate day boundaries and grace period
+                            start_datetime = datetime.fromtimestamp(start_timestamp, tz=timezone.utc)
+                            challenge_day_start = start_datetime + timedelta(days=current_day - 1)
+                            challenge_day_end = challenge_day_start + timedelta(days=1)
+                            current_datetime = datetime.now(timezone.utc)
+                            
+                            # Grace period after day ends (for verification processing only)
+                            # Users must submit BEFORE day ends - grace period is NOT for new submissions
+                            grace_period_hours = getattr(settings, "LIFESTYLE_GRACE_PERIOD_HOURS", 2)
+                            grace_period_end = challenge_day_end + timedelta(hours=grace_period_hours)
+                            
+                            # Determine if we should check this day now
+                            day_has_ended = current_datetime >= challenge_day_end
+                            grace_period_active = challenge_day_end <= current_datetime < grace_period_end
+                            grace_period_passed = current_datetime >= grace_period_end
+                            
+                            # Only check if:
+                            # 1. Day has ended AND we're in the grace period (to catch late submissions), OR
+                            # 2. Grace period has passed (final verification for the day)
+                            if not day_has_ended:
+                                # Day is still active - skip check (will check after day ends)
+                                logger.debug(
+                                    f"Pool {pool_id} Day {current_day} still active. "
+                                    f"Will check after day ends (at {challenge_day_end.isoformat()}) "
+                                    f"with {grace_period_hours}h grace period."
+                                )
+                                continue
+                            
+                            if grace_period_active:
+                                # Day ended but grace period is active - process/verify submissions made during the day
+                                # NOTE: Only submissions made BEFORE day_end are valid. Grace period is for processing only.
+                                # During grace period, we check more frequently (every 30 minutes)
+                                # to ensure we process submissions made right before the deadline
+                                hours_into_grace = (current_datetime - challenge_day_end).total_seconds() / 3600
+                                minutes_into_grace = (current_datetime - challenge_day_end).total_seconds() / 60
+                                
+                                # Check every 30 minutes during grace period, or in last 5 minutes
+                                if int(minutes_into_grace) % 30 != 0 and minutes_into_grace < (grace_period_hours * 60 - 5):
+                                    # Not a 30-minute mark yet, and not near end of grace period
+                                    logger.debug(
+                                        f"Pool {pool_id} Day {current_day} in grace period "
+                                        f"({minutes_into_grace:.0f}min in). "
+                                        f"Will check at 30-minute intervals or near grace period end."
+                                    )
+                                    continue
+                                
+                                logger.info(
+                                    f"Pool {pool_id} Day {current_day} ended, grace period active "
+                                    f"({hours_into_grace:.1f}h into {grace_period_hours}h grace period). "
+                                    f"Processing verifications for submissions made during the day..."
+                                )
+                            elif grace_period_passed:
+                                # Grace period passed - final verification
+                                # Mark failures for participants who didn't submit before challenge_day_end
+                                logger.info(
+                                    f"Pool {pool_id} Day {current_day} grace period ended. "
+                                    f"Performing final verification (only submissions before {challenge_day_end.isoformat()} count)..."
+                                )
+                            else:
+                                # Shouldn't happen, but skip if somehow we're before day end
+                                continue
+                            
                             # Get all active participants
                             participants = await self.get_pool_participants(pool_id)
                             
@@ -965,8 +1151,16 @@ class Monitor:
                                 logger.info(f"Pool {pool_id} has no active participants")
                                 continue
                             
+                            # Determine check type for logging
+                            if grace_period_passed:
+                                check_type = "FINAL (grace period ended)"
+                            elif grace_period_active:
+                                check_type = "GRACE PERIOD (checking for late submissions)"
+                            else:
+                                check_type = "UNKNOWN"
+                            
                             logger.info(
-                                f"Verifying {len(participants)} participants for pool {pool_id}, day {current_day}"
+                                f"Verifying {len(participants)} participants for pool {pool_id}, day {current_day} ({check_type})"
                             )
                             
                             habit_type = goal_metadata.get("habit_type")
@@ -984,21 +1178,31 @@ class Monitor:
                                     )
                                 elif habit_type == "screen_time":
                                     passed = await self.verify_screentime(
-                                        pool_id, wallet, current_day
+                                        pool_id, wallet, current_day, pool
                                     )
                                 else:
                                     # Fallback to generic lifestyle check-in verification
                                     passed = await self.verify_lifestyle_participant(
-                                        pool_id, wallet, current_day
+                                        pool_id, wallet, current_day, pool
                                     )
                                 
-                                # Handle pending status (None) - day still active, don't mark as failed yet
+                                # Handle pending status (None) - only during grace period
+                                # If grace period has passed, we should have a definitive result
                                 if passed is None:
-                                    logger.debug(
-                                        f"Day {current_day} still active for pool={pool_id}, wallet={wallet}. "
-                                        f"Skipping verification storage (user still has time to complete requirement)."
-                                    )
-                                    continue  # Skip storing verification, user still has time
+                                    if grace_period_active:
+                                        # Still in grace period - user might submit late, keep checking
+                                        logger.debug(
+                                            f"Day {current_day} grace period active for pool={pool_id}, wallet={wallet}. "
+                                            f"No submission found yet, will check again before grace period ends."
+                                        )
+                                        continue  # Skip storing verification, still waiting for late submission
+                                    else:
+                                        # Grace period passed but no result - mark as failed
+                                        logger.info(
+                                            f"Day {current_day} grace period ended for pool={pool_id}, wallet={wallet}. "
+                                            f"No submission found - marking as failed."
+                                        )
+                                        passed = False  # Grace period ended, no submission = failed
                                 
                                 # Store verification in database (only if passed is True or False, not None)
                                 try:
@@ -1134,7 +1338,18 @@ class Monitor:
                             continue
                 
                 # Sleep for the configured interval before next check
-                await asyncio.sleep(settings.LIFESTYLE_CHECK_INTERVAL)
+                # During grace periods, we want to check more frequently, so we use a shorter interval
+                # when we're likely in a grace period. Otherwise, use the daily interval.
+                base_interval = settings.LIFESTYLE_CHECK_INTERVAL  # Daily (86400 seconds)
+                
+                # Check if any pools are in grace period - if so, use shorter interval
+                grace_period_hours = getattr(settings, "LIFESTYLE_GRACE_PERIOD_HOURS", 2)
+                grace_check_interval = min(1800, base_interval // 48)  # 30 minutes or daily/48, whichever is smaller
+                
+                # Use shorter interval to catch grace periods, but not too short
+                sleep_interval = grace_check_interval
+                
+                await asyncio.sleep(sleep_interval)
             
             except Exception as e:
                 logger.error(f"Error in lifestyle monitoring: {e}", exc_info=True)

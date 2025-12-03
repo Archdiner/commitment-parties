@@ -351,3 +351,4 @@ NEXT_PUBLIC_API_URL=https://your-backend.railway.app
 - Optimize queries with proper indexes
 - Consider read replicas for heavy read workloads
 
+

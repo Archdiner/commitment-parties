@@ -118,3 +118,4 @@ Handles OAuth callback, verifies account, stores GitHub username.
 
 The Gist method is still available at `POST /api/users/verify-github` for backwards compatibility, but OAuth is recommended for all new integrations.
 
+

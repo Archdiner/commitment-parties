@@ -59,3 +59,4 @@ INSERT INTO pool_events (pool_id, event_type, participant_wallet, metadata) VALU
 (1234567890, 'participant_joined', '22222222222222222222222222222222', '{"stake": 0.5}'::jsonb),
 (1234567890, 'checkin_submitted', '11111111111111111111111111111111', '{"day": 1, "success": true}'::jsonb);
 
+

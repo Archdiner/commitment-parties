@@ -248,3 +248,4 @@ async def generate_onchain_action(body: OnChainActionRequest) -> OnChainActionRe
             detail=f"Failed to generate on-chain action: {str(e)}"
         )
 
+

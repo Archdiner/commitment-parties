@@ -21,11 +21,45 @@ router = APIRouter()
     response_model=CheckInResponse,
     status_code=201,
     summary="Submit a check-in",
-    description="Submit a daily check-in for a lifestyle challenge pool",
+    description="Submit a daily check-in for a lifestyle challenge pool. Must be submitted before the day ends.",
 )
 async def submit_checkin(checkin_data: CheckInCreate) -> CheckInResponse:
-    """Submit a daily check-in."""
+    """Submit a daily check-in. Must be submitted before the challenge day ends."""
     try:
+        import time
+        from datetime import datetime, timezone, timedelta
+        
+        # Get pool information to validate timing
+        pools = await execute_query(
+            table="pools",
+            operation="select",
+            filters={"pool_id": checkin_data.pool_id},
+            limit=1
+        )
+        
+        if not pools:
+            raise HTTPException(status_code=404, detail="Pool not found")
+        
+        pool = pools[0]
+        start_timestamp = pool.get("scheduled_start_time") or pool.get("start_timestamp")
+        
+        if not start_timestamp:
+            raise HTTPException(status_code=400, detail="Pool start timestamp not found")
+        
+        # Calculate the end of the challenge day for the submitted day
+        start_datetime = datetime.fromtimestamp(start_timestamp, tz=timezone.utc)
+        challenge_day_start = start_datetime + timedelta(days=checkin_data.day - 1)
+        challenge_day_end = challenge_day_start + timedelta(days=1)
+        
+        # Check if the day has ended (no grace period for submissions)
+        current_time = datetime.now(timezone.utc)
+        if current_time >= challenge_day_end:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Day {checkin_data.day} has ended. Check-ins must be submitted before the day ends. "
+                       f"Day ended at {challenge_day_end.isoformat()} (UTC)."
+            )
+        
         # Convert to dict for database insertion
         checkin_dict = checkin_data.model_dump()
         

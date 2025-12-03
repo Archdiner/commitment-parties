@@ -18,3 +18,4 @@ pkill -f "python.*main.py" 2>/dev/null && echo "   ✅ Agent stopped" || echo " 
 echo ""
 echo "✅ All services stopped"
 
+

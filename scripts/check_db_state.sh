@@ -20,3 +20,4 @@ echo ""
 echo "Note: Related records (participants, check-ins, etc.) are automatically"
 echo "      deleted via CASCADE DELETE when pools are deleted."
 
+

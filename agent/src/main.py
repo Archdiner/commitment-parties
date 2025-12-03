@@ -62,6 +62,10 @@ class CommitmentAgent:
             self.social = SocialManager()
             self.activator = PoolActivator()
             
+            # Connect social manager to activator for automatic tweeting
+            from activate_pools import set_social_manager
+            set_social_manager(self.social)
+            
             logger.info("Agent initialized successfully")
         
         except Exception as e:
