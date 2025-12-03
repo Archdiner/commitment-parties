@@ -144,13 +144,25 @@ class Monitor:
             start_of_day = challenge_day_start
             end_of_day = challenge_day_end
             
+            # Check if we're checking a future day (shouldn't happen, but safety check)
+            current_time = datetime.now(timezone.utc)
+            if current_time < challenge_day_start:
+                logger.warning(
+                    f"Attempting to verify Day {day} before it has started! "
+                    f"Current time: {current_time.isoformat()}, "
+                    f"Day {day} starts: {challenge_day_start.isoformat()}. "
+                    f"Skipping verification."
+                )
+                return False
+            
             logger.info(
                 "Checking commits for challenge day %s: %s to %s (UTC) "
-                "(24-hour window from pool start: %s)",
+                "(24-hour window from pool start: %s, current time: %s)",
                 day,
                 start_of_day.isoformat(),
                 end_of_day.isoformat(),
-                start_datetime.isoformat()
+                start_datetime.isoformat(),
+                current_time.isoformat()
             )
 
             # If a specific repo is configured, count commits in that repo only
@@ -221,6 +233,9 @@ class Monitor:
                 end_str = end_of_day.isoformat()
 
                 commit_count = 0
+                push_events_in_range = []
+                push_events_out_of_range = []
+                
                 for event in events:
                     try:
                         if event.get("type") != "PushEvent":
@@ -239,21 +254,54 @@ class Monitor:
                         except (ValueError, AttributeError):
                             # Fallback to string comparison if parsing fails
                             if not (start_str <= created_at_str <= end_str):
+                                push_events_out_of_range.append({
+                                    "time": created_at_str,
+                                    "repo": event.get("repo", {}).get("name", "unknown")
+                                })
                                 continue
+                            event_time = None
                         else:
                             # Use datetime comparison for accuracy
                             if not (start_of_day <= event_time < end_of_day):
+                                push_events_out_of_range.append({
+                                    "time": created_at_str,
+                                    "repo": event.get("repo", {}).get("name", "unknown"),
+                                    "event_time": event_time.isoformat()
+                                })
                                 continue
                         
                         payload = event.get("payload") or {}
                         commits = payload.get("commits") or []
+                        commits_in_event = 0
                         # Light anti-gamification: count only commits with non-trivial messages
                         for commit in commits:
                             msg = (commit.get("message") or "").strip()
                             if len(msg) >= 5:
                                 commit_count += 1
+                                commits_in_event += 1
+                        
+                        if commits_in_event > 0:
+                            push_events_in_range.append({
+                                "time": created_at_str,
+                                "repo": event.get("repo", {}).get("name", "unknown"),
+                                "commits": commits_in_event
+                            })
                     except Exception as parse_err:
                         logger.debug("Error parsing GitHub event: %s", parse_err)
+                
+                # Log detailed information for debugging
+                logger.info(
+                    f"GitHub events analysis: total_events={len(events)}, "
+                    f"push_events_in_range={len(push_events_in_range)}, "
+                    f"push_events_out_of_range={len(push_events_out_of_range)}, "
+                    f"commits_counted={commit_count}"
+                )
+                
+                if push_events_in_range:
+                    logger.info(f"PushEvents in Day {day} range: {push_events_in_range[:5]}")
+                
+                if push_events_out_of_range and len(push_events_out_of_range) <= 10:
+                    logger.info(f"Recent PushEvents OUT of Day {day} range: {push_events_out_of_range[:5]}")
 
             passed = commit_count >= min_commits_per_day
 
