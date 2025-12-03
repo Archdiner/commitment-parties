@@ -59,7 +59,7 @@ class Monitor:
             logger.error(f"Error calculating current day: {e}", exc_info=True)
             return None
 
-    async def verify_github_commits(self, pool: Dict[str, Any], participant: Dict[str, Any], day: int) -> bool:
+    async def verify_github_commits(self, pool: Dict[str, Any], participant: Dict[str, Any], day: int) -> Optional[bool]:
         """
         Verify that a participant has made enough GitHub commits for the specified challenge day.
 
@@ -80,10 +80,20 @@ class Monitor:
         If "repo" is omitted/empty, we fall back to counting PushEvent commits
         across all public repos for this user for the challenge day.
         
+        IMPORTANT: This function gives users the full 24-hour window to complete their requirement.
+        - Returns True if commits found (regardless of day status)
+        - Returns False only if day has ended AND no commits found
+        - Returns None if day is still active and no commits found yet (pending status)
+        
         Args:
             pool: Pool dictionary
             participant: Participant dictionary
             day: Challenge day number (1-indexed) to verify
+        
+        Returns:
+            True if commits found (passed)
+            False if day ended and no commits found (failed)
+            None if day still active and no commits yet (pending - user still has time)
         """
         try:
             goal_metadata = pool.get("goal_metadata") or {}
@@ -155,14 +165,23 @@ class Monitor:
                 )
                 return False
             
+            # IMPORTANT: Only mark as failed AFTER the day window has completely passed
+            # During the active day, we check for commits and can mark as passed,
+            # but we don't mark as failed until the day is over (giving users full 24 hours)
+            day_has_ended = current_time >= challenge_day_end
+            time_remaining = (challenge_day_end - current_time).total_seconds() / 3600 if not day_has_ended else 0
+            
             logger.info(
                 "Checking commits for challenge day %s: %s to %s (UTC) "
-                "(24-hour window from pool start: %s, current time: %s)",
+                "(24-hour window from pool start: %s, current time: %s, "
+                "day_ended=%s, time_remaining=%.1fh)",
                 day,
                 start_of_day.isoformat(),
                 end_of_day.isoformat(),
                 start_datetime.isoformat(),
-                current_time.isoformat()
+                current_time.isoformat(),
+                day_has_ended,
+                time_remaining
             )
 
             # If a specific repo is configured, count commits in that repo only
@@ -303,20 +322,50 @@ class Monitor:
                 if push_events_out_of_range and len(push_events_out_of_range) <= 10:
                     logger.info(f"Recent PushEvents OUT of Day {day} range: {push_events_out_of_range[:5]}")
 
-            passed = commit_count >= min_commits_per_day
-
-            logger.info(
-                "GitHub verification: pool=%s, wallet=%s, user=%s, repo=%s, "
-                "commits_today=%s, min_required=%s, passed=%s",
-                pool.get("pool_id"),
-                participant.get("wallet_address"),
-                github_username,
-                repo or "*any*",
-                commit_count,
-                min_commits_per_day,
-                passed,
-            )
-
+            # Determine if user passed based on commits found
+            has_commits = commit_count >= min_commits_per_day
+            
+            # Only mark as failed if:
+            # 1. The day window has completely ended (day_has_ended = True)
+            # 2. AND no commits were found (has_commits = False)
+            # This gives users the full 24 hours to complete their requirement
+            if day_has_ended:
+                # Day is over - final verdict
+                passed = has_commits
+                logger.info(
+                    "GitHub verification (FINAL - day ended): pool=%s, wallet=%s, user=%s, repo=%s, "
+                    "commits_found=%s, min_required=%s, passed=%s",
+                    pool.get("pool_id"),
+                    participant.get("wallet_address"),
+                    github_username,
+                    repo or "*any*",
+                    commit_count,
+                    min_commits_per_day,
+                    passed,
+                )
+            else:
+                # Day is still active - only mark as passed if commits found
+                # Don't mark as failed yet (user still has time)
+                passed = has_commits if has_commits else None  # None = pending, not failed yet
+                logger.info(
+                    "GitHub verification (IN PROGRESS - day active): pool=%s, wallet=%s, user=%s, repo=%s, "
+                    "commits_found=%s, min_required=%s, status=%s (%.1fh remaining)",
+                    pool.get("pool_id"),
+                    participant.get("wallet_address"),
+                    github_username,
+                    repo or "*any*",
+                    commit_count,
+                    min_commits_per_day,
+                    "PASSED" if passed else "PENDING",
+                    time_remaining
+                )
+            
+            # Return False only if day ended and no commits found
+            # Return True if commits found (regardless of day status)
+            # Return None if day still active and no commits yet (caller should handle this)
+            if passed is None:
+                # Day still active, no commits yet - don't mark as failed
+                return None
             return passed
 
         except Exception as e:
@@ -943,7 +992,15 @@ class Monitor:
                                         pool_id, wallet, current_day
                                     )
                                 
-                                # Store verification in database
+                                # Handle pending status (None) - day still active, don't mark as failed yet
+                                if passed is None:
+                                    logger.debug(
+                                        f"Day {current_day} still active for pool={pool_id}, wallet={wallet}. "
+                                        f"Skipping verification storage (user still has time to complete requirement)."
+                                    )
+                                    continue  # Skip storing verification, user still has time
+                                
+                                # Store verification in database (only if passed is True or False, not None)
                                 try:
                                     # Check if verification already exists for this day
                                     existing_verifications = await execute_query(
@@ -958,7 +1015,7 @@ class Monitor:
                                     )
                                     
                                     if not existing_verifications:
-                                        # Store new verification
+                                        # Store new verification (only if day ended or user passed)
                                         verification_data = {
                                             "pool_id": pool_id,
                                             "participant_wallet": wallet,
@@ -982,7 +1039,8 @@ class Monitor:
                                     else:
                                         # Update existing verification if result changed
                                         existing = existing_verifications[0]
-                                        if existing.get("passed") != passed:
+                                        existing_passed = existing.get("passed")
+                                        if existing_passed != passed:
                                             await execute_query(
                                                 table="verifications",
                                                 operation="update",
@@ -995,7 +1053,8 @@ class Monitor:
                                             )
                                             logger.info(
                                                 f"Updated verification in database: pool={pool_id}, "
-                                                f"wallet={wallet}, day={current_day}, passed={passed}"
+                                                f"wallet={wallet}, day={current_day}, "
+                                                f"passed: {existing_passed} -> {passed}"
                                             )
                                     
                                     # Update days_verified in participants table
