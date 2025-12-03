@@ -18,6 +18,16 @@ ENV/
 .env.local
 .env.*.local
 *.env
+.env.txt
+.env.backup
+.env.bak
+
+# API Keys and Secrets
+*.key
+*.pem
+secrets.json
+credentials.json
+config/secrets.json
 
 # Build outputs
 build/
@@ -45,6 +55,8 @@ Thumbs.db
 id.json
 keypair.json
 *.key
+*.wallet
+wallet.json
 target/deploy/*.json
 !target/deploy/commitment_pool-keypair.json.example
 
