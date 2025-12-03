@@ -4,6 +4,20 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
+import { PublicKey } from '@solana/web3.js';
+import {
+  buildCreatePoolInstruction,
+  getConnection,
+  signAndSendTransaction,
+  solToLamports,
+  derivePoolPDA,
+  getBalance,
+  getCluster,
+  requestAirdrop,
+} from '@/lib/solana';
+import { getPersistedWalletAddress, persistWalletAddress, clearPersistedWalletAddress } from '@/lib/wallet';
+import { confirmPoolCreation, createPoolInvite, confirmPoolJoin, getGitHubUsername, getGitHubRepos, initiateGitHubOAuth, type GitHubRepo } from '@/lib/api';
+import { buildJoinPoolInstruction } from '@/lib/solana';
 import {
   Wallet,
   Trophy,
@@ -48,11 +62,50 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 interface PoolFormData {
   name: string;
   description: string;
+  // High-level family: crypto vs lifestyle
   goalType: 'Crypto' | 'Lifestyle';
+  // Concrete verification type within the family
+  verificationType: 'HODL' | 'DCA' | 'GitHub' | 'ScreenTime';
+  // Shared economic config
   stakeAmount: number;
   durationDays: number;
   maxParticipants: number;
+  // Crypto-specific fields
+  tokenType: 'SOL' | 'USDC' | 'CUSTOM';
+  customTokenMint: string;
+  minBalanceTokens: number;       // For HODL, in token units
+  dcaMinTradesPerDay: number;     // For DCA
+  // Lifestyle – GitHub fields
+  githubUsername: string;
+  githubRepo: string;             // owner/repo
+  githubMinCommitsPerDay: number;
+  // Lifestyle – Screen-time fields
+  screenTimeMaxHours: number;
+  // Pool visibility
+  isPublic: boolean;
+  inviteWallets: string;  // Comma-separated wallet addresses
+  // Auto-join after creation
+  autoJoin: boolean;  // Join the pool immediately after creating it
 }
+
+const TOKEN_OPTIONS = [
+  {
+    value: 'SOL' as const,
+    label: 'SOL (Native)',
+    mint: 'So11111111111111111111111111111111111111112',
+  },
+  {
+    value: 'USDC' as const,
+    label: 'USDC (example mint)',
+    // For demo purposes only; on devnet this may differ
+    mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4Etgpy8nE5qD5',
+  },
+  {
+    value: 'CUSTOM' as const,
+    label: 'Custom SPL Token',
+    mint: '',
+  },
+];
 
 // --- Components ---
 
@@ -60,12 +113,14 @@ const Navbar = ({
   walletConnected,
   walletAddress,
   onConnect,
-  balance
+  balance,
+  githubUsername
 }: {
   walletConnected: boolean;
   walletAddress: string;
   onConnect: () => void;
   balance: number | null;
+  githubUsername?: string | null;
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -98,6 +153,28 @@ const Navbar = ({
                 <span className="text-slate-500 text-xs font-medium">Balance</span>
                 <span className="font-bold text-slate-900">{balance.toFixed(2)} SOL</span>
               </div>
+            )}
+
+            {walletConnected && (
+              githubUsername ? (
+                <div className="hidden md:flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg">
+                  <svg className="w-4 h-4 text-slate-700" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path fillRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clipRule="evenodd" />
+                  </svg>
+                  <span className="text-sm font-medium text-slate-700">@{githubUsername}</span>
+                </div>
+              ) : (
+                <Link
+                  href="/verify-github"
+                  className="hidden md:flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg text-slate-700 hover:text-slate-900 transition-colors text-sm font-medium"
+                  title="Connect GitHub account"
+                >
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path fillRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clipRule="evenodd" />
+                  </svg>
+                  <span>Connect GitHub</span>
+                </Link>
+              )
             )}
 
             <Link
@@ -185,98 +262,215 @@ const StepIndicator = ({ currentStep, totalSteps }: { currentStep: number; total
   </div>
 );
 
-const PoolTypeSelector = ({ selectedType, onSelect }: {
-  selectedType: 'Crypto' | 'Lifestyle' | null;
-  onSelect: (type: 'Crypto' | 'Lifestyle') => void;
-}) => (
-  <div className="grid md:grid-cols-2 gap-6 mb-8">
-    <button
-      onClick={() => onSelect('Crypto')}
-      className={`p-6 rounded-2xl border-2 transition-all text-left ${
-        selectedType === 'Crypto'
-          ? 'border-blue-500 bg-blue-50 shadow-lg'
-          : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50'
-      }`}
-    >
-      <div className="flex items-center gap-4 mb-4">
-        <div className={`p-3 rounded-xl ${selectedType === 'Crypto' ? 'bg-blue-100' : 'bg-slate-100'}`}>
-          <TrendingUp className={`w-8 h-8 ${selectedType === 'Crypto' ? 'text-blue-600' : 'text-slate-600'}`} />
-        </div>
-        <div>
-          <h3 className="text-xl font-bold text-slate-900">Crypto Challenges</h3>
-          <p className="text-slate-600">On-chain verified goals</p>
-        </div>
-      </div>
-      <ul className="space-y-2 text-sm text-slate-600">
-        <li>• Daily DCA challenges</li>
-        <li>• HODL streak tracking</li>
-        <li>• Staking commitments</li>
-        <li>• Automated verification</li>
-      </ul>
-    </button>
-
-    <button
-      onClick={() => onSelect('Lifestyle')}
-      className={`p-6 rounded-2xl border-2 transition-all text-left ${
-        selectedType === 'Lifestyle'
-          ? 'border-emerald-500 bg-emerald-50 shadow-lg'
-          : 'border-gray-200 hover:border-emerald-300 hover:bg-emerald-50'
-      }`}
-    >
-      <div className="flex items-center gap-4 mb-4">
-        <div className={`p-3 rounded-xl ${selectedType === 'Lifestyle' ? 'bg-emerald-100' : 'bg-slate-100'}`}>
-          <Activity className={`w-8 h-8 ${selectedType === 'Lifestyle' ? 'text-emerald-600' : 'text-slate-600'}`} />
-        </div>
-        <div>
-          <h3 className="text-xl font-bold text-slate-900">Lifestyle Goals</h3>
-          <p className="text-slate-600">Social accountability</p>
-        </div>
-      </div>
-      <ul className="space-y-2 text-sm text-slate-600">
-        <li>• Screen time limits</li>
-        <li>• Exercise routines</li>
-        <li>• Reading goals</li>
-        <li>• Habit building</li>
-      </ul>
-    </button>
-  </div>
-);
-
-const ChallengeTemplates = ({ goalType, onSelectTemplate }: {
+const ChallengeTypeSelector = ({
+  goalType,
+  verificationType,
+  onSelect,
+}: {
   goalType: 'Crypto' | 'Lifestyle';
+  verificationType: 'HODL' | 'DCA' | 'GitHub' | 'ScreenTime';
+  onSelect: (goalType: 'Crypto' | 'Lifestyle', verificationType: 'HODL' | 'DCA' | 'GitHub' | 'ScreenTime') => void;
+}) => {
+  const isCrypto = goalType === 'Crypto';
+
+  return (
+    <div className="grid md:grid-cols-3 gap-6 mb-8">
+      {/* Crypto: HODL / DCA */}
+      <button
+        type="button"
+        onClick={() => onSelect('Crypto', verificationType === 'DCA' ? 'DCA' : 'HODL')}
+        className={`p-6 rounded-2xl border-2 transition-all text-left ${
+          isCrypto
+            ? 'border-blue-500 bg-blue-50 shadow-lg'
+            : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50'
+        }`}
+      >
+        <div className="flex items-center gap-4 mb-4">
+          <div className={`p-3 rounded-xl ${isCrypto ? 'bg-blue-100' : 'bg-slate-100'}`}>
+            <TrendingUp className={`w-8 h-8 ${isCrypto ? 'text-blue-600' : 'text-slate-600'}`} />
+          </div>
+          <div>
+            <h3 className="text-xl font-bold text-slate-900">Crypto: HODL / DCA</h3>
+            <p className="text-slate-600 text-sm">On-chain verified trading goals</p>
+          </div>
+        </div>
+        <div className="flex gap-2 mb-3">
+          <span
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelect('Crypto', 'HODL');
+            }}
+            className={`px-3 py-1 rounded-full text-xs font-semibold cursor-pointer ${
+              verificationType === 'HODL' && isCrypto
+                ? 'bg-blue-600 text-white'
+                : 'bg-slate-100 text-slate-700'
+            }`}
+          >
+            HODL
+          </span>
+          <span
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelect('Crypto', 'DCA');
+            }}
+            className={`px-3 py-1 rounded-full text-xs font-semibold cursor-pointer ${
+              verificationType === 'DCA' && isCrypto
+                ? 'bg-blue-600 text-white'
+                : 'bg-slate-100 text-slate-700'
+            }`}
+          >
+            DCA
+          </span>
+        </div>
+        <ul className="space-y-1 text-sm text-slate-600">
+          <li>• Daily DCA or HODL commitments</li>
+          <li>• Crypto-native verification</li>
+        </ul>
+      </button>
+
+      {/* Lifestyle: GitHub Coding */}
+      <button
+        type="button"
+        onClick={() => onSelect('Lifestyle', 'GitHub')}
+        className={`p-6 rounded-2xl border-2 transition-all text-left ${
+          goalType === 'Lifestyle' && verificationType === 'GitHub'
+            ? 'border-emerald-500 bg-emerald-50 shadow-lg'
+            : 'border-gray-200 hover:border-emerald-300 hover:bg-emerald-50'
+        }`}
+      >
+        <div className="flex items-center gap-4 mb-4">
+          <div
+            className={`p-3 rounded-xl ${
+              goalType === 'Lifestyle' && verificationType === 'GitHub' ? 'bg-emerald-100' : 'bg-slate-100'
+            }`}
+          >
+            <Activity
+              className={`w-8 h-8 ${
+                goalType === 'Lifestyle' && verificationType === 'GitHub' ? 'text-emerald-600' : 'text-slate-600'
+              }`}
+            />
+          </div>
+          <div>
+            <h3 className="text-xl font-bold text-slate-900">Lifestyle: GitHub Coding</h3>
+            <p className="text-slate-600 text-sm">Daily commits to your repo</p>
+          </div>
+        </div>
+        <ul className="space-y-1 text-sm text-slate-600">
+          <li>• Track daily GitHub commits</li>
+          <li>• Repo + author based verification</li>
+        </ul>
+      </button>
+
+      {/* Lifestyle: Screen Time */}
+      <button
+        type="button"
+        onClick={() => onSelect('Lifestyle', 'ScreenTime')}
+        className={`p-6 rounded-2xl border-2 transition-all text-left ${
+          goalType === 'Lifestyle' && verificationType === 'ScreenTime'
+            ? 'border-emerald-500 bg-emerald-50 shadow-lg'
+            : 'border-gray-200 hover:border-emerald-300 hover:bg-emerald-50'
+        }`}
+      >
+        <div className="flex items-center gap-4 mb-4">
+          <div
+            className={`p-3 rounded-xl ${
+              goalType === 'Lifestyle' && verificationType === 'ScreenTime' ? 'bg-emerald-100' : 'bg-slate-100'
+            }`}
+          >
+            <Clock
+              className={`w-8 h-8 ${
+                goalType === 'Lifestyle' && verificationType === 'ScreenTime' ? 'text-emerald-600' : 'text-slate-600'
+              }`}
+            />
+          </div>
+          <div>
+            <h3 className="text-xl font-bold text-slate-900">Lifestyle: Screen Time</h3>
+            <p className="text-slate-600 text-sm">Upload daily screen-time screenshot</p>
+          </div>
+        </div>
+        <ul className="space-y-1 text-sm text-slate-600">
+          <li>• Max hours/day limit</li>
+          <li>• Screenshot-based check-ins</li>
+        </ul>
+      </button>
+    </div>
+  );
+};
+
+const ChallengeTemplates = ({
+  goalType,
+  verificationType,
+  onSelectTemplate,
+}: {
+  goalType: 'Crypto' | 'Lifestyle';
+  verificationType: 'HODL' | 'DCA' | 'GitHub' | 'ScreenTime';
   onSelectTemplate: (template: { name: string; description: string }) => void;
 }) => {
-  const cryptoTemplates = [
-    {
-      name: "30-Day DCA Challenge",
-      description: "Buy crypto every day for 30 days. Build consistent investment habits."
-    },
-    {
-      name: "HODL Streak - 90 Days",
-      description: "Don't sell any tokens for 90 days. Test your long-term conviction."
-    },
-    {
-      name: "Staking Commitment",
-      description: "Maintain staking positions and earn rewards while building habits."
-    }
-  ];
+  let templates: { name: string; description: string }[] = [];
 
-  const lifestyleTemplates = [
-    {
-      name: "Screen Time Limit",
-      description: "Limit daily screen time to build healthier digital habits."
-    },
-    {
-      name: "Daily Exercise",
-      description: "Commit to daily physical activity and build fitness habits."
-    },
-    {
-      name: "Reading Challenge",
-      description: "Read for 30 minutes daily and expand your knowledge."
-    }
-  ];
-
-  const templates = goalType === 'Crypto' ? cryptoTemplates : lifestyleTemplates;
+  if (goalType === 'Crypto' && verificationType === 'DCA') {
+    templates = [
+      {
+        name: "30-Day DCA into SOL",
+        description: "Buy a fixed amount of SOL every day for 30 days. Build a consistent DCA habit.",
+      },
+      {
+        name: "7-Day DeFi DCA Sprint",
+        description: "Make at least one trade per day for a week to stay active in the market.",
+      },
+      {
+        name: "Weekend Trader",
+        description: "Trade every Saturday and Sunday for a month. Perfect for part-time DCA.",
+      },
+    ];
+  } else if (goalType === 'Crypto') {
+    // Crypto – HODL defaults
+    templates = [
+      {
+        name: "HODL 1 SOL for 30 Days",
+        description: "Keep at least 1 SOL in your wallet for 30 days without dropping below the threshold.",
+      },
+      {
+        name: "Quarterly HODL Streak",
+        description: "Maintain a long-term position for 90 days and avoid panic selling.",
+      },
+      {
+        name: "Stablecoin Safety Net",
+        description: "Keep a minimum USDC balance as your 'emergency fund' for 60 days.",
+      },
+    ];
+  } else if (verificationType === 'GitHub') {
+    templates = [
+      {
+        name: "Daily GitHub Commit",
+        description: "Ship at least one commit every day to stay in motion and avoid long breaks.",
+      },
+      {
+        name: "Weekend Hacker",
+        description: "Commit code every weekend for a month. Great for side projects.",
+      },
+      {
+        name: "Open Source Streak",
+        description: "Contribute daily to any repo (personal or OSS) for 14 days straight.",
+      },
+    ];
+  } else {
+    // Lifestyle – Screen Time
+    templates = [
+      {
+        name: "2 Hours Max Screen Time",
+        description: "Keep your daily screen time under 2 hours and reclaim your focus.",
+      },
+      {
+        name: "Social Media Detox",
+        description: "Reduce screen time by 50% for 14 days and track it with daily screenshots.",
+      },
+      {
+        name: "Evening Wind Down",
+        description: "No screens after 9pm for 21 days. Upload your daily system screenshot as proof.",
+      },
+    ];
+  }
 
   return (
     <div className="mb-8">
@@ -309,15 +503,35 @@ export default function CreatePoolPage() {
     name: '',
     description: '',
     goalType: 'Crypto',
+    verificationType: 'HODL',
     stakeAmount: 0.1,
     durationDays: 7,
-    maxParticipants: 10
+    maxParticipants: 10,
+    tokenType: 'SOL',
+    customTokenMint: '',
+    minBalanceTokens: 1,
+    dcaMinTradesPerDay: 1,
+    githubUsername: '',
+    githubRepo: '',
+    githubMinCommitsPerDay: 1,
+    screenTimeMaxHours: 2,
+    isPublic: true,
+    inviteWallets: '',
+    autoJoin: true,  // Default: join pool after creating
   });
 
   // Solana State
   const [walletConnected, setWalletConnected] = useState(false);
   const [walletAddress, setWalletAddress] = useState('');
   const [balance, setBalance] = useState<number | null>(null);
+  const [transactionSignature, setTransactionSignature] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [validatingRepo, setValidatingRepo] = useState(false);
+  const [repoValidationError, setRepoValidationError] = useState<string | null>(null);
+  const [githubVerified, setGithubVerified] = useState(false);
+  const [githubUsername, setGithubUsername] = useState<string | null>(null);
+  const [githubRepos, setGithubRepos] = useState<GitHubRepo[]>([]);
+  const [loadingRepos, setLoadingRepos] = useState(false);
 
   // Initialize Auth
   useEffect(() => {
@@ -338,29 +552,182 @@ export default function CreatePoolPage() {
     initAuth();
   }, []);
 
+  // Restore wallet connection from localStorage
+  useEffect(() => {
+    const saved = getPersistedWalletAddress();
+    if (saved) {
+      setWalletConnected(true);
+      setWalletAddress(saved);
+    }
+  }, []);
+
+  // Check GitHub verification when wallet is connected (for navbar display)
+  // This runs independently to always show GitHub status in navbar
+  useEffect(() => {
+    if (!walletConnected || !walletAddress) {
+      // Only clear if wallet is disconnected
+      if (!walletConnected) {
+        setGithubUsername(null);
+      }
+      return;
+    }
+
+    let cancelled = false;
+
+    const checkGitHubStatus = async () => {
+      try {
+        const githubData = await getGitHubUsername(walletAddress);
+        if (!cancelled) {
+          const username = githubData.verified_github_username || null;
+          setGithubUsername(username);
+        }
+      } catch (err) {
+        console.error('Error checking GitHub status:', err);
+        // On error, set to null so button shows (user can try connecting)
+        if (!cancelled) {
+          setGithubUsername(null);
+        }
+      }
+    };
+
+    // Small delay to ensure wallet is fully connected
+    const timeoutId = setTimeout(() => {
+      checkGitHubStatus();
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
+  }, [walletConnected, walletAddress]);
+
+  // Check GitHub verification when wallet is connected and GitHub challenge is selected
+  // This is for form-specific logic (repos, verification status)
+  useEffect(() => {
+    const checkGitHubVerification = async () => {
+      if (!walletConnected || !walletAddress || formData.verificationType !== 'GitHub') {
+        setGithubVerified(false);
+        setGithubRepos([]);
+        // Don't clear githubUsername here - it's managed by the navbar useEffect
+        return;
+      }
+
+      try {
+        const githubData = await getGitHubUsername(walletAddress);
+        if (githubData.verified_github_username) {
+          setGithubVerified(true);
+          // Update githubUsername if not already set (for navbar)
+          if (!githubUsername) {
+            setGithubUsername(githubData.verified_github_username);
+          }
+          // Auto-populate username in form
+          setFormData(prev => ({ ...prev, githubUsername: githubData.verified_github_username }));
+          
+          // Fetch repositories
+          setLoadingRepos(true);
+          try {
+            const reposData = await getGitHubRepos(walletAddress);
+            setGithubRepos(reposData.repositories || []);
+            // If there's a message about token expiration, log it but don't fail
+            if (reposData.message) {
+              console.warn('GitHub repos:', reposData.message);
+            }
+          } catch (err: any) {
+            console.error('Error fetching repos:', err);
+            // If token expired or not found, still allow user to proceed with "any repo"
+            // Don't unset githubVerified - they're still verified, just can't load repos
+            setGithubRepos([]);
+          } finally {
+            setLoadingRepos(false);
+          }
+        } else {
+          setGithubVerified(false);
+          setGithubRepos([]);
+          // Don't clear githubUsername here - let navbar useEffect handle it
+        }
+      } catch (err) {
+        console.error('Error checking GitHub verification:', err);
+        setGithubVerified(false);
+        setGithubRepos([]);
+        // Don't clear githubUsername on error
+      }
+    };
+
+    checkGitHubVerification();
+  }, [walletConnected, walletAddress, formData.verificationType]);
+
   const handleConnectWallet = async () => {
     if (walletConnected) {
       setWalletConnected(false);
       setWalletAddress('');
       setBalance(null);
+      clearPersistedWalletAddress();
       return;
     }
 
     try {
       const { solana } = window as any;
       if (!solana) {
-        alert("Please install Phantom Wallet.");
+        alert("Please install Phantom Wallet. Make sure it's set to Devnet mode for testing!");
         return;
+      }
+
+      // Check if on devnet
+      const cluster = getCluster();
+      if (cluster === 'devnet') {
+        // Try to connect to devnet
+        try {
+          await solana.connect({ onlyIfTrusted: false });
+        } catch (e) {
+          // User might have rejected, continue anyway
+        }
       }
 
       const response = await solana.connect();
       const pubKey = response.publicKey.toString();
       setWalletAddress(pubKey);
       setWalletConnected(true);
-      setBalance(2.45);
+      
+      // Get actual balance
+      const connection = getConnection();
+      const publicKey = new PublicKey(pubKey);
+      const balanceLamports = await connection.getBalance(publicKey);
+      const balanceSol = balanceLamports / 1e9;
+      setBalance(balanceSol);
+
+      // If on devnet and balance is low, offer airdrop
+      if (cluster === 'devnet' && balanceSol < 0.1) {
+        const requestAirdrop = confirm(
+          `Your devnet balance is low (${balanceSol.toFixed(4)} SOL). Would you like to request a free airdrop?`
+        );
+        if (requestAirdrop) {
+          try {
+            await handleAirdrop(pubKey);
+          } catch (err) {
+            console.error('Airdrop failed:', err);
+            alert('Airdrop failed. You can manually request SOL from https://faucet.solana.com/');
+          }
+        }
+      }
 
     } catch (err) {
       console.error(err);
+      alert('Failed to connect wallet. Make sure Phantom is installed and set to Devnet mode.');
+    }
+  };
+
+  const handleAirdrop = async (walletAddress: string) => {
+    try {
+      const signature = await requestAirdrop(walletAddress, 2);
+      alert(`Airdrop successful! Transaction: ${signature}\n\nRefresh to see updated balance.`);
+      // Refresh balance
+      const connection = getConnection();
+      const publicKey = new PublicKey(walletAddress);
+      const balanceLamports = await connection.getBalance(publicKey);
+      setBalance(balanceLamports / 1e9);
+      persistWalletAddress(pubKey);
+    } catch (err: any) {
+      throw new Error(`Airdrop failed: ${err.message}`);
     }
   };
 
@@ -372,8 +739,9 @@ export default function CreatePoolPage() {
     }));
   };
 
+
   const handleSubmit = async () => {
-    if (!walletConnected) {
+    if (!walletConnected || !walletAddress) {
       handleConnectWallet();
       return;
     }
@@ -381,41 +749,210 @@ export default function CreatePoolPage() {
     setIsDeploying(true);
 
     try {
-      // Simulate smart contract deployment
-      console.log("Creating pool on chain with args:", formData);
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      // Get Phantom wallet
+      const { solana } = window as any;
+      if (!solana || !solana.isPhantom) {
+        throw new Error('Phantom wallet not found');
+      }
 
-      const mockOnChainAddress = "8x" + Array(40).fill(0).map(()=>Math.floor(Math.random()*16).toString(16)).join('');
-      const mockTxHash = "5" + Array(87).fill(0).map(()=>Math.floor(Math.random()*16).toString(16)).join('');
+      // Generate pool_id (use timestamp for uniqueness)
+      const poolId = Math.floor(Date.now() / 1000);
+      
+      // Derive pool PDA
+      const [poolPubkey] = await derivePoolPDA(poolId);
+      
+      // Prepare goal type and metadata
+      let goalType: string;
+      let goalMetadata: Record<string, any> = {};
 
-      // Create pool in database
-      const { data, error } = await supabase
-        .from('pools')
-        .insert([
-          {
-            name: formData.name,
-            description: formData.description,
-            goalType: formData.goalType,
-            stakeAmount: formData.stakeAmount,
-            durationDays: formData.durationDays,
-            maxParticipants: formData.maxParticipants,
-            participants: 1, // Creator joins automatically
-            creatorId: user?.id || 'anon',
-            onChainAddress: mockOnChainAddress,
-            txHash: mockTxHash
+      if (formData.goalType === 'Crypto') {
+        // Resolve token mint
+        const selectedToken = TOKEN_OPTIONS.find((t) => t.value === formData.tokenType);
+        const tokenMint =
+          formData.tokenType === 'CUSTOM'
+            ? formData.customTokenMint.trim()
+            : selectedToken?.mint ?? TOKEN_OPTIONS[0].mint;
+
+        if (formData.verificationType === 'DCA') {
+          goalType = 'DailyDCA';
+          goalMetadata = {
+            token_mint: tokenMint,
+            min_trades_per_day: formData.dcaMinTradesPerDay || 1,
+          };
+        } else {
+          // Default crypto type: HODL
+          goalType = 'hodl_token';
+          const minBalanceLamports = Math.max(
+            0,
+            Math.floor((formData.minBalanceTokens || 0) * 1e9),
+          );
+          goalMetadata = {
+            token_mint: tokenMint,
+            min_balance: minBalanceLamports,
+            check_frequency: 'hourly',
+          };
+        }
+      } else {
+        // Lifestyle family
+        goalType = 'lifestyle_habit';
+        if (formData.verificationType === 'GitHub') {
+          goalMetadata = {
+            habit_type: 'github_commits',
+            github_username: formData.githubUsername.trim(),
+            repo: formData.githubRepo.trim() || undefined, // Only include if provided
+            min_commits_per_day: formData.githubMinCommitsPerDay || 1,
+          };
+        } else {
+          // Screen time
+          goalMetadata = {
+            habit_type: 'screen_time',
+            max_hours: formData.screenTimeMaxHours || 2,
+            verification_method: 'screenshot_upload',
+          };
+        }
+      }
+      
+      // Calculate timestamps
+      const startTimestamp = Math.floor(Date.now() / 1000);
+      const endTimestamp = startTimestamp + (formData.durationDays * 24 * 60 * 60);
+      
+      // Default charity address (can be updated later)
+      const charityAddress = walletAddress; // For now, use creator's wallet
+      
+      // Build instruction
+      const instruction = await buildCreatePoolInstruction(
+        poolId,
+        new PublicKey(walletAddress),
+        goalType,
+        goalMetadata,
+        solToLamports(formData.stakeAmount),
+        formData.durationDays,
+        formData.maxParticipants,
+        1, // min_participants
+        charityAddress,
+        'competitive', // distribution_mode
+        100 // winner_percent
+      );
+      
+      // Sign and send transaction
+      const connection = getConnection();
+      // Pass solana object directly - it already has the methods we need
+      const walletAdapter = {
+        publicKey: new PublicKey(walletAddress),
+        sendTransaction: solana.sendTransaction,
+        signTransaction: solana.signTransaction,
+      };
+      const signature = await signAndSendTransaction(connection, instruction, walletAdapter);
+      
+      // Confirm with backend
+      const poolData = await confirmPoolCreation({
+        pool_id: poolId,
+        pool_pubkey: poolPubkey.toString(),
+        transaction_signature: signature,
+        creator_wallet: walletAddress,
+        name: formData.name,
+        description: formData.description,
+        goal_type: goalType,
+        goal_metadata: goalMetadata,
+        stake_amount: formData.stakeAmount,
+        duration_days: formData.durationDays,
+        max_participants: formData.maxParticipants,
+        min_participants: 1,
+        distribution_mode: 'competitive',
+        split_percentage_winners: 100,
+        charity_address: charityAddress,
+        start_timestamp: startTimestamp,
+        end_timestamp: endTimestamp,
+        is_public: formData.isPublic,
+      });
+
+      // Create invites if pool is private and invite wallets provided
+      if (!formData.isPublic && formData.inviteWallets.trim()) {
+        const inviteWallets = formData.inviteWallets
+          .split(',')
+          .map(w => w.trim())
+          .filter(w => w.length > 0);
+        
+        for (const inviteWallet of inviteWallets) {
+          try {
+            await createPoolInvite(poolId, {
+              pool_id: poolId,
+              invitee_wallet: inviteWallet,
+            });
+          } catch (err) {
+            console.error(`Failed to create invite for ${inviteWallet}:`, err);
+            // Continue with other invites even if one fails
           }
-        ])
-        .select()
-        .single();
+        }
+      }
 
-      if (error) throw error;
+      // Store transaction signature for display
+      setTransactionSignature(signature);
+      
+      // Auto-join pool if enabled
+      if (formData.autoJoin) {
+        try {
+          // Check GitHub verification if needed
+          if (goalMetadata.habit_type === 'github_commits') {
+            const githubCheck = await getGitHubUsername(walletAddress);
+            if (!githubCheck.verified_github_username) {
+              const shouldVerify = confirm(
+                'This pool requires GitHub commit verification. You need to verify your GitHub account first.\n\n' +
+                'Would you like to verify your GitHub account now? (You can join the pool after verification)'
+              );
+              if (shouldVerify) {
+                router.push(`/pools/${poolData.pool_id}?verify_github=true`);
+                return;
+              }
+              // Continue without joining if user cancels verification
+              router.push(`/pools/${poolData.pool_id}`);
+              return;
+            }
+          }
 
+          // Build join instruction
+          const joinInstruction = await buildJoinPoolInstruction(
+            poolId,
+            new PublicKey(walletAddress)
+          );
+          
+          // Sign and send join transaction
+          const joinSignature = await signAndSendTransaction(
+            connection,
+            joinInstruction,
+            walletAdapter
+          );
+          
+          // Confirm join with backend
+          await confirmPoolJoin(poolId, {
+            transaction_signature: joinSignature,
+            participant_wallet: walletAddress,
+          });
+          
+          console.log('Auto-joined pool successfully');
+        } catch (joinErr: any) {
+          console.error('Error auto-joining pool:', joinErr);
+          // Don't fail pool creation if auto-join fails
+          // User can join manually later
+          alert(
+            `Pool created successfully, but failed to auto-join: ${joinErr.message}\n\n` +
+            'You can join the pool manually from the pool page.'
+          );
+        }
+      }
+      
       // Redirect to the created pool
-      router.push(`/pools/${data.id}`);
+      router.push(`/pools/${poolData.pool_id}`);
     } catch (err: any) {
       console.error("Error creating pool:", err);
-      alert("Error creating pool: " + err.message);
+      const errorMessage = err.message || 'Unknown error';
+      setError(errorMessage);
       setIsDeploying(false);
+      
+      // Show error alert
+      setTimeout(() => {
+        alert("Error creating pool: " + errorMessage);
+      }, 100);
     }
   };
 
@@ -425,9 +962,12 @@ export default function CreatePoolPage() {
       component: (
         <div>
           <h2 className="text-2xl font-bold text-slate-900 mb-4">What type of challenge is this?</h2>
-          <PoolTypeSelector
-            selectedType={formData.goalType}
-            onSelect={(type) => setFormData(prev => ({ ...prev, goalType: type }))}
+          <ChallengeTypeSelector
+            goalType={formData.goalType}
+            verificationType={formData.verificationType}
+            onSelect={(goalType, verificationType) =>
+              setFormData(prev => ({ ...prev, goalType, verificationType }))
+            }
           />
         </div>
       )
@@ -440,6 +980,7 @@ export default function CreatePoolPage() {
 
           <ChallengeTemplates
             goalType={formData.goalType}
+            verificationType={formData.verificationType}
             onSelectTemplate={handleTemplateSelect}
           />
 
@@ -468,6 +1009,8 @@ export default function CreatePoolPage() {
                 value={formData.description}
                 onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
               />
+              <div className="mt-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              </div>
             </div>
           </div>
         </div>
@@ -478,6 +1021,260 @@ export default function CreatePoolPage() {
       component: (
         <div>
           <h2 className="text-2xl font-bold text-slate-900 mb-6">Configure your challenge</h2>
+
+          {/* Goal-type specific settings */}
+          {formData.goalType === 'Crypto' ? (
+            <div className="mb-8 p-4 border border-blue-100 rounded-xl bg-blue-50/60">
+              <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-3">
+                Crypto Verification Settings ({formData.verificationType === 'DCA' ? 'DCA Trading' : 'HODL Balance'})
+              </h3>
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
+                    Token
+                  </label>
+                  <select
+                    className="w-full p-3 border border-gray-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                    value={formData.tokenType}
+                    onChange={(e) =>
+                      setFormData(prev => ({ ...prev, tokenType: e.target.value as PoolFormData['tokenType'] }))
+                    }
+                  >
+                    {TOKEN_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                  {formData.tokenType === 'CUSTOM' && (
+                    <input
+                      type="text"
+                      className="mt-2 w-full p-3 border border-gray-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                      placeholder="Custom SPL token mint address"
+                      value={formData.customTokenMint}
+                      onChange={(e) =>
+                        setFormData(prev => ({ ...prev, customTokenMint: e.target.value }))
+                      }
+                    />
+                  )}
+                </div>
+
+                {formData.verificationType === 'DCA' ? (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
+                      Min trades per day
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      className="w-full p-3 border border-gray-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                      value={formData.dcaMinTradesPerDay}
+                      onChange={(e) =>
+                        setFormData(prev => ({
+                          ...prev,
+                          dcaMinTradesPerDay: parseInt(e.target.value || '1', 10),
+                        }))
+                      }
+                    />
+                    <p className="mt-1 text-xs text-slate-500">
+                      Agent checks you made at least this many transactions today.
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
+                      Min balance (token units)
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      step={0.01}
+                      className="w-full p-3 border border-gray-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                      value={formData.minBalanceTokens}
+                      onChange={(e) =>
+                        setFormData(prev => ({
+                          ...prev,
+                          minBalanceTokens: parseFloat(e.target.value || '0'),
+                        }))
+                      }
+                    />
+                    <p className="mt-1 text-xs text-slate-500">
+                      Converted to lamports using 9 decimals for verification.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : formData.verificationType === 'GitHub' ? (
+            <div className="mb-8 p-4 border border-emerald-100 rounded-xl bg-emerald-50/60">
+              <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-3">
+                Lifestyle – GitHub Settings
+              </h3>
+              
+              {!walletConnected ? (
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                  <p className="text-blue-700 font-medium mb-2">Connect your wallet first</p>
+                  <p className="text-blue-600 text-sm">
+                    You need to connect your wallet before setting up a GitHub challenge.
+                  </p>
+                </div>
+              ) : !githubVerified ? (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-amber-700 font-medium mb-2">GitHub account not connected</p>
+                      <p className="text-amber-600 text-sm mb-4">
+                        You need to verify your GitHub account before creating a GitHub challenge. This ensures we can track your commits automatically.
+                      </p>
+                      <button
+                        onClick={async () => {
+                          try {
+                            const { auth_url } = await initiateGitHubOAuth(walletAddress);
+                            window.location.href = auth_url;
+                          } catch (err: any) {
+                            alert(`Failed to initiate GitHub connection: ${err.message || 'Unknown error'}`);
+                          }
+                        }}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors flex items-center gap-2"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        Connect GitHub Account
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
+                      GitHub username
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        className="w-full p-3 border border-gray-300 rounded-lg text-slate-900 bg-gray-50 text-sm"
+                        value={githubUsername || ''}
+                        readOnly
+                        disabled
+                      />
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                        <CheckCircle className="w-4 h-4 text-emerald-600" />
+                      </div>
+                    </div>
+                    <p className="mt-1 text-xs text-emerald-600 flex items-center gap-1">
+                      <CheckCircle className="w-3 h-3" />
+                      Connected and verified
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
+                      Repository <span className="text-slate-400 font-normal">(Optional)</span>
+                    </label>
+                    {loadingRepos ? (
+                      <div className="w-full p-3 border border-gray-300 rounded-lg bg-gray-50 flex items-center gap-2">
+                        <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+                        <span className="text-sm text-slate-500">Loading repositories...</span>
+                      </div>
+                    ) : githubRepos.length === 0 ? (
+                      <div className="space-y-2">
+                        <select
+                          className="w-full p-3 border border-gray-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm"
+                          value={formData.githubRepo}
+                          onChange={(e) => {
+                            setFormData(prev => ({ ...prev, githubRepo: e.target.value }));
+                            setRepoValidationError(null);
+                          }}
+                        >
+                          <option value="">Any repository (track all commits)</option>
+                        </select>
+                        <p className="text-xs text-amber-600 flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" />
+                          Repository list unavailable. You can still create a challenge that tracks all repositories.
+                        </p>
+                      </div>
+                    ) : (
+                      <select
+                        className="w-full p-3 border border-gray-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm"
+                        value={formData.githubRepo}
+                        onChange={(e) => {
+                          setFormData(prev => ({ ...prev, githubRepo: e.target.value }));
+                          setRepoValidationError(null);
+                        }}
+                      >
+                        <option value="">Any repository (track all commits)</option>
+                        {githubRepos.map((repo) => (
+                          <option key={repo.full_name} value={repo.full_name}>
+                            {repo.full_name} {repo.private ? '(Private)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    {!formData.githubRepo && githubRepos.length > 0 && (
+                      <p className="mt-1 text-xs text-slate-500">
+                        Select a repository or leave as "Any repository" to track all commits
+                      </p>
+                    )}
+                    {formData.githubRepo && (
+                      <p className="mt-1 text-xs text-emerald-600 flex items-center gap-1">
+                        <CheckCircle className="w-3 h-3" />
+                        Tracking commits in {formData.githubRepo}
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
+                      Min commits per day
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      className="w-full p-3 border border-gray-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm"
+                      value={formData.githubMinCommitsPerDay}
+                      onChange={(e) =>
+                        setFormData(prev => ({
+                          ...prev,
+                          githubMinCommitsPerDay: parseInt(e.target.value || '1', 10),
+                        }))
+                      }
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="mb-8 p-4 border border-emerald-100 rounded-xl bg-emerald-50/60">
+              <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-3">
+                Lifestyle – Screen Time Settings
+              </h3>
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
+                    Max hours per day
+                  </label>
+                  <input
+                    type="number"
+                    min={0.5}
+                    step={0.5}
+                    className="w-full p-3 border border-gray-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm"
+                    value={formData.screenTimeMaxHours}
+                    onChange={(e) =>
+                      setFormData(prev => ({
+                        ...prev,
+                        screenTimeMaxHours: parseFloat(e.target.value || '0'),
+                      }))
+                    }
+                  />
+                </div>
+                <div className="flex items-center">
+                  <p className="text-xs text-slate-600">
+                    Upload an iOS/Android screen-time screenshot daily. The agent checks that a
+                    successful check-in with a screenshot exists for each day.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="grid md:grid-cols-2 gap-6">
             <div>
@@ -533,6 +1330,73 @@ export default function CreatePoolPage() {
             </div>
           </div>
 
+          {/* Private/Public Toggle */}
+          <div className="mt-8 p-6 bg-slate-50 rounded-xl border border-slate-200">
+            <h3 className="font-bold text-slate-900 mb-4">Pool Visibility</h3>
+            <div className="space-y-4">
+              <div className="flex items-center gap-4">
+                <button
+                  type="button"
+                  onClick={() => setFormData(prev => ({ ...prev, isPublic: true }))}
+                  className={`flex-1 p-4 rounded-xl border-2 transition-all ${
+                    formData.isPublic
+                      ? 'border-emerald-500 bg-emerald-50'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-lg ${formData.isPublic ? 'bg-emerald-100' : 'bg-gray-100'}`}>
+                      <Users className={`w-5 h-5 ${formData.isPublic ? 'text-emerald-600' : 'text-gray-400'}`} />
+                    </div>
+                    <div className="text-left">
+                      <div className="font-bold text-slate-900">Public Pool</div>
+                      <div className="text-sm text-slate-600">Anyone can discover and join</div>
+                    </div>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormData(prev => ({ ...prev, isPublic: false }))}
+                  className={`flex-1 p-4 rounded-xl border-2 transition-all ${
+                    !formData.isPublic
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-lg ${!formData.isPublic ? 'bg-blue-100' : 'bg-gray-100'}`}>
+                      <Shield className={`w-5 h-5 ${!formData.isPublic ? 'text-blue-600' : 'text-gray-400'}`} />
+                    </div>
+                    <div className="text-left">
+                      <div className="font-bold text-slate-900">Private Pool</div>
+                      <div className="text-sm text-slate-600">Only invited wallets can join</div>
+                    </div>
+                  </div>
+                </button>
+              </div>
+
+              {!formData.isPublic && (
+                <div className="mt-4">
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">
+                    Invite Wallet Addresses (comma-separated)
+                  </label>
+                  <textarea
+                    className="w-full p-3 border border-gray-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm font-mono"
+                    rows={3}
+                    placeholder="ABC123..., XYZ789..., ..."
+                    value={formData.inviteWallets}
+                    onChange={(e) =>
+                      setFormData(prev => ({ ...prev, inviteWallets: e.target.value }))
+                    }
+                  />
+                  <p className="mt-1 text-xs text-slate-500">
+                    Enter wallet addresses separated by commas. These users will be able to join your private pool.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* Cost Breakdown */}
           <div className="mt-8 p-6 bg-slate-50 rounded-xl border border-slate-200">
             <h3 className="font-bold text-slate-900 mb-4">Challenge Summary</h3>
@@ -565,7 +1429,7 @@ export default function CreatePoolPage() {
             <h3 className="text-xl font-bold text-slate-900 mb-2">Ready to Deploy</h3>
             <p className="text-slate-600 mb-6">
               This will deploy a smart contract on Solana and create your commitment pool.
-              You'll automatically join as the first participant.
+              You can choose to join immediately or join later.
             </p>
 
             <div className="bg-white rounded-xl p-6 border border-gray-200 text-left max-w-md mx-auto">
@@ -577,7 +1441,15 @@ export default function CreatePoolPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-600">Type:</span>
-                  <span className="font-medium">{formData.goalType}</span>
+                  <span className="font-medium">
+                    {formData.goalType === 'Crypto'
+                      ? formData.verificationType === 'DCA'
+                        ? 'Crypto – DCA Trading'
+                        : 'Crypto – HODL'
+                      : formData.verificationType === 'GitHub'
+                      ? 'Lifestyle – GitHub Coding'
+                      : 'Lifestyle – Screen Time'}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-600">Stake:</span>
@@ -592,12 +1464,82 @@ export default function CreatePoolPage() {
                   <span className="font-medium">{formData.maxParticipants}</span>
                 </div>
               </div>
+
+              {/* Auto-join option */}
+              <div className="mt-6 pt-6 border-t border-gray-200">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.autoJoin}
+                    onChange={(e) =>
+                      setFormData(prev => ({ ...prev, autoJoin: e.target.checked }))
+                    }
+                    className="mt-1 w-4 h-4 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500"
+                  />
+                  <div>
+                    <div className="font-semibold text-slate-900">
+                      Join this challenge after creating
+                    </div>
+                    <div className="text-xs text-slate-600 mt-1">
+                      {formData.autoJoin
+                        ? `You'll automatically join and stake ${formData.stakeAmount} SOL`
+                        : 'You can join the challenge later from the pool page'}
+                    </div>
+                  </div>
+                </label>
+              </div>
             </div>
           </div>
 
           {!walletConnected && (
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
-              <p className="text-blue-700 font-medium">Connect your wallet to continue</p>
+              <p className="text-blue-700 font-medium mb-2">Connect your wallet to continue</p>
+              <p className="text-blue-600 text-sm">
+                <strong>Note:</strong> Make sure Phantom Wallet is set to <strong>Devnet</strong> mode for testing.
+                You can get free devnet SOL from <a href="https://faucet.solana.com/" target="_blank" rel="noopener noreferrer" className="underline">the faucet</a>.
+              </p>
+            </div>
+          )}
+
+          {walletConnected && getCluster() === 'devnet' && balance !== null && balance < 0.1 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
+              <p className="text-amber-700 font-medium mb-2">Low Devnet Balance</p>
+              <p className="text-amber-600 text-sm mb-2">
+                Your balance is {balance.toFixed(4)} SOL. You may need more for transaction fees.
+              </p>
+              <button
+                onClick={() => walletAddress && handleAirdrop(walletAddress)}
+                className="text-sm bg-amber-600 text-white px-4 py-2 rounded-lg hover:bg-amber-700 transition-colors"
+              >
+                Request 2 SOL Airdrop
+              </button>
+            </div>
+          )}
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
+              <p className="text-red-700 font-medium">Error: {error}</p>
+              <button
+                onClick={() => setError(null)}
+                className="mt-2 text-sm text-red-600 hover:text-red-800 underline"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
+          {transactionSignature && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 mb-6">
+              <p className="text-emerald-700 font-medium mb-2">Transaction Successful!</p>
+              <a
+                href={`https://solscan.io/tx/${transactionSignature}?cluster=devnet`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-emerald-600 hover:text-emerald-800 underline flex items-center gap-2"
+              >
+                <ExternalLink className="w-4 h-4" />
+                View on Solscan
+              </a>
             </div>
           )}
         </div>
@@ -608,11 +1550,32 @@ export default function CreatePoolPage() {
   const isStepValid = () => {
     switch (currentStep) {
       case 0:
-        return formData.goalType !== null;
+        return !!formData.goalType && !!formData.verificationType;
       case 1:
         return formData.name.trim() && formData.description.trim();
       case 2:
-        return formData.stakeAmount > 0 && formData.durationDays > 0 && formData.maxParticipants >= 2;
+        if (!(formData.stakeAmount > 0 && formData.durationDays > 0 && formData.maxParticipants >= 2)) {
+          return false;
+        }
+        if (formData.goalType === 'Crypto') {
+          // HODL or DCA need their specific fields
+          if (!formData.tokenType) return false;
+          if (formData.tokenType === 'CUSTOM' && !formData.customTokenMint.trim()) return false;
+          if (formData.verificationType === 'DCA') {
+            return formData.dcaMinTradesPerDay >= 1;
+          }
+          return formData.minBalanceTokens >= 0;
+        } else if (formData.verificationType === 'GitHub') {
+          return (
+            walletConnected && // Wallet must be connected
+            githubVerified && // GitHub must be verified
+            !!githubUsername && // GitHub username must be available
+            formData.githubMinCommitsPerDay >= 1 &&
+            !loadingRepos // Don't allow progression while loading repos
+          );
+        } else {
+          return formData.screenTimeMaxHours > 0;
+        }
       case 3:
         return walletConnected;
       default:
@@ -627,6 +1590,7 @@ export default function CreatePoolPage() {
         walletAddress={walletAddress}
         onConnect={handleConnectWallet}
         balance={balance}
+        githubUsername={githubUsername}
       />
 
       <main className="max-w-4xl mx-auto px-4 py-8">
@@ -683,7 +1647,7 @@ export default function CreatePoolPage() {
               ) : (
                 <>
                   <Sparkles className="w-5 h-5" />
-                  Create Challenge & Stake
+                  {formData.autoJoin ? 'Create & Join Challenge' : 'Create Challenge'}
                 </>
               )}
             </button>

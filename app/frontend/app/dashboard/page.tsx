@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
+import { getPools, getUserParticipations } from '@/lib/api';
+import { getPersistedWalletAddress, persistWalletAddress, clearPersistedWalletAddress } from '@/lib/wallet';
 import {
   Wallet,
   Trophy,
@@ -315,55 +317,71 @@ export default function DashboardPage() {
   const [balance, setBalance] = useState<number | null>(null);
 
   useEffect(() => {
-    // Mock user data - in real app this would come from database/API
-    if (walletConnected) {
-      const mockStats: UserStats = {
-        totalStaked: 15.7,
-        activePools: 3,
-        completedPools: 8,
-        successRate: 87,
-        totalEarned: 12.3,
-        currentRank: 42
-      };
-
-      const mockPools: UserPool[] = [
-        {
-          id: 'pool-1',
-          name: '30-Day DCA Challenge',
-          goalType: 'Crypto',
-          stakeAmount: 5.0,
-          status: 'active',
-          progress: 67,
-          daysLeft: 10,
-          joinedAt: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString()
-        },
-        {
-          id: 'pool-2',
-          name: 'Daily Exercise Routine',
-          goalType: 'Lifestyle',
-          stakeAmount: 3.0,
-          status: 'completed',
-          progress: 100,
-          daysLeft: 0,
-          joinedAt: new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString()
-        },
-        {
-          id: 'pool-3',
-          name: 'HODL Streak',
-          goalType: 'Crypto',
-          stakeAmount: 7.7,
-          status: 'active',
-          progress: 45,
-          daysLeft: 23,
-          joinedAt: new Date(Date.now() - 12 * 24 * 60 * 60 * 1000).toISOString()
-        }
-      ];
-
-      setUserStats(mockStats);
-      setUserPools(mockPools);
+    // Auto-connect from persisted wallet (no popup if trusted)
+    const savedAddress = getPersistedWalletAddress();
+    if (savedAddress) {
+      setWalletConnected(true);
+      setWalletAddress(savedAddress);
+      // Balance can be fetched later; keep UX snappy
     }
-    setLoading(false);
-  }, [walletConnected]);
+  }, []);
+
+  useEffect(() => {
+    const loadUserData = async () => {
+      if (!walletConnected || !walletAddress) {
+        setUserStats(null);
+        setUserPools([]);
+        setLoading(false);
+        return;
+      }
+
+      setLoading(true);
+      try {
+        // Get user's participations (pools they joined)
+        const participations = await getUserParticipations(walletAddress);
+        console.log('Dashboard: Fetched participations:', participations);
+        console.log('Dashboard: Number of participations:', participations.length);
+
+        const mappedPools: UserPool[] = participations.map(p => ({
+          id: p.pool_id.toString(),
+          name: p.name,
+          goalType: p.goal_type.includes('Lifestyle') || p.goal_type.includes('lifestyle') ? 'Lifestyle' : 'Crypto',
+          stakeAmount: p.stake_amount,
+          status: (p.status === 'pending' || p.status === 'active') ? 'active' : 'completed',
+          progress: p.progress,
+          daysLeft: p.days_remaining,
+          joinedAt: p.joined_at || new Date(p.start_timestamp * 1000).toISOString(),
+        }));
+
+        setUserPools(mappedPools);
+
+        const totalStaked = participations.reduce((sum, p) => sum + p.stake_amount, 0);
+        const activePools = mappedPools.filter(p => p.status === 'active').length;
+        const completedPools = mappedPools.filter(p => p.status === 'completed').length;
+        const totalPools = mappedPools.length || 1;
+        const successRate = Math.round((completedPools / totalPools) * 100);
+
+        const stats: UserStats = {
+          totalStaked,
+          activePools,
+          completedPools,
+          successRate,
+          totalEarned: 0, // requires more detailed payout data
+          currentRank: 0, // requires leaderboard data
+        };
+
+        setUserStats(stats);
+      } catch (err) {
+        console.error('Error loading dashboard data:', err);
+        setUserStats(null);
+        setUserPools([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadUserData();
+  }, [walletConnected, walletAddress]);
 
   const handleConnectWallet = async () => {
     if (walletConnected) {
@@ -372,6 +390,7 @@ export default function DashboardPage() {
       setBalance(null);
       setUserStats(null);
       setUserPools([]);
+      clearPersistedWalletAddress();
       return;
     }
 
@@ -387,6 +406,7 @@ export default function DashboardPage() {
       setWalletAddress(pubKey);
       setWalletConnected(true);
       setBalance(2.45);
+      persistWalletAddress(pubKey);
 
     } catch (err) {
       console.error(err);

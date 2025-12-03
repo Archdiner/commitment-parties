@@ -42,6 +42,16 @@ class Settings(BaseSettings):
     SOLANA_RPC_URL: str = os.getenv("SOLANA_RPC_URL", "https://api.devnet.solana.com")
     PROGRAM_ID: str = os.getenv("PROGRAM_ID", "")
     
+    # LLM / AI challenge builder
+    LLM_API_URL: str = os.getenv("LLM_API_URL", "")
+    LLM_API_KEY: str = os.getenv("LLM_API_KEY", "")
+    LLM_MODEL: str = os.getenv("LLM_MODEL", "gpt-4o-mini")
+    
+    # GitHub OAuth
+    GITHUB_CLIENT_ID: str = os.getenv("GITHUB_CLIENT_ID", "")
+    GITHUB_CLIENT_SECRET: str = os.getenv("GITHUB_CLIENT_SECRET", "")
+    GITHUB_REDIRECT_URI: str = os.getenv("GITHUB_REDIRECT_URI", "http://localhost:3000/verify-github/callback")
+    
     # Environment
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
     
