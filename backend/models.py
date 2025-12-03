@@ -99,6 +99,16 @@ class PoolCreate(BaseModel):
     start_timestamp: int = Field(..., description="Pool start timestamp")
     end_timestamp: int = Field(..., description="Pool end timestamp")
     is_public: bool = Field(True, description="Whether pool is public")
+    recruitment_period_hours: int = Field(
+        24,
+        ge=0,
+        le=168,
+        description="Recruitment period in hours before challenge starts (0=immediate, 1=1hour, 24=1day, 168=1week)"
+    )
+    require_min_participants: bool = Field(
+        False,
+        description="If true, pool won't start until minimum participants joined"
+    )
 
 
 class PoolConfirmRequest(BaseModel):
@@ -130,6 +140,16 @@ class PoolConfirmRequest(BaseModel):
     start_timestamp: int = Field(..., description="Pool start timestamp")
     end_timestamp: int = Field(..., description="Pool end timestamp")
     is_public: bool = Field(True, description="Whether pool is public")
+    recruitment_period_hours: int = Field(
+        24,
+        ge=0,
+        le=168,
+        description="Recruitment period in hours before challenge starts (0=immediate, 1=1hour, 24=1day, 168=1week)"
+    )
+    require_min_participants: bool = Field(
+        False,
+        description="If true, pool won't start until minimum participants joined"
+    )
 
 
 class JoinPoolConfirmRequest(BaseModel):
@@ -164,6 +184,9 @@ class PoolResponse(BaseModel):
     is_public: bool
     created_at: datetime
     updated_at: datetime
+    recruitment_period_hours: Optional[int] = None
+    scheduled_start_time: Optional[int] = None
+    require_min_participants: Optional[bool] = None
 
     class Config:
         from_attributes = True

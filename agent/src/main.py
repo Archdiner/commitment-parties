@@ -17,6 +17,7 @@ from monitor import Monitor
 from verify import Verifier
 from distribute import Distributor
 from social import SocialManager
+from activate_pools import PoolActivator
 
 # Configure logging
 logging.basicConfig(
@@ -40,6 +41,7 @@ class CommitmentAgent:
         self.verifier: Optional[Verifier] = None
         self.distributor: Optional[Distributor] = None
         self.social: Optional[SocialManager] = None
+        self.activator: Optional[PoolActivator] = None
     
     async def initialize(self):
         """Initialize all agent components"""
@@ -58,6 +60,7 @@ class CommitmentAgent:
             self.distributor = Distributor(self.solana_client)
             self.monitor = Monitor(self.solana_client, self.verifier, self.distributor)
             self.social = SocialManager()
+            self.activator = PoolActivator()
             
             logger.info("Agent initialized successfully")
         
@@ -78,6 +81,7 @@ class CommitmentAgent:
                 self.monitor.monitor_lifestyle_pools(),
                 self.distributor.check_and_distribute(),
                 self.social.post_updates(),
+                self.activator.activate_scheduled_pools(),
             ]
             
             # Run all tasks concurrently

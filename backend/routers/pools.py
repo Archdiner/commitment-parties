@@ -271,10 +271,27 @@ async def confirm_pool_creation(pool_data: PoolConfirmRequest) -> PoolResponse:
             logger.warning(f"Pool {pool_data.pool_id} already exists, updating...")
             # Update existing pool with transaction signature
             pool_dict = pool_data.model_dump()
-            pool_dict["status"] = "pending"
             pool_dict["participant_count"] = 0
             pool_dict["total_staked"] = 0.0
             pool_dict["yield_earned"] = 0.0
+            
+            # Calculate scheduled_start_time based on recruitment_period_hours
+            import time
+            recruitment_hours = pool_dict.get("recruitment_period_hours", 24)  # Default to 24 hours
+            current_time = int(time.time())
+            
+            if recruitment_hours > 0:
+                # Scheduled start: current time + recruitment period
+                pool_dict["scheduled_start_time"] = current_time + (recruitment_hours * 3600)
+                pool_dict["start_timestamp"] = pool_dict["scheduled_start_time"]
+                pool_dict["end_timestamp"] = pool_dict["start_timestamp"] + (pool_dict["duration_days"] * 86400)
+                pool_dict["status"] = "pending"  # Will be activated by agent
+            else:
+                # Immediate start: activate immediately
+                pool_dict["scheduled_start_time"] = None
+                pool_dict["start_timestamp"] = current_time
+                pool_dict["end_timestamp"] = pool_dict["start_timestamp"] + (pool_dict["duration_days"] * 86400)
+                pool_dict["status"] = "active"  # Activate immediately
             
             results = await execute_query(
                 table="pools",
@@ -290,10 +307,30 @@ async def confirm_pool_creation(pool_data: PoolConfirmRequest) -> PoolResponse:
         
         # Convert to dict for database insertion
         pool_dict = pool_data.model_dump()
-        pool_dict["status"] = "pending"
         pool_dict["participant_count"] = 0
         pool_dict["total_staked"] = 0.0
         pool_dict["yield_earned"] = 0.0
+        
+        # Calculate scheduled_start_time based on recruitment_period_hours
+        import time
+        recruitment_hours = pool_dict.get("recruitment_period_hours", 24)  # Default to 24 hours
+        current_time = int(time.time())
+        
+        if recruitment_hours > 0:
+            # Scheduled start: current time + recruitment period
+            pool_dict["scheduled_start_time"] = current_time + (recruitment_hours * 3600)
+            # Update start_timestamp to scheduled time (for end_timestamp calculation)
+            pool_dict["start_timestamp"] = pool_dict["scheduled_start_time"]
+            pool_dict["end_timestamp"] = pool_dict["start_timestamp"] + (pool_dict["duration_days"] * 86400)
+            pool_dict["status"] = "pending"  # Will be activated by agent at scheduled time
+        else:
+            # Immediate start: activate immediately
+            pool_dict["scheduled_start_time"] = None
+            pool_dict["start_timestamp"] = current_time
+            pool_dict["end_timestamp"] = pool_dict["start_timestamp"] + (pool_dict["duration_days"] * 86400)
+            pool_dict["status"] = "active"  # Activate immediately
+            # Activate immediately for immediate start
+            pool_dict["status"] = "active"
         
         # Remove transaction_signature from dict (not in database schema)
         pool_dict.pop("transaction_signature", None)
@@ -474,6 +511,37 @@ async def confirm_pool_join(
             raise HTTPException(status_code=404, detail="Pool not found")
         
         pool = results[0]
+        
+        # Check if pool has started (join restrictions)
+        import time
+        current_time = int(time.time())
+        scheduled_start = pool.get("scheduled_start_time")
+        start_timestamp = pool.get("start_timestamp", 0)
+        
+        # Determine if pool has actually started
+        actual_start_time = scheduled_start if scheduled_start else start_timestamp
+        
+        if actual_start_time and current_time >= actual_start_time:
+            # Pool has started - check if we're still in Day 1 (24 hour grace period)
+            day1_end = actual_start_time + 86400  # 24 hours after start
+            if current_time >= day1_end:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Registration closed. This challenge has already started and Day 1 has ended."
+                )
+            # Still in Day 1 - allow join but warn
+            logger.info(f"Late join during Day 1 for pool {pool_id} by {join_data.participant_wallet}")
+        elif scheduled_start and current_time < scheduled_start:
+            # Pool hasn't started yet - allow join
+            pass
+        elif not scheduled_start and pool.get("status") == "active":
+            # Pool is active and has no scheduled start (immediate start) - check if Day 1 has passed
+            day1_end = start_timestamp + 86400
+            if current_time >= day1_end:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Registration closed. This challenge has already started and Day 1 has ended."
+                )
         
         # Ensure participant user exists
         participant_wallet = join_data.participant_wallet

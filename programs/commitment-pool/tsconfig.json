@@ -6,9 +6,10 @@
     "esModuleInterop": true,
     "moduleResolution": "node",
     "types": ["node"],
-    "outDir": "dist"
-  },
-  "include": ["tests/**/*.ts"]
+    "outDir": "dist",
+    "skipLibCheck": true,
+    "noEmit": true
+  }
 }
 
 

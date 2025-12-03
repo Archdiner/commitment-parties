@@ -50,6 +50,9 @@ export interface PoolResponse {
   is_public: boolean;
   created_at: string;
   updated_at: string;
+  recruitment_period_hours?: number;
+  scheduled_start_time?: number;
+  require_min_participants?: boolean;
 }
 
 export interface PoolConfirmRequest {
@@ -71,6 +74,8 @@ export interface PoolConfirmRequest {
   start_timestamp: number;
   end_timestamp: number;
   is_public?: boolean;
+  recruitment_period_hours?: number;
+  require_min_participants?: boolean;
 }
 
 export interface JoinPoolConfirmRequest {

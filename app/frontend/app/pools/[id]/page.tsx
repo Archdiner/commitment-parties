@@ -75,6 +75,9 @@ interface Pool {
   txHash?: string;
   creatorId?: string;
   start_timestamp?: number;
+  scheduled_start_time?: number;
+  recruitment_period_hours?: number;
+  status?: string;
   goal_metadata?: Record<string, any>;
 }
 
@@ -711,11 +714,13 @@ const CheckInSection = ({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   // Calculate current day
+  // Use scheduled_start_time if available, otherwise use start_timestamp
   const getCurrentDay = (): number | null => {
-    if (!pool.start_timestamp) return null;
+    const actualStartTime = pool.scheduled_start_time || pool.start_timestamp;
+    if (!actualStartTime) return null;
     const now = Math.floor(Date.now() / 1000);
-    if (now < pool.start_timestamp) return null;
-    const secondsElapsed = now - pool.start_timestamp;
+    if (now < actualStartTime) return null;
+    const secondsElapsed = now - actualStartTime;
     const daysElapsed = Math.floor(secondsElapsed / 86400);
     return daysElapsed + 1;
   };
@@ -1019,6 +1024,9 @@ export default function PoolDetailPage() {
           onChainAddress: poolData.pool_pubkey,
           creatorId: poolData.creator_wallet,
           start_timestamp: poolData.start_timestamp,
+          scheduled_start_time: poolData.scheduled_start_time,
+          recruitment_period_hours: poolData.recruitment_period_hours,
+          status: poolData.status,
           goal_metadata: poolData.goal_metadata,
         };
         

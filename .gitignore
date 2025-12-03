@@ -93,6 +93,13 @@ coverage/
 scripts/delete_all_pools.py
 scripts/verify_deletion.py
 
+# Documentation (temporary/working docs)
+docs/CHALLENGE_TIMING_DESIGN.md
+docs/GITHUB_VERIFICATION_FIX.md
+docs/RECRUITMENT_PERIOD_ANALYSIS.md
+docs/RECRUITMENT_PERIOD_IMPLEMENTATION.md
+docs/SYSTEM_VERIFICATION.md
+
 # Database
 *.db
 *.sqlite

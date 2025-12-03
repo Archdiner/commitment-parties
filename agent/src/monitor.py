@@ -33,6 +33,7 @@ class Monitor:
     def _calculate_current_day(self, start_timestamp: int) -> Optional[int]:
         """
         Calculate the current day number based on pool start timestamp.
+        Uses 24-hour periods from the exact start time (not calendar days).
         
         Args:
             start_timestamp: Unix timestamp when pool started
@@ -45,7 +46,10 @@ class Monitor:
             if current_time < start_timestamp:
                 return None  # Pool hasn't started yet
             
-            # Calculate days elapsed (0-indexed, then add 1 for 1-indexed day)
+            # Calculate days elapsed using 24-hour periods (86400 seconds = 24 hours)
+            # Day 1 = start_timestamp to start_timestamp + 86400
+            # Day 2 = start_timestamp + 86400 to start_timestamp + 172800
+            # etc.
             seconds_elapsed = current_time - start_timestamp
             days_elapsed = seconds_elapsed // 86400  # 86400 seconds per day
             current_day = days_elapsed + 1
@@ -55,9 +59,9 @@ class Monitor:
             logger.error(f"Error calculating current day: {e}", exc_info=True)
             return None
 
-    async def verify_github_commits(self, pool: Dict[str, Any], participant: Dict[str, Any]) -> bool:
+    async def verify_github_commits(self, pool: Dict[str, Any], participant: Dict[str, Any], day: int) -> bool:
         """
-        Verify that a participant has made enough GitHub commits for the current UTC day.
+        Verify that a participant has made enough GitHub commits for the specified challenge day.
 
         Uses the participant's VERIFIED GitHub username (from users table), not pool metadata.
         This ensures only the actual GitHub account owner can participate.
@@ -74,7 +78,12 @@ class Monitor:
 
         If "repo" is provided, we count commits by this author to that repo.
         If "repo" is omitted/empty, we fall back to counting PushEvent commits
-        across all public repos for this user for the current day.
+        across all public repos for this user for the challenge day.
+        
+        Args:
+            pool: Pool dictionary
+            participant: Participant dictionary
+            day: Challenge day number (1-indexed) to verify
         """
         try:
             goal_metadata = pool.get("goal_metadata") or {}
@@ -111,20 +120,37 @@ class Monitor:
             github_username = users[0].get("verified_github_username")
             repo = (goal_metadata.get("repo") or "").strip()
             min_commits_per_day = int(goal_metadata.get("min_commits_per_day", 1))
+            start_timestamp = pool.get("start_timestamp")
+
+            if not start_timestamp:
+                logger.warning("Pool %s missing start_timestamp", pool.get("pool_id"))
+                return False
 
             logger.info(
-                "Verifying GitHub commits for pool=%s, wallet=%s, verified_github=%s",
+                "Verifying GitHub commits for pool=%s, wallet=%s, verified_github=%s, day=%s",
                 pool.get("pool_id"),
                 participant_wallet,
-                github_username
+                github_username,
+                day
             )
 
-            # Compute current UTC day window
-            now_utc = datetime.now(timezone.utc)
-            start_of_day = datetime(
-                now_utc.year, now_utc.month, now_utc.day, tzinfo=timezone.utc
+            # Calculate the UTC day window for this challenge day
+            # Day 1 = start_timestamp's day, Day 2 = start_timestamp + 1 day, etc.
+            start_datetime = datetime.fromtimestamp(start_timestamp, tz=timezone.utc)
+            challenge_day_start = datetime(
+                start_datetime.year, start_datetime.month, start_datetime.day, tzinfo=timezone.utc
+            ) + timedelta(days=day - 1)  # day-1 because day is 1-indexed
+            challenge_day_end = challenge_day_start + timedelta(days=1)
+            
+            start_of_day = challenge_day_start
+            end_of_day = challenge_day_end
+            
+            logger.info(
+                "Checking commits for challenge day %s: %s to %s (UTC)",
+                day,
+                start_of_day.isoformat(),
+                end_of_day.isoformat()
             )
-            end_of_day = start_of_day + timedelta(days=1)
 
             # If a specific repo is configured, count commits in that repo only
             if repo:
@@ -323,12 +349,36 @@ class Monitor:
             if not wallet:
                 return False
 
-            # Compute current UTC day window
-            now_utc = datetime.now(timezone.utc)
-            start_of_day = datetime(
-                now_utc.year, now_utc.month, now_utc.day, tzinfo=timezone.utc
+            # Calculate the UTC day window for the specific challenge day
+            # We need to check commits made on the day corresponding to the challenge day
+            # Day 1 = day when pool started, Day 2 = next day, etc.
+            start_timestamp = pool.get("start_timestamp")
+            if not start_timestamp:
+                logger.warning("Pool %s missing start_timestamp", pool.get("pool_id"))
+                return False
+            
+            # Get the current challenge day (calculated by the caller)
+            current_day = self._calculate_current_day(start_timestamp)
+            if current_day is None:
+                logger.warning("Pool %s hasn't started yet", pool.get("pool_id"))
+                return False
+            
+            # Calculate which UTC calendar day corresponds to this challenge day
+            # Day 1 = the day the pool started
+            start_datetime = datetime.fromtimestamp(start_timestamp, tz=timezone.utc)
+            challenge_day_start_utc = datetime(
+                start_datetime.year, start_datetime.month, start_datetime.day, tzinfo=timezone.utc
+            ) + timedelta(days=current_day - 1)  # current_day - 1 because day is 1-indexed
+            
+            start_of_day = challenge_day_start_utc
+            end_of_day = challenge_day_start_utc + timedelta(days=1)
+            
+            logger.info(
+                "Checking commits for challenge day %s: %s to %s (UTC)",
+                current_day,
+                start_of_day.isoformat(),
+                end_of_day.isoformat()
             )
-            end_of_day = start_of_day + timedelta(days=1)
 
             start_ts = int(start_of_day.timestamp())
             end_ts = int(end_of_day.timestamp())
@@ -517,15 +567,17 @@ class Monitor:
                     for pool in dca_pools:
                         try:
                             pool_id = pool.get("pool_id")
-                            start_timestamp = pool.get("start_timestamp")
+                            # Use scheduled_start_time if available, otherwise use start_timestamp
+                            scheduled_start = pool.get("scheduled_start_time")
+                            start_timestamp = scheduled_start if scheduled_start else pool.get("start_timestamp")
 
-                            if not pool_id:
+                            if not pool_id or not start_timestamp:
                                 logger.warning("Invalid DCA pool data: %s", pool)
                                 continue
 
                             current_day = self._calculate_current_day(start_timestamp)
                             if current_day is None:
-                                logger.info("DCA pool %s hasn't started yet", pool_id)
+                                logger.info("DCA pool %s hasn't started yet (scheduled: %s, start: %s)", pool_id, scheduled_start, start_timestamp)
                                 continue
 
                             participants = await self.get_pool_participants(pool_id)
@@ -609,10 +661,18 @@ class Monitor:
                         try:
                             pool_id = pool.get("pool_id")
                             goal_metadata = pool.get("goal_metadata", {})
-                            start_timestamp = pool.get("start_timestamp")
+                            # Use scheduled_start_time if available, otherwise use start_timestamp
+                            scheduled_start = pool.get("scheduled_start_time")
+                            start_timestamp = scheduled_start if scheduled_start else pool.get("start_timestamp")
                             
-                            if not pool_id or not goal_metadata:
+                            if not pool_id or not goal_metadata or not start_timestamp:
                                 logger.warning(f"Invalid pool data: {pool}")
+                                continue
+                            
+                            # Calculate current day (uses 24-hour periods from start)
+                            current_day = self._calculate_current_day(start_timestamp)
+                            if current_day is None:
+                                logger.info(f"HODL pool {pool_id} hasn't started yet (scheduled: {scheduled_start}, start: {start_timestamp})")
                                 continue
                             
                             # Extract HODL requirements from goal_metadata
@@ -621,12 +681,6 @@ class Monitor:
                             
                             if not token_mint or min_balance is None:
                                 logger.warning(f"Pool {pool_id} missing HODL requirements")
-                                continue
-                            
-                            # Calculate current day
-                            current_day = self._calculate_current_day(start_timestamp)
-                            if current_day is None:
-                                logger.info(f"Pool {pool_id} hasn't started yet")
                                 continue
                             
                             # Get all active participants
@@ -704,17 +758,19 @@ class Monitor:
                     for pool in pools:
                         try:
                             pool_id = pool.get("pool_id")
-                            start_timestamp = pool.get("start_timestamp")
+                            # Use scheduled_start_time if available, otherwise use start_timestamp
+                            scheduled_start = pool.get("scheduled_start_time")
+                            start_timestamp = scheduled_start if scheduled_start else pool.get("start_timestamp")
                             goal_metadata = pool.get("goal_metadata") or {}
                             
-                            if not pool_id:
+                            if not pool_id or not start_timestamp:
                                 logger.warning(f"Invalid pool data: {pool}")
                                 continue
                             
-                            # Calculate current day
+                            # Calculate current day (uses 24-hour periods from start)
                             current_day = self._calculate_current_day(start_timestamp)
                             if current_day is None:
-                                logger.info(f"Pool {pool_id} hasn't started yet")
+                                logger.info(f"Pool {pool_id} hasn't started yet (scheduled: {scheduled_start}, start: {start_timestamp})")
                                 continue
                             
                             # Get all active participants
@@ -739,7 +795,7 @@ class Monitor:
                                 # Route verification based on lifestyle habit type
                                 if habit_type == "github_commits":
                                     passed = await self.verify_github_commits(
-                                        pool, participant
+                                        pool, participant, current_day
                                     )
                                 elif habit_type == "screen_time":
                                     passed = await self.verify_screentime(

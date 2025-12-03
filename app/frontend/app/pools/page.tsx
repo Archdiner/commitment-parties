@@ -57,9 +57,70 @@ interface Pool {
   created_at: string;
   onChainAddress?: string;
   txHash?: string;
+  status?: string;
+  start_timestamp?: number;
+  scheduled_start_time?: number;
+  recruitment_period_hours?: number;
 }
 
 // --- Components ---
+
+// Countdown Timer Component
+const CountdownTimer = ({ targetTime }: { targetTime: number }) => {
+  const [timeLeft, setTimeLeft] = useState<{ hours: number; minutes: number; seconds: number } | null>(null);
+  const [expired, setExpired] = useState(false);
+
+  useEffect(() => {
+    const updateTimer = () => {
+      const now = Math.floor(Date.now() / 1000);
+      const diff = targetTime - now;
+
+      if (diff <= 0) {
+        setExpired(true);
+        setTimeLeft(null);
+        return;
+      }
+
+      const hours = Math.floor(diff / 3600);
+      const minutes = Math.floor((diff % 3600) / 60);
+      const seconds = diff % 60;
+
+      setTimeLeft({ hours, minutes, seconds });
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+
+    return () => clearInterval(interval);
+  }, [targetTime]);
+
+  if (expired) {
+    return (
+      <div className="flex items-center gap-2 text-emerald-600">
+        <Zap className="w-4 h-4" />
+        <span className="text-xs font-bold">Starting now!</span>
+      </div>
+    );
+  }
+
+  if (!timeLeft) {
+    return (
+      <div className="flex items-center gap-2 text-slate-500">
+        <Clock className="w-4 h-4 animate-pulse" />
+        <span className="text-xs">Calculating...</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2 text-purple-600">
+      <Clock className="w-4 h-4" />
+      <span className="text-xs font-mono font-bold">
+        {timeLeft.hours}h {timeLeft.minutes}m {timeLeft.seconds}s
+      </span>
+    </div>
+  );
+};
 
 const Navbar = ({
   walletConnected,
@@ -188,13 +249,28 @@ const PoolCard = ({
     </div>
 
     <div className="flex justify-between items-start mb-5 relative z-10">
-      <span className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest border shadow-sm ${
-        pool.goalType === 'Crypto'
-          ? 'bg-blue-50 text-blue-700 border-blue-200'
-          : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-      }`}>
-        {pool.goalType}
-      </span>
+      <div className="flex flex-col gap-2">
+        <span className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest border shadow-sm w-fit ${
+          pool.goalType === 'Crypto'
+            ? 'bg-blue-50 text-blue-700 border-blue-200'
+            : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+        }`}>
+          {pool.goalType}
+        </span>
+        {/* Status Badge */}
+        {pool.status === 'pending' && pool.scheduled_start_time && pool.scheduled_start_time > Math.floor(Date.now() / 1000) && (
+          <div className="flex items-center gap-2 bg-purple-50 border border-purple-200 rounded-lg px-2 py-1">
+            <Clock className="w-3 h-3 text-purple-600" />
+            <span className="text-[10px] font-bold text-purple-700 uppercase tracking-wide">Recruiting</span>
+          </div>
+        )}
+        {pool.status === 'active' && (
+          <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-lg px-2 py-1">
+            <Zap className="w-3 h-3 text-emerald-600" />
+            <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wide">Active</span>
+          </div>
+        )}
+      </div>
       {pool.onChainAddress && (
         <a
           href={`https://explorer.solana.com/address/${pool.onChainAddress}?cluster=devnet`}
@@ -217,6 +293,19 @@ const PoolCard = ({
     </Link>
 
     <div className="mt-auto space-y-4 relative z-10 bg-slate-50 p-4 rounded-xl border border-gray-100">
+      {/* Countdown Timer - Show if pool is pending and has scheduled start */}
+      {pool.status === 'pending' && pool.scheduled_start_time && pool.scheduled_start_time > Math.floor(Date.now() / 1000) && (
+        <div className="bg-gradient-to-r from-purple-50 to-blue-50 border-2 border-purple-200 rounded-lg p-3 mb-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-purple-700 uppercase tracking-wide">Starts in</span>
+            <CountdownTimer targetTime={pool.scheduled_start_time} />
+          </div>
+          <p className="text-[10px] text-slate-600 mt-1">
+            Join before the challenge begins!
+          </p>
+        </div>
+      )}
+
       <div className="flex justify-between text-sm">
         <span className="text-slate-500 flex items-center gap-2 font-medium">
           <Wallet className="w-4 h-4" /> Stake
@@ -257,25 +346,45 @@ const PoolCard = ({
         View Progress
       </Link>
     ) : (
-      <button
-        onClick={() => onJoin(pool.id, pool.onChainAddress, pool.participants)}
-        disabled={pool.participants >= pool.maxParticipants || !!joining}
-        className={`w-full mt-4 py-3 font-bold rounded-xl transition-all duration-200 flex justify-center items-center gap-2 relative z-10 shadow-md ${
-          pool.participants >= pool.maxParticipants
-            ? 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200 shadow-none'
-            : 'bg-emerald-600 text-white hover:bg-emerald-700 hover:shadow-lg hover:shadow-emerald-200'
-        }`}
-      >
-        {joining === pool.id ? (
-          <>
-            <Loader2 className="w-4 h-4 animate-spin" /> Confirming Tx...
-          </>
-        ) : pool.participants >= pool.maxParticipants ? (
-          'Pool Full'
-        ) : (
-          'Join Pool'
+      <>
+        {/* Join restriction message */}
+        {pool.status === 'active' && (
+          <div className="w-full mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+            <div className="flex items-center gap-2 text-amber-700">
+              <AlertCircle className="w-4 h-4" />
+              <span className="text-xs font-semibold">Challenge has started</span>
+            </div>
+            <p className="text-[10px] text-amber-600 mt-1">
+              Registration closed. This challenge is now active.
+            </p>
+          </div>
         )}
-      </button>
+        <button
+          onClick={() => onJoin(pool.id, pool.onChainAddress, pool.participants)}
+          disabled={
+            pool.participants >= pool.maxParticipants || 
+            !!joining || 
+            (pool.status === 'active' && pool.scheduled_start_time && pool.scheduled_start_time <= Math.floor(Date.now() / 1000))
+          }
+          className={`w-full mt-4 py-3 font-bold rounded-xl transition-all duration-200 flex justify-center items-center gap-2 relative z-10 shadow-md ${
+            pool.participants >= pool.maxParticipants || (pool.status === 'active' && pool.scheduled_start_time && pool.scheduled_start_time <= Math.floor(Date.now() / 1000))
+              ? 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200 shadow-none'
+              : 'bg-emerald-600 text-white hover:bg-emerald-700 hover:shadow-lg hover:shadow-emerald-200'
+          }`}
+        >
+          {joining === pool.id ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" /> Confirming Tx...
+            </>
+          ) : pool.participants >= pool.maxParticipants ? (
+            'Pool Full'
+          ) : pool.status === 'active' && pool.scheduled_start_time && pool.scheduled_start_time <= Math.floor(Date.now() / 1000) ? (
+            'Registration Closed'
+          ) : (
+            'Join Pool'
+          )}
+        </button>
+      </>
     )}
   </div>
 );
@@ -469,6 +578,10 @@ export default function PoolsPage() {
           created_at: p.created_at,
           onChainAddress: p.pool_pubkey,
           creatorId: p.creator_wallet,
+          status: p.status,
+          start_timestamp: p.start_timestamp,
+          scheduled_start_time: p.scheduled_start_time,
+          recruitment_period_hours: p.recruitment_period_hours,
         }));
 
         // If wallet is connected, also fetch pools user is part of
@@ -501,6 +614,10 @@ export default function PoolsPage() {
                     created_at: poolData.created_at,
                     onChainAddress: poolData.pool_pubkey,
                     creatorId: poolData.creator_wallet,
+                    status: poolData.status,
+                    start_timestamp: poolData.start_timestamp,
+                    scheduled_start_time: poolData.scheduled_start_time,
+                    recruitment_period_hours: poolData.recruitment_period_hours,
                   };
                 } catch (err) {
                   console.error(`Error fetching pool ${poolId}:`, err);

@@ -86,6 +86,9 @@ interface PoolFormData {
   inviteWallets: string;  // Comma-separated wallet addresses
   // Auto-join after creation
   autoJoin: boolean;  // Join the pool immediately after creating it
+  // Recruitment period
+  recruitmentPeriodHours: number;  // 0=immediate, 1=1hour, 24=1day, 168=1week
+  requireMinParticipants: boolean;  // Require minimum participants before starting
 }
 
 const TOKEN_OPTIONS = [
@@ -518,6 +521,8 @@ export default function CreatePoolPage() {
     isPublic: true,
     inviteWallets: '',
     autoJoin: true,  // Default: join pool after creating
+    recruitmentPeriodHours: 24,  // Default: 1 day recruitment
+    requireMinParticipants: false,  // Default: start with any participants
   });
 
   // Solana State
@@ -812,8 +817,11 @@ export default function CreatePoolPage() {
         }
       }
       
-      // Calculate timestamps
-      const startTimestamp = Math.floor(Date.now() / 1000);
+      // Calculate timestamps based on recruitment period
+      // For on-chain, we still use immediate start (smart contract doesn't know about recruitment)
+      // Backend will handle the scheduled start time
+      const currentTime = Math.floor(Date.now() / 1000);
+      const startTimestamp = currentTime; // On-chain uses current time
       const endTimestamp = startTimestamp + (formData.durationDays * 24 * 60 * 60);
       
       // Default charity address (can be updated later)
@@ -845,6 +853,12 @@ export default function CreatePoolPage() {
       const signature = await signAndSendTransaction(connection, instruction, walletAdapter);
       
       // Confirm with backend
+      // Calculate start and end timestamps based on recruitment period
+      const now = Math.floor(Date.now() / 1000);
+      const recruitmentSeconds = formData.recruitmentPeriodHours * 3600;
+      const actualStartTimestamp = now + recruitmentSeconds; // When challenge actually starts
+      const actualEndTimestamp = actualStartTimestamp + (formData.durationDays * 86400);
+
       const poolData = await confirmPoolCreation({
         pool_id: poolId,
         pool_pubkey: poolPubkey.toString(),
@@ -861,9 +875,11 @@ export default function CreatePoolPage() {
         distribution_mode: 'competitive',
         split_percentage_winners: 100,
         charity_address: charityAddress,
-        start_timestamp: startTimestamp,
-        end_timestamp: endTimestamp,
+        start_timestamp: actualStartTimestamp, // When challenge actually starts
+        end_timestamp: actualEndTimestamp,
         is_public: formData.isPublic,
+        recruitment_period_hours: formData.recruitmentPeriodHours,
+        require_min_participants: formData.requireMinParticipants,
       });
 
       // Create invites if pool is private and invite wallets provided
@@ -1394,6 +1410,142 @@ export default function CreatePoolPage() {
                   </p>
                 </div>
               )}
+            </div>
+          </div>
+
+          {/* Recruitment Period */}
+          <div className="mt-8 p-6 bg-gradient-to-br from-purple-50 to-blue-50 rounded-xl border-2 border-purple-200">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="bg-purple-100 p-2 rounded-lg">
+                <Clock className="w-5 h-5 text-purple-600" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-bold text-slate-900 mb-1">When Should the Challenge Start?</h3>
+                <p className="text-sm text-slate-600">
+                  Choose how long people have to join before the challenge begins. Everyone starts together for fairness.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+              {[
+                { hours: 0, label: 'Immediate', icon: Zap, desc: 'Start now', colorClass: 'emerald' },
+                { hours: 1, label: '1 Hour', icon: Clock, desc: 'Quick start', colorClass: 'blue' },
+                { hours: 24, label: '1 Day', icon: Calendar, desc: 'Standard', colorClass: 'purple' },
+                { hours: 168, label: '1 Week', icon: Sparkles, desc: 'Build hype', colorClass: 'amber' },
+              ].map(({ hours, label, icon: Icon, desc, colorClass }) => {
+                const isSelected = formData.recruitmentPeriodHours === hours;
+                const borderColor = isSelected 
+                  ? colorClass === 'emerald' ? 'border-emerald-500 bg-emerald-50'
+                  : colorClass === 'blue' ? 'border-blue-500 bg-blue-50'
+                  : colorClass === 'purple' ? 'border-purple-500 bg-purple-50'
+                  : 'border-amber-500 bg-amber-50'
+                  : 'border-gray-200 hover:border-gray-300 bg-white';
+                const textColor = isSelected
+                  ? colorClass === 'emerald' ? 'text-emerald-600 text-emerald-700'
+                  : colorClass === 'blue' ? 'text-blue-600 text-blue-700'
+                  : colorClass === 'purple' ? 'text-purple-600 text-purple-700'
+                  : 'text-amber-600 text-amber-700'
+                  : 'text-slate-400 text-slate-700';
+                const iconColor = isSelected
+                  ? colorClass === 'emerald' ? 'text-emerald-600'
+                  : colorClass === 'blue' ? 'text-blue-600'
+                  : colorClass === 'purple' ? 'text-purple-600'
+                  : 'text-amber-600'
+                  : 'text-slate-400';
+                const labelColor = isSelected
+                  ? colorClass === 'emerald' ? 'text-emerald-700'
+                  : colorClass === 'blue' ? 'text-blue-700'
+                  : colorClass === 'purple' ? 'text-purple-700'
+                  : 'text-amber-700'
+                  : 'text-slate-700';
+                const descColor = isSelected
+                  ? colorClass === 'emerald' ? 'text-emerald-600'
+                  : colorClass === 'blue' ? 'text-blue-600'
+                  : colorClass === 'purple' ? 'text-purple-600'
+                  : 'text-amber-600'
+                  : 'text-slate-500';
+                
+                return (
+                  <button
+                    key={hours}
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, recruitmentPeriodHours: hours }))}
+                    className={`p-4 rounded-xl border-2 transition-all text-left shadow-sm ${borderColor} ${isSelected ? 'shadow-lg' : ''}`}
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <Icon className={`w-4 h-4 ${iconColor}`} />
+                      <span className={`font-bold text-sm ${labelColor}`}>
+                        {label}
+                      </span>
+                    </div>
+                    <p className={`text-xs ${descColor}`}>
+                      {desc}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Start Time Preview */}
+            {formData.recruitmentPeriodHours > 0 && (() => {
+              const startTime = new Date(Date.now() + formData.recruitmentPeriodHours * 3600 * 1000);
+              const timeStr = startTime.toLocaleString('en-US', {
+                weekday: 'short',
+                month: 'short',
+                day: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true,
+              });
+              return (
+                <div className="bg-white rounded-lg p-4 border border-purple-200">
+                  <div className="flex items-center gap-2 text-sm">
+                    <Clock className="w-4 h-4 text-purple-600" />
+                    <span className="text-slate-600">Challenge starts:</span>
+                    <span className="font-bold text-purple-700">{timeStr}</span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-2">
+                    People can join until then. After that, the challenge begins and no new participants can join.
+                  </p>
+                </div>
+              );
+            })()}
+
+            {formData.recruitmentPeriodHours === 0 && (
+              <div className="bg-white rounded-lg p-4 border border-emerald-200">
+                <div className="flex items-center gap-2 text-sm">
+                  <Zap className="w-4 h-4 text-emerald-600" />
+                  <span className="font-bold text-emerald-700">Challenge starts immediately</span>
+                </div>
+                <p className="text-xs text-slate-500 mt-2">
+                  Perfect for private challenges with friends who are ready to start now.
+                </p>
+              </div>
+            )}
+
+            {/* Minimum Participants Option */}
+            <div className="mt-4 pt-4 border-t border-purple-200">
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={formData.requireMinParticipants}
+                  onChange={(e) =>
+                    setFormData(prev => ({ ...prev, requireMinParticipants: e.target.checked }))
+                  }
+                  className="mt-1 w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                />
+                <div className="flex-1">
+                  <div className="font-semibold text-slate-900 text-sm">
+                    Require minimum participants before starting
+                  </div>
+                  <div className="text-xs text-slate-600 mt-1">
+                    {formData.requireMinParticipants
+                      ? `Challenge won't start until at least 2 people join. If minimum not met, recruitment extends by 24 hours.`
+                      : 'Challenge will start even if only 1 person joins (you).'}
+                  </div>
+                </div>
+              </label>
             </div>
           </div>
 
