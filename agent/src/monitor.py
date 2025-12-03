@@ -135,21 +135,22 @@ class Monitor:
             )
 
             # Calculate the UTC day window for this challenge day
-            # Day 1 = start_timestamp's day, Day 2 = start_timestamp + 1 day, etc.
+            # Day 1 = 24 hours from start_timestamp, Day 2 = next 24 hours, etc.
+            # This ensures each challenge day is exactly 24 hours from the pool start time
             start_datetime = datetime.fromtimestamp(start_timestamp, tz=timezone.utc)
-            challenge_day_start = datetime(
-                start_datetime.year, start_datetime.month, start_datetime.day, tzinfo=timezone.utc
-            ) + timedelta(days=day - 1)  # day-1 because day is 1-indexed
+            challenge_day_start = start_datetime + timedelta(days=day - 1)  # day-1 because day is 1-indexed
             challenge_day_end = challenge_day_start + timedelta(days=1)
             
             start_of_day = challenge_day_start
             end_of_day = challenge_day_end
             
             logger.info(
-                "Checking commits for challenge day %s: %s to %s (UTC)",
+                "Checking commits for challenge day %s: %s to %s (UTC) "
+                "(24-hour window from pool start: %s)",
                 day,
                 start_of_day.isoformat(),
-                end_of_day.isoformat()
+                end_of_day.isoformat(),
+                start_datetime.isoformat()
             )
 
             # If a specific repo is configured, count commits in that repo only
@@ -592,15 +593,19 @@ class Monitor:
                                 continue
 
                             # Check grace period
-                            grace_period_minutes = pool.get("grace_period_minutes", 5)
+                            grace_period_minutes = pool.get("grace_period_minutes")
+                            if grace_period_minutes is None:
+                                grace_period_minutes = 5  # Default 5 minutes if not set
+                            
                             current_time = int(time.time())
                             grace_period_end = start_timestamp + (grace_period_minutes * 60)
+                            time_until_grace_end = grace_period_end - current_time
                             
                             if current_time < grace_period_end:
                                 logger.info(
                                     f"DCA pool {pool_id} still in grace period "
-                                    f"({grace_period_minutes} minutes). "
-                                    f"Grace period ends at {grace_period_end}, current time: {current_time}"
+                                    f"({grace_period_minutes} minutes, {time_until_grace_end}s remaining). "
+                                    f"Skipping verification until grace period ends."
                                 )
                                 continue
 
@@ -705,15 +710,19 @@ class Monitor:
                                 continue
                             
                             # Check grace period
-                            grace_period_minutes = pool.get("grace_period_minutes", 5)
+                            grace_period_minutes = pool.get("grace_period_minutes")
+                            if grace_period_minutes is None:
+                                grace_period_minutes = 5  # Default 5 minutes if not set
+                            
                             current_time = int(time.time())
                             grace_period_end = start_timestamp + (grace_period_minutes * 60)
+                            time_until_grace_end = grace_period_end - current_time
                             
                             if current_time < grace_period_end:
                                 logger.info(
                                     f"HODL pool {pool_id} still in grace period "
-                                    f"({grace_period_minutes} minutes). "
-                                    f"Grace period ends at {grace_period_end}, current time: {current_time}"
+                                    f"({grace_period_minutes} minutes, {time_until_grace_end}s remaining). "
+                                    f"Skipping verification until grace period ends."
                                 )
                                 continue
                             
@@ -821,15 +830,28 @@ class Monitor:
                                 continue
                             
                             # Check grace period - don't verify until grace period has passed
-                            grace_period_minutes = pool.get("grace_period_minutes", 5)  # Default 5 minutes
+                            grace_period_minutes = pool.get("grace_period_minutes")
+                            if grace_period_minutes is None:
+                                grace_period_minutes = 5  # Default 5 minutes if not set
+                            
                             current_time = int(time.time())
                             grace_period_end = start_timestamp + (grace_period_minutes * 60)
+                            time_until_grace_end = grace_period_end - current_time
+                            
+                            logger.debug(
+                                f"Pool {pool_id} grace period check: "
+                                f"start_timestamp={start_timestamp}, "
+                                f"grace_period_minutes={grace_period_minutes}, "
+                                f"grace_period_end={grace_period_end}, "
+                                f"current_time={current_time}, "
+                                f"time_until_grace_end={time_until_grace_end}s"
+                            )
                             
                             if current_time < grace_period_end:
                                 logger.info(
                                     f"Pool {pool_id} still in grace period "
-                                    f"({grace_period_minutes} minutes). "
-                                    f"Grace period ends at {grace_period_end}, current time: {current_time}"
+                                    f"({grace_period_minutes} minutes, {time_until_grace_end}s remaining). "
+                                    f"Skipping verification until grace period ends."
                                 )
                                 continue
                             
