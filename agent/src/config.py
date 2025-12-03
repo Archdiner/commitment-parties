@@ -39,6 +39,9 @@ class Settings:
     TWITTER_ACCESS_TOKEN: Optional[str] = os.getenv("TWITTER_ACCESS_TOKEN", None)
     TWITTER_ACCESS_TOKEN_SECRET: Optional[str] = os.getenv("TWITTER_ACCESS_TOKEN_SECRET", None)
     
+    # OpenAI (optional - for AI-powered tweet generation)
+    OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY", None)
+    
     # Monitoring intervals (seconds)
     DCA_CHECK_INTERVAL: int = int(os.getenv("DCA_CHECK_INTERVAL", "86400"))  # 24 hours
     HODL_CHECK_INTERVAL: int = int(os.getenv("HODL_CHECK_INTERVAL", "3600"))  # 1 hour
