@@ -89,6 +89,7 @@ interface PoolFormData {
   // Recruitment period
   recruitmentPeriodHours: number;  // 0=immediate, 1=1hour, 24=1day, 168=1week
   requireMinParticipants: boolean;  // Require minimum participants before starting
+  gracePeriodMinutes: number;  // Grace period in minutes after pool starts before verification begins
 }
 
 const TOKEN_OPTIONS = [
@@ -523,6 +524,7 @@ export default function CreatePoolPage() {
     autoJoin: true,  // Default: join pool after creating
     recruitmentPeriodHours: 24,  // Default: 1 day recruitment
     requireMinParticipants: false,  // Default: start with any participants
+    gracePeriodMinutes: 5,  // Default: 5 minutes grace period
   });
 
   // Solana State
@@ -880,6 +882,7 @@ export default function CreatePoolPage() {
         is_public: formData.isPublic,
         recruitment_period_hours: formData.recruitmentPeriodHours,
         require_min_participants: formData.requireMinParticipants,
+        grace_period_minutes: formData.gracePeriodMinutes,
       });
 
       // Create invites if pool is private and invite wallets provided
@@ -1546,6 +1549,31 @@ export default function CreatePoolPage() {
                   </div>
                 </div>
               </label>
+            </div>
+
+            {/* Grace Period */}
+            <div className="mt-4 pt-4 border-t border-purple-200">
+              <label className="block text-sm font-semibold text-slate-900 mb-2">
+                Grace Period (minutes)
+              </label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="number"
+                  min="0"
+                  max="1440"
+                  value={formData.gracePeriodMinutes}
+                  onChange={(e) =>
+                    setFormData(prev => ({ ...prev, gracePeriodMinutes: parseInt(e.target.value) || 5 }))
+                  }
+                  className="w-24 px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                />
+                <div className="flex-1">
+                  <div className="text-xs text-slate-600">
+                    Time after challenge starts before verification begins. 
+                    Default: 5 minutes (good for testing and real-world use).
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 

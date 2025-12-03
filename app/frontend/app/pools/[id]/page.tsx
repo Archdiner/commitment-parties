@@ -377,16 +377,82 @@ const PoolHeader = ({
 );
 
 const UserProgressSection = ({ 
-  participation 
+  participation,
+  pool
 }: { 
-  participation: any 
+  participation: any;
+  pool?: Pool;
 }) => {
   if (!participation) return null;
 
+  const isFailed = participation.participant_status === 'failed';
+  const isSuccess = participation.participant_status === 'success';
+
+  // Determine failure reason based on pool type
+  const getFailureMessage = () => {
+    if (!pool) return "You did not meet the daily requirements for this challenge.";
+    
+    const goalMetadata = pool.goal_metadata || {};
+    const habitType = goalMetadata.habit_type;
+    
+    if (habitType === 'github_commits') {
+      const minCommits = goalMetadata.min_commits_per_day || 1;
+      const repo = goalMetadata.repo;
+      return `You did not make at least ${minCommits} commit${minCommits > 1 ? 's' : ''} on one or more days. ${repo ? `Required commits to: ${repo}` : 'Commits to any repository count.'}`;
+    }
+    
+    return "You did not meet the daily requirements for this challenge.";
+  };
+
   return (
-    <div className="bg-gradient-to-br from-blue-50 to-emerald-50 rounded-2xl border-2 border-blue-200 p-8 mb-8">
+    <div className={`rounded-2xl border-2 p-8 mb-8 ${
+      isFailed 
+        ? 'bg-gradient-to-br from-red-50 to-orange-50 border-red-300' 
+        : isSuccess
+        ? 'bg-gradient-to-br from-emerald-50 to-green-50 border-emerald-300'
+        : 'bg-gradient-to-br from-blue-50 to-emerald-50 border-blue-200'
+    }`}>
+      {/* Failed Status Banner */}
+      {isFailed && (
+        <div className="bg-red-100 border-2 border-red-400 rounded-xl p-6 mb-6">
+          <div className="flex items-start gap-4">
+            <div className="bg-red-500 p-3 rounded-full">
+              <X className="w-6 h-6 text-white" />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-xl font-bold text-red-900 mb-2">Challenge Failed</h3>
+              <p className="text-red-800 mb-3">
+                {getFailureMessage()}
+              </p>
+              <p className="text-sm text-red-700">
+                Your stake will be distributed to successful participants or charity at the end of the challenge.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Success Status Banner */}
+      {isSuccess && (
+        <div className="bg-emerald-100 border-2 border-emerald-400 rounded-xl p-6 mb-6">
+          <div className="flex items-start gap-4">
+            <div className="bg-emerald-500 p-3 rounded-full">
+              <CheckCircle className="w-6 h-6 text-white" />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-xl font-bold text-emerald-900 mb-2">Challenge Completed!</h3>
+              <p className="text-emerald-800">
+                Congratulations! You successfully completed all {participation.duration_days} days of the challenge.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center gap-3 mb-6">
-        <div className="bg-blue-600 p-3 rounded-xl">
+        <div className={`p-3 rounded-xl ${
+          isFailed ? 'bg-red-600' : isSuccess ? 'bg-emerald-600' : 'bg-blue-600'
+        }`}>
           <BarChart3 className="w-6 h-6 text-white" />
         </div>
         <div>
@@ -398,10 +464,16 @@ const UserProgressSection = ({
       <div className="grid md:grid-cols-4 gap-6">
         <div className="bg-white rounded-xl p-4 border border-gray-200">
           <div className="text-sm text-slate-600 mb-1">Progress</div>
-          <div className="text-3xl font-bold text-blue-600 mb-2">{participation.progress}%</div>
+          <div className={`text-3xl font-bold mb-2 ${
+            isFailed ? 'text-red-600' : isSuccess ? 'text-emerald-600' : 'text-blue-600'
+          }`}>
+            {participation.progress}%
+          </div>
           <div className="w-full bg-gray-200 rounded-full h-2">
             <div
-              className="bg-blue-600 h-2 rounded-full transition-all duration-500"
+              className={`h-2 rounded-full transition-all duration-500 ${
+                isFailed ? 'bg-red-600' : isSuccess ? 'bg-emerald-600' : 'bg-blue-600'
+              }`}
               style={{ width: `${participation.progress}%` }}
             ></div>
           </div>
@@ -409,7 +481,9 @@ const UserProgressSection = ({
 
         <div className="bg-white rounded-xl p-4 border border-gray-200">
           <div className="text-sm text-slate-600 mb-1">Days Verified</div>
-          <div className="text-3xl font-bold text-emerald-600">
+          <div className={`text-3xl font-bold ${
+            isFailed ? 'text-red-600' : 'text-emerald-600'
+          }`}>
             {participation.days_verified || 0}
           </div>
           <div className="text-xs text-slate-500 mt-1">
@@ -422,15 +496,17 @@ const UserProgressSection = ({
           <div className="text-3xl font-bold text-amber-600">
             {participation.days_remaining || 0}
           </div>
-          <div className="text-xs text-slate-500 mt-1">Keep going!</div>
+          <div className="text-xs text-slate-500 mt-1">
+            {isFailed ? 'Challenge ended' : isSuccess ? 'Completed!' : 'Keep going!'}
+          </div>
         </div>
 
         <div className="bg-white rounded-xl p-4 border border-gray-200">
           <div className="text-sm text-slate-600 mb-1">Status</div>
           <div className={`text-lg font-bold ${
-            participation.participant_status === 'success' 
+            isSuccess 
               ? 'text-emerald-600' 
-              : participation.participant_status === 'failed'
+              : isFailed
               ? 'text-red-600'
               : 'text-blue-600'
           }`}>
@@ -547,16 +623,26 @@ const GitHubStatusSection = ({
 
   // Fetch verification status if participant
   useEffect(() => {
+    // Only fetch if user is actually a participant
+    if (!isParticipant || !walletAddress || !pool.id) {
+      setVerificationStatus(null);
+      return;
+    }
+    
     const fetchVerificationStatus = async () => {
-      if (!isParticipant || !walletAddress || !pool.id) return;
-      
       setLoadingVerifications(true);
       try {
         const poolIdNum = parseInt(pool.id);
         const status = await getParticipantVerifications(poolIdNum, walletAddress);
         setVerificationStatus(status);
-      } catch (err) {
-        console.error('Error fetching verification status:', err);
+      } catch (err: any) {
+        // Handle 404 gracefully - user might not be a participant yet
+        if (err?.status === 404 || err?.message?.includes('not found')) {
+          console.debug('Participant not found (user may not have joined yet)');
+          setVerificationStatus(null);
+        } else {
+          console.error('Error fetching verification status:', err);
+        }
       } finally {
         setLoadingVerifications(false);
       }
@@ -1388,7 +1474,7 @@ export default function PoolDetailPage() {
 
         {/* User Progress Section (if participant) */}
         {isParticipant && userParticipation && (
-          <UserProgressSection participation={userParticipation} />
+          <UserProgressSection participation={userParticipation} pool={pool} />
         )}
 
         {/* GitHub Verification Status (for GitHub challenges) */}

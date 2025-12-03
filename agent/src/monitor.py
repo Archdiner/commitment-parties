@@ -516,11 +516,14 @@ class Monitor:
         """
         Get all active participants for a pool.
         
+        Failed participants are automatically excluded (status != 'active').
+        This ensures we don't waste resources checking participants who have already failed.
+        
         Args:
             pool_id: Pool ID
         
         Returns:
-            List of participant dictionaries
+            List of participant dictionaries (only active participants)
         """
         try:
             participants = await execute_query(
@@ -531,6 +534,19 @@ class Monitor:
                     "status": "active"
                 }
             )
+            
+            # Log if there are any failed participants (for debugging)
+            all_participants = await execute_query(
+                table="participants",
+                operation="select",
+                filters={"pool_id": pool_id}
+            )
+            failed_count = sum(1 for p in all_participants if p.get("status") != "active")
+            if failed_count > 0:
+                logger.debug(
+                    f"Pool {pool_id}: {failed_count} failed participant(s) excluded from verification "
+                    f"(only {len(participants)} active participant(s) will be checked)"
+                )
             
             return participants
         
@@ -575,6 +591,19 @@ class Monitor:
                                 logger.warning("Invalid DCA pool data: %s", pool)
                                 continue
 
+                            # Check grace period
+                            grace_period_minutes = pool.get("grace_period_minutes", 5)
+                            current_time = int(time.time())
+                            grace_period_end = start_timestamp + (grace_period_minutes * 60)
+                            
+                            if current_time < grace_period_end:
+                                logger.info(
+                                    f"DCA pool {pool_id} still in grace period "
+                                    f"({grace_period_minutes} minutes). "
+                                    f"Grace period ends at {grace_period_end}, current time: {current_time}"
+                                )
+                                continue
+
                             current_day = self._calculate_current_day(start_timestamp)
                             if current_day is None:
                                 logger.info("DCA pool %s hasn't started yet (scheduled: %s, start: %s)", pool_id, scheduled_start, start_timestamp)
@@ -603,7 +632,8 @@ class Monitor:
                                     pool, participant, current_day
                                 )
 
-                                if self.verifier:
+                                # Only submit PASSED verifications to on-chain (see lifestyle pools comment)
+                                if self.verifier and passed:
                                     pool_pubkey = pool.get("pool_pubkey")
                                     if pool_pubkey:
                                         signature = await self.verifier.submit_verification(
@@ -621,6 +651,11 @@ class Monitor:
                                                 current_day,
                                                 passed,
                                             )
+                                elif not passed:
+                                    logger.debug(
+                                        f"Skipping on-chain submission for failed DCA verification: "
+                                        f"pool={pool_id}, wallet={wallet}, day={current_day}"
+                                    )
                                 else:
                                     logger.warning(
                                         "Verifier not available, skipping DCA on-chain submission"
@@ -669,6 +704,19 @@ class Monitor:
                                 logger.warning(f"Invalid pool data: {pool}")
                                 continue
                             
+                            # Check grace period
+                            grace_period_minutes = pool.get("grace_period_minutes", 5)
+                            current_time = int(time.time())
+                            grace_period_end = start_timestamp + (grace_period_minutes * 60)
+                            
+                            if current_time < grace_period_end:
+                                logger.info(
+                                    f"HODL pool {pool_id} still in grace period "
+                                    f"({grace_period_minutes} minutes). "
+                                    f"Grace period ends at {grace_period_end}, current time: {current_time}"
+                                )
+                                continue
+                            
                             # Calculate current day (uses 24-hour periods from start)
                             current_day = self._calculate_current_day(start_timestamp)
                             if current_day is None:
@@ -705,8 +753,8 @@ class Monitor:
                                     wallet, token_mint, min_balance
                                 )
                                 
-                                # Submit verification to smart contract
-                                if self.verifier:
+                                # Only submit PASSED verifications to on-chain (see lifestyle pools comment)
+                                if self.verifier and passed:
                                     pool_pubkey = pool.get("pool_pubkey")
                                     if pool_pubkey:
                                         signature = await self.verifier.submit_verification(
@@ -720,6 +768,11 @@ class Monitor:
                                                 f"Verification submitted for pool={pool_id}, "
                                                 f"wallet={wallet}, day={current_day}, passed={passed}"
                                             )
+                                elif not passed:
+                                    logger.debug(
+                                        f"Skipping on-chain submission for failed HODL verification: "
+                                        f"pool={pool_id}, wallet={wallet}, day={current_day}"
+                                    )
                                 else:
                                     logger.warning("Verifier not available, skipping on-chain submission")
                         
@@ -765,6 +818,19 @@ class Monitor:
                             
                             if not pool_id or not start_timestamp:
                                 logger.warning(f"Invalid pool data: {pool}")
+                                continue
+                            
+                            # Check grace period - don't verify until grace period has passed
+                            grace_period_minutes = pool.get("grace_period_minutes", 5)  # Default 5 minutes
+                            current_time = int(time.time())
+                            grace_period_end = start_timestamp + (grace_period_minutes * 60)
+                            
+                            if current_time < grace_period_end:
+                                logger.info(
+                                    f"Pool {pool_id} still in grace period "
+                                    f"({grace_period_minutes} minutes). "
+                                    f"Grace period ends at {grace_period_end}, current time: {current_time}"
+                                )
                                 continue
                             
                             # Calculate current day (uses 24-hour periods from start)
@@ -897,7 +963,12 @@ class Monitor:
                                     )
                                 
                                 # Submit verification to smart contract
-                                if self.verifier:
+                                # IMPORTANT: Only submit PASSED verifications to on-chain.
+                                # Failed verifications are tracked in database but not submitted on-chain
+                                # because the smart contract marks participants as Failed immediately,
+                                # which prevents future verifications. We'll mark as Failed at challenge end
+                                # if they didn't complete all days.
+                                if self.verifier and passed:
                                     pool_pubkey = pool.get("pool_pubkey")
                                     if pool_pubkey:
                                         signature = await self.verifier.submit_verification(
@@ -912,6 +983,20 @@ class Monitor:
                                                 f"wallet={wallet}, day={current_day}, passed={passed}, "
                                                 f"signature={signature}"
                                             )
+                                        else:
+                                            # On-chain submission may have failed if pool not active yet
+                                            # Database was already updated, so this is informational
+                                            logger.debug(
+                                                f"On-chain verification returned None for pool={pool_id}, "
+                                                f"wallet={wallet}, day={current_day}. "
+                                                f"Database was updated successfully."
+                                            )
+                                elif not passed:
+                                    logger.debug(
+                                        f"Skipping on-chain submission for failed verification: pool={pool_id}, "
+                                        f"wallet={wallet}, day={current_day}. "
+                                        f"Failed verifications are tracked in database only to keep participant Active."
+                                    )
                                 else:
                                     logger.warning("Verifier not available, skipping on-chain submission")
                         

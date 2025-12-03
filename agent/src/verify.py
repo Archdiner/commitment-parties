@@ -112,6 +112,15 @@ class Verifier:
                 
                 if sim_resp.value and sim_resp.value.err:
                     error_msg = str(sim_resp.value.err)
+                    # Check if it's a PoolNotActive error (6000) - this means pool hasn't been activated on-chain yet
+                    # Pools activate on-chain when first participant joins, so this is expected for pools with no participants
+                    if "6000" in error_msg or "PoolNotActive" in error_msg:
+                        logger.warning(
+                            f"Pool {pool_id} not active on-chain yet (likely no participants have joined). "
+                            f"Skipping verification. pool_id={pool_id}, participant={participant_wallet}, day={day}"
+                        )
+                        return None
+                    
                     logger.error(
                         f"Transaction simulation failed: {error_msg}. "
                         f"pool_id={pool_id}, participant={participant_wallet}, day={day}"

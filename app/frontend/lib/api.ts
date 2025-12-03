@@ -76,6 +76,7 @@ export interface PoolConfirmRequest {
   is_public?: boolean;
   recruitment_period_hours?: number;
   require_min_participants?: boolean;
+  grace_period_minutes?: number;
 }
 
 export interface JoinPoolConfirmRequest {
