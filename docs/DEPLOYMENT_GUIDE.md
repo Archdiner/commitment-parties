@@ -327,32 +327,96 @@ The backend needs to be accessible 24/7 and handle HTTP requests. Below is a com
 
 ### Alternative: Render (If you prefer Render)
 
+**Render is easier to set up than Railway!** Here's the step-by-step:
+
 1. **Create Render Account**
    - Go to [render.com](https://render.com)
-   - Sign up with GitHub
+   - Click "Get Started for Free"
+   - Sign up with GitHub (recommended for auto-deploy)
 
 2. **Create Web Service**
-   - Click "New" → "Web Service"
-   - Connect your GitHub repository
+   - In your Render dashboard, click **"New +"** button (top right)
+   - Select **"Web Service"**
+   - Connect your GitHub account if not already connected
    - Select your `commitment-parties` repository
-   - Set **Root Directory** to: `backend`
 
-3. **Configure**
+3. **Configure Service Settings**
+   
+   **Basic Settings:**
    - **Name**: `commitment-backend` (or your choice)
-   - **Region**: Choose closest to your users
+   - **Region**: Choose closest to your users (e.g., `Oregon (US West)`)
    - **Branch**: `main` (or your default branch)
-   - **Runtime**: Python 3
+   - **Root Directory**: `backend` ⭐ **IMPORTANT: Set this to `backend`**
+   
+   **Build & Deploy Settings:**
+   - **Runtime**: Select **"Python 3"** (NOT Docker - unless you want to use Docker)
    - **Build Command**: `pip install -r requirements.txt`
    - **Start Command**: `uvicorn main:app --host 0.0.0.0 --port $PORT`
+   
+   **If Render asks for Dockerfile path** (you can ignore this if using Python runtime):
+   - If Root Directory is set to `backend`: Leave Dockerfile path **empty** (use Python runtime instead)
+   - OR if you want to use Docker: Set Dockerfile path to: `Dockerfile` (since Root Directory is `backend`)
+   - **Recommendation**: Use Python runtime (not Docker) - it's simpler!
 
-4. **Set Environment Variables** (same as Railway above)
-   - Go to **Environment** tab
-   - Add all variables from the Railway section above
+4. **Set Environment Variables**
+   
+   Go to **"Environment"** tab (or scroll down to Environment Variables section) and add:
+   
+   ```bash
+   HOST=0.0.0.0
+   PORT=8000
+   ENVIRONMENT=production
+   DEBUG=false
+   
+   # Database (from Step 2)
+   DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT].supabase.co:5432/postgres
+   SUPABASE_URL=https://[PROJECT].supabase.co
+   SUPABASE_KEY=your_supabase_anon_key_here
+   
+   # Solana (from Step 1)
+   SOLANA_RPC_URL=https://api.devnet.solana.com
+   PROGRAM_ID=your_program_id_from_step_1
+   
+   # CORS (update after frontend deployment in Step 4)
+   CORS_ORIGINS=https://your-frontend.vercel.app
+   
+   # GitHub OAuth (if using)
+   GITHUB_CLIENT_ID=your_github_client_id
+   GITHUB_CLIENT_SECRET=your_github_client_secret
+   GITHUB_REDIRECT_URI=https://your-frontend.vercel.app/verify-github/callback
+   
+   # LLM (optional)
+   LLM_API_URL=https://api.openai.com/v1/chat/completions
+   LLM_API_KEY=your_openai_api_key
+   LLM_MODEL=gpt-4o-mini
+   ```
 
-5. **Deploy**
-   - Render will automatically deploy on every push to main branch
-   - Get your URL: `https://commitment-backend.onrender.com`
-   - **Note**: Free tier spins down after 15min idle. Upgrade to Starter ($7/month) for always-on.
+5. **Choose Plan**
+   - **Free**: Spins down after 15min idle (not ideal for 24/7 API)
+   - **Starter ($7/month)**: Always-on, recommended for production
+
+6. **Deploy**
+   - Click **"Create Web Service"** at the bottom
+   - Render will automatically deploy
+   - Watch the build logs - it should show Python installing dependencies
+   - Get your URL: `https://commitment-backend.onrender.com` (or your custom name)
+
+7. **Verify Deployment**
+   ```bash
+   # Test health endpoint
+   curl https://commitment-backend.onrender.com/health
+   
+   # Should return: {"status":"ok","service":"commitment-agent-backend","version":"1.0.0"}
+   
+   # Test API docs (open in browser)
+   # https://commitment-backend.onrender.com/docs
+   ```
+
+**GitHub Auto-Deploy:**
+- Render automatically deploys on every push to your main branch
+- You can also manually trigger deployments from the Render dashboard
+
+**Note**: Free tier spins down after 15min idle. For a 24/7 API, upgrade to Starter plan ($7/month).
 
 ---
 
@@ -546,6 +610,13 @@ curl https://your-backend-url/health
 ---
 
 ## Step 4: Deploy Frontend
+
+**Note**: You asked about deploying the full stack on Vercel. See `VERCEL_FULLSTACK_DEPLOYMENT.md` for a detailed comparison. The recommended approach is:
+- **Frontend**: Vercel (Next.js) ✅
+- **Backend**: Railway/Render (FastAPI) ✅  
+- **Agent**: Railway/Render (24/7 service) ✅
+
+This keeps each service on its ideal platform with minimal complexity.
 
 ### Option A: Vercel (Recommended)
 
