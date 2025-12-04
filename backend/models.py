@@ -156,6 +156,12 @@ class PoolConfirmRequest(BaseModel):
         False,
         description="If true, pool won't start until minimum participants joined"
     )
+    grace_period_minutes: int = Field(
+        5,
+        ge=0,
+        le=1440,
+        description="Grace period in minutes after pool starts before verification begins (default: 5 minutes)"
+    )
 
 
 class JoinPoolConfirmRequest(BaseModel):

@@ -137,8 +137,17 @@ async function fetchApi<T>(
         errorData = { detail: response.statusText };
         }
         
+        // Log the full error for debugging
+        const errorMessage = errorData.detail || errorData.error || errorData.message || 'API request failed';
+        console.error('=== API ERROR ===');
+        console.error('URL:', url);
+        console.error('Status:', response.status, response.statusText);
+        console.error('Error Data:', JSON.stringify(errorData, null, 2));
+        console.error('Error Message:', errorMessage);
+        console.error('==================');
+        
         throw new ApiError(
-        errorData.detail || errorData.error || 'API request failed',
+        errorMessage,
         response.status,
         errorData
         );

@@ -311,6 +311,10 @@ async def confirm_pool_creation(pool_data: PoolConfirmRequest) -> PoolResponse:
         pool_dict["total_staked"] = 0.0
         pool_dict["yield_earned"] = 0.0
         
+        # Ensure min_participants is set (default to 1 if not provided)
+        if "min_participants" not in pool_dict or pool_dict["min_participants"] is None:
+            pool_dict["min_participants"] = 1
+        
         # Calculate scheduled_start_time based on recruitment_period_hours
         import time
         recruitment_hours = pool_dict.get("recruitment_period_hours", 24)  # Default to 24 hours
@@ -351,8 +355,13 @@ async def confirm_pool_creation(pool_data: PoolConfirmRequest) -> PoolResponse:
     except HTTPException:
         raise
     except Exception as e:
+        error_msg = str(e)
         logger.error(f"Error confirming pool creation: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to confirm pool creation")
+        # Return more detailed error for debugging
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Failed to confirm pool creation: {error_msg}"
+        )
 
 
 @router.get(

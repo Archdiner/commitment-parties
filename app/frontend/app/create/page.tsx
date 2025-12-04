@@ -192,9 +192,36 @@ export default function CreatePool() {
         // Success
         router.push('/pools');
         
-    } catch (error) {
-        console.error(error);
-        alert("Failed to create pool. Check console.");
+    } catch (error: any) {
+        console.error('Pool creation error:', error);
+        let errorMessage = "Failed to create pool.";
+        
+        // Extract detailed error information
+        if (error?.data?.detail) {
+          errorMessage = error.data.detail;
+        } else if (error?.data?.error) {
+          errorMessage = error.data.error;
+        } else if (error?.message) {
+          errorMessage = error.message;
+        } else if (error?.detail) {
+          errorMessage = error.detail;
+        } else if (error?.name === 'ApiError') {
+          errorMessage = error.message || "Backend API error. Make sure the backend server is running.";
+        } else if (error?.code === 4001) {
+          errorMessage = "Transaction was rejected by user.";
+        } else if (error?.code === -32002) {
+          errorMessage = "Transaction already pending. Please check your wallet.";
+        }
+        
+        // Show full error details in console
+        console.error('Full error details:', {
+          error,
+          status: error?.status,
+          data: error?.data,
+          message: error?.message
+        });
+        
+        alert(`Error: ${errorMessage}\n\nStatus: ${error?.status || 'Unknown'}\n\nCheck the browser console for more details.`);
     } finally {
         setLoading(false);
     }
