@@ -6,8 +6,8 @@
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-// Toggle mock mode via env (NEXT_PUBLIC_USE_MOCK_DATA). Defaults to false.
-const USE_MOCK_DATA = process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true';
+// Toggle this to true to force mock mode always
+const USE_MOCK_DATA = false; 
 
 export interface PoolCreateRequest {
   pool_id: number;
@@ -423,7 +423,7 @@ export interface UserParticipation {
   status: string;
   participant_status: string;
   days_verified: number;
-  progress: number;
+  progress?: number;
   days_remaining: number;
   joined_at?: string;
   start_timestamp: number;

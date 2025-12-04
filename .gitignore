@@ -21,6 +21,7 @@ ENV/
 .env.txt
 .env.backup
 .env.bak
+backend/.env
 
 # API Keys and Secrets
 *.key

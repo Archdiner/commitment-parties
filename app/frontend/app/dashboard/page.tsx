@@ -101,7 +101,7 @@ export default function Dashboard() {
   }
 
   const activeChallenge = activeChallenges.find(c => c.id === selectedChallengeId) || activeChallenges[0];
-  const progress = (activeChallenge.streak / activeChallenge.totalDays) * 100;
+  const progress = activeChallenge.progress ?? Math.floor((activeChallenge.streak / activeChallenge.totalDays) * 100);
 
   return (
     <div className="min-h-screen bg-[#050505] text-white pt-32 px-6 pb-20">
