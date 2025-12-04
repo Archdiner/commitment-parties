@@ -19,9 +19,11 @@ export default function CreatePool() {
     name: '',
     type: 'Lifestyle (Photo/GPS)',
     duration: '14 Days',
+    customDuration: '',
     stake: '0.5',
     maxParticipants: '100'
   });
+  const [useCustomDuration, setUseCustomDuration] = useState(false);
 
   useEffect(() => {
     const address = getPersistedWalletAddress();
@@ -36,7 +38,15 @@ export default function CreatePool() {
     
     setLoading(true);
     try {
-        const durationDays = parseInt(formData.duration.split(' ')[0]);
+        const durationDays = useCustomDuration 
+          ? parseInt(formData.customDuration) 
+          : parseInt(formData.duration.split(' ')[0]);
+        
+        if (isNaN(durationDays) || durationDays <= 0) {
+          alert("Please enter a valid duration (number of days).");
+          setLoading(false);
+          return;
+        }
         const stakeAmount = parseFloat(formData.stake);
         const maxParticipants = parseInt(formData.maxParticipants);
 
@@ -131,15 +141,45 @@ export default function CreatePool() {
                   </div>
                   <div>
                     <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">Duration</label>
-                    <select 
-                        value={formData.duration}
-                        onChange={(e) => setFormData({...formData, duration: e.target.value})}
-                        className="w-full bg-[#0A0A0A] border border-white/10 py-3 px-4 text-sm text-white focus:outline-none"
-                    >
-                       <option>7 Days</option>
-                       <option>14 Days</option>
-                       <option>30 Days</option>
-                    </select>
+                    {!useCustomDuration ? (
+                      <select 
+                          value={formData.duration}
+                          onChange={(e) => {
+                            if (e.target.value === 'Custom') {
+                              setUseCustomDuration(true);
+                            } else {
+                              setFormData({...formData, duration: e.target.value});
+                            }
+                          }}
+                          className="w-full bg-[#0A0A0A] border border-white/10 py-3 px-4 text-sm text-white focus:outline-none"
+                      >
+                         <option>7 Days</option>
+                         <option>14 Days</option>
+                         <option>30 Days</option>
+                         <option>Custom</option>
+                      </select>
+                    ) : (
+                      <div className="flex gap-2">
+                        <input 
+                          type="number" 
+                          value={formData.customDuration}
+                          onChange={(e) => setFormData({...formData, customDuration: e.target.value})}
+                          className="flex-1 bg-transparent border-b border-white/20 py-3 text-xl text-white placeholder-gray-800 focus:outline-none focus:border-emerald-500 transition-colors" 
+                          placeholder="Enter days" 
+                          min="1"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setUseCustomDuration(false);
+                            setFormData({...formData, customDuration: ''});
+                          }}
+                          className="px-4 py-3 text-xs uppercase tracking-widest text-gray-500 hover:text-white border border-white/10 hover:border-white/30 transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )}
                   </div>
                </div>
             </div>

@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { ChevronRight, Shield, Github, Image as ImageIcon } from 'lucide-react';
+import { ChevronRight, Shield, Github, Image as ImageIcon, Trophy, TrendingUp, Users } from 'lucide-react';
 import { getPool, getUserParticipations } from '@/lib/api';
 import { getPersistedWalletAddress } from '@/lib/wallet';
 import { Badge } from '@/components/ui/Badge';
@@ -16,6 +16,7 @@ export default function PoolDetail() {
   const [loading, setLoading] = useState(true);
   const [isParticipant, setIsParticipant] = useState(false);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
+  const [participantProgress, setParticipantProgress] = useState<any[]>([]);
 
   useEffect(() => {
     const address = getPersistedWalletAddress();
@@ -43,6 +44,18 @@ export default function PoolDetail() {
             const found = participations.find(p => p.pool_id === Number(id));
             if (found) setIsParticipant(true);
         }
+
+        // Load participant progress (mock data for now)
+        // TODO: Replace with actual API call to get pool participants
+        const mockProgress = [
+          { wallet: '8x...92kL', daysCompleted: 15, totalDays: 30, streak: 15, progress: 50, rank: 1 },
+          { wallet: '5m...7pQ', daysCompleted: 14, totalDays: 30, streak: 14, progress: 47, rank: 2 },
+          { wallet: '3k...9nR', daysCompleted: 13, totalDays: 30, streak: 13, progress: 43, rank: 3 },
+          { wallet: '2j...4tS', daysCompleted: 12, totalDays: 30, streak: 12, progress: 40, rank: 4 },
+          { wallet: '9v...1wX', daysCompleted: 11, totalDays: 30, streak: 11, progress: 37, rank: 5 },
+          { wallet: '6b...8cY', daysCompleted: 10, totalDays: 30, streak: 10, progress: 33, rank: 6 },
+        ];
+        setParticipantProgress(mockProgress);
       } catch (err) {
         console.error(err);
       } finally {
@@ -192,20 +205,84 @@ export default function PoolDetail() {
               )}
            </div>
 
-           {/* Right: Participants */}
-           <div>
-              <SectionLabel>Recent Joins</SectionLabel>
-              <div className="space-y-4">
-                 {[1,2,3,4,5].map((_, i) => (
-                   <div key={i} className="flex items-center gap-3 pb-3 border-b border-white/5">
-                      <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center text-[10px] font-mono">0x</div>
-                      <div className="flex-1">
-                         <div className="text-xs font-mono text-gray-300">8x...92kL</div>
-                         <div className="text-[10px] text-gray-600">Joined 2h ago</div>
-                      </div>
-                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/50"></div>
-                   </div>
-                 ))}
+           {/* Right: Participants & Progress */}
+           <div className="space-y-8">
+              {/* Participant Progress Leaderboard */}
+              <div>
+                 <div className="flex items-center justify-between mb-6">
+                    <SectionLabel>Leaderboard</SectionLabel>
+                    <div className="flex items-center gap-2 text-[10px] text-gray-500 uppercase tracking-widest">
+                       <Users className="w-3 h-3" />
+                       {participantProgress.length} Active
+                    </div>
+                 </div>
+                 <div className="space-y-3">
+                    {participantProgress.map((participant, idx) => (
+                       <div key={idx} className="border border-white/5 bg-white/[0.01] p-4 hover:bg-white/[0.02] transition-colors">
+                          <div className="flex items-center justify-between mb-3">
+                             <div className="flex items-center gap-3">
+                                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                                   participant.rank === 1 ? 'bg-yellow-500/20 text-yellow-400' :
+                                   participant.rank === 2 ? 'bg-gray-400/20 text-gray-300' :
+                                   participant.rank === 3 ? 'bg-orange-600/20 text-orange-400' :
+                                   'bg-white/5 text-gray-500'
+                                }`}>
+                                   {participant.rank}
+                                </div>
+                                <div>
+                                   <div className="text-xs font-mono text-white">{participant.wallet}</div>
+                                   <div className="text-[10px] text-gray-500">Day {participant.daysCompleted} / {participant.totalDays}</div>
+                                </div>
+                             </div>
+                             {participant.rank <= 3 && (
+                                <Trophy className={`w-4 h-4 ${
+                                   participant.rank === 1 ? 'text-yellow-400' :
+                                   participant.rank === 2 ? 'text-gray-300' :
+                                   'text-orange-400'
+                                }`} />
+                             )}
+                          </div>
+                          <div className="space-y-2">
+                             <div className="flex items-center justify-between text-[10px] text-gray-500">
+                                <span>Progress</span>
+                                <span className="text-emerald-400">{participant.progress}%</span>
+                             </div>
+                             <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden">
+                                <div 
+                                   className="bg-emerald-500 h-full transition-all"
+                                   style={{ width: `${participant.progress}%` }}
+                                />
+                             </div>
+                             <div className="flex items-center justify-between text-[10px]">
+                                <div className="flex items-center gap-1 text-gray-500">
+                                   <TrendingUp className="w-3 h-3" />
+                                   <span>Streak: {participant.streak} days</span>
+                                </div>
+                                {participant.rank === 1 && (
+                                   <span className="text-yellow-400 font-medium">Leading</span>
+                                )}
+                             </div>
+                          </div>
+                       </div>
+                    ))}
+                 </div>
+              </div>
+
+              {/* Recent Joins */}
+              <div>
+                 <SectionLabel>Recent Joins</SectionLabel>
+                 <div className="space-y-4">
+                    {[1,2,3,4,5].map((_, i) => (
+                       <div key={i} className="flex items-center gap-3 pb-3 border-b border-white/5">
+                          <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center text-[10px] font-mono">0x</div>
+                          <div className="flex-1">
+                             <div className="text-xs font-mono text-gray-300">8x...92kL</div>
+                             <div className="text-[10px] text-gray-600">Joined 2h ago</div>
+                          </div>
+                          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/50"></div>
+                       </div>
+                    ))}
+                 </div>
               </div>
            </div>
         </div>

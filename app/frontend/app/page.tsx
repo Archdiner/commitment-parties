@@ -22,8 +22,8 @@ export default function LandingPage() {
             into <span className="text-emerald-500 font-serif italic font-light">Capital.</span>
           </h1>
           <p className="max-w-xl mx-auto text-gray-400 font-light text-lg mb-12">
-            Stake SOL on your goals. Our AI agents verify your progress. <br/>
-            Win and earn yield. Fail and donate to charity.
+            Stake SOL on your goals. Allow us to verify your progress <br/>
+            Win and earn SOL. Fail and lose SOL. Nothing creates accountability faster.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link href="/pools">
@@ -42,7 +42,7 @@ export default function LandingPage() {
           {[
             { icon: Target, title: "01. Create or Join", desc: "Select a habit protocol. Lock SOL in the smart contract to commit." },
             { icon: Zap, title: "02. Auto-Verification", desc: "AI agents monitor GitHub API, GPS, or Vision to verify daily." },
-            { icon: Trophy, title: "03. Settlement", desc: "Winners split the pool. Forfeited stakes go to charity." }
+            { icon: Trophy, title: "03. Settlement", desc: "Winners split the pool." }
           ].map((item, i) => (
             <div key={i} className="flex flex-col items-start group">
               <div className="mb-6 text-emerald-500 opacity-50 group-hover:opacity-100 transition-opacity">

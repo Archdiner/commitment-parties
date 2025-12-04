@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ChevronDown, Check, Smartphone, ArrowRight } from 'lucide-react';
+import { ChevronDown, Check, Smartphone, ArrowRight, Users, TrendingDown } from 'lucide-react';
 import { getUserParticipations, UserParticipation } from '@/lib/api';
 import { getPersistedWalletAddress } from '@/lib/wallet';
 import { SectionLabel } from '@/components/ui/SectionLabel';
@@ -16,6 +16,7 @@ export default function Dashboard() {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [checkedIn, setCheckedIn] = useState(false);
   const [verifying, setVerifying] = useState(false);
+  const [participantStats, setParticipantStats] = useState<{ started: number; remaining: number } | null>(null);
 
   useEffect(() => {
     const address = getPersistedWalletAddress();
@@ -52,6 +53,9 @@ export default function Dashboard() {
       setActiveChallenges(mapped);
       if (mapped.length > 0) {
         setSelectedChallengeId(mapped[0].id);
+        // Load participant stats for the first challenge
+        // TODO: Replace with actual API call to get pool participant stats
+        loadParticipantStats(mapped[0].id);
       }
     } catch (error) {
       console.error("Failed to fetch dashboard data:", error);
@@ -59,6 +63,24 @@ export default function Dashboard() {
       setLoading(false);
     }
   };
+
+  const loadParticipantStats = async (poolId: number) => {
+    // TODO: Replace with actual API call
+    // For now, using mock data
+    // This would be: const stats = await getPoolParticipantStats(poolId);
+    const mockStats = {
+      started: 42,
+      remaining: 28
+    };
+    setParticipantStats(mockStats);
+  };
+
+  // Reload stats when challenge changes
+  useEffect(() => {
+    if (selectedChallengeId) {
+      loadParticipantStats(selectedChallengeId);
+    }
+  }, [selectedChallengeId]);
 
   const handleCheckIn = () => {
     setVerifying(true);
@@ -130,6 +152,7 @@ export default function Dashboard() {
                                     setSelectedChallengeId(challenge.id);
                                     setCheckedIn(false);
                                     setIsDropdownOpen(false);
+                                    loadParticipantStats(challenge.id);
                                 }}
                                 className={`w-full text-left px-8 py-4 text-[10px] uppercase tracking-widest hover:bg-white/[0.05] transition-colors border-b border-white/5 last:border-0 flex justify-between items-center ${
                                     selectedChallengeId === challenge.id ? 'text-white bg-white/[0.02]' : 'text-gray-500'
@@ -184,6 +207,41 @@ export default function Dashboard() {
                     <Stat label="Staked" value={`${activeChallenge.stake} SOL`} />
                     <Stat label="Projected" value={`+${activeChallenge.potentialWin.toFixed(2)} SOL`} />
                  </div>
+
+                 {/* Participant Statistics */}
+                 {participantStats && (
+                    <div className="pt-6 border-t border-white/5">
+                       <div className="flex items-center gap-2 mb-4">
+                          <Users className="w-4 h-4 text-gray-500" />
+                          <span className="text-xs uppercase tracking-widest text-gray-500">Challenge Stats</span>
+                       </div>
+                       <div className="grid grid-cols-2 gap-6">
+                          <div className="flex flex-col">
+                             <div className="text-2xl font-light text-white mb-1">{participantStats.started}</div>
+                             <div className="text-[10px] uppercase tracking-wider text-gray-500">Started</div>
+                          </div>
+                          <div className="flex flex-col">
+                             <div className="text-2xl font-light text-emerald-400 mb-1">{participantStats.remaining}</div>
+                             <div className="text-[10px] uppercase tracking-wider text-gray-500 flex items-center gap-1">
+                                <TrendingDown className="w-3 h-3" />
+                                Remaining
+                             </div>
+                          </div>
+                       </div>
+                       <div className="mt-4 pt-4 border-t border-white/5">
+                          <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden">
+                             <div 
+                                className="bg-emerald-500 h-full transition-all"
+                                style={{ width: `${(participantStats.remaining / participantStats.started) * 100}%` }}
+                             />
+                          </div>
+                          <div className="flex justify-between mt-2 text-[10px] text-gray-600">
+                             <span>{participantStats.started - participantStats.remaining} eliminated</span>
+                             <span>{Math.round((participantStats.remaining / participantStats.started) * 100)}% still in</span>
+                          </div>
+                       </div>
+                    </div>
+                 )}
               </div>
 
               <div>
