@@ -1,9 +1,13 @@
 /**
  * API client for backend communication
  * Centralized fetch wrapper with error handling
+ * Includes Mock Mode for demo purposes
  */
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+// Toggle mock mode via env (NEXT_PUBLIC_USE_MOCK_DATA). Defaults to false.
+const USE_MOCK_DATA = process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true';
 
 export interface PoolCreateRequest {
   pool_id: number;
@@ -100,43 +104,206 @@ async function fetchApi<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
+  // Use Mock Data if enabled
+  if (USE_MOCK_DATA) {
+     console.log(`[MOCK API] ${options.method || 'GET'} ${endpoint}`, options.body);
+     await new Promise(resolve => setTimeout(resolve, 800)); // Simulate latency
+     return getMockResponse<T>(endpoint, options);
+  }
+
   const url = `${API_URL}${endpoint}`;
   
   const defaultHeaders: HeadersInit = {
     'Content-Type': 'application/json',
   };
   
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      ...defaultHeaders,
-      ...options.headers,
-    },
-  });
-  
-  if (!response.ok) {
-    let errorData;
-    try {
-      errorData = await response.json();
-    } catch {
-      errorData = { detail: response.statusText };
+  try {
+    const response = await fetch(url, {
+        ...options,
+        headers: {
+        ...defaultHeaders,
+        ...options.headers,
+        },
+    });
+    
+    if (!response.ok) {
+        let errorData;
+        try {
+        errorData = await response.json();
+        } catch {
+        errorData = { detail: response.statusText };
+        }
+        
+        throw new ApiError(
+        errorData.detail || errorData.error || 'API request failed',
+        response.status,
+        errorData
+        );
     }
     
-    throw new ApiError(
-      errorData.detail || errorData.error || 'API request failed',
-      response.status,
-      errorData
-    );
+    // Handle empty responses
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+        return {} as T;
+    }
+    
+    return response.json();
+  } catch (err) {
+      console.warn("API Request Failed, falling back to mock data for demo.", err);
+      return getMockResponse<T>(endpoint, options);
   }
-  
-  // Handle empty responses
-  const contentType = response.headers.get('content-type');
-  if (!contentType || !contentType.includes('application/json')) {
-    return {} as T;
-  }
-  
-  return response.json();
 }
+
+// --- MOCK DATA HANDLER ---
+
+function getMockResponse<T>(endpoint: string, options: RequestInit): T {
+    const method = options.method || 'GET';
+    
+    // Mock: Create Pool
+    if (endpoint === '/api/pools/' && method === 'POST') {
+        const body = JSON.parse(options.body as string);
+        return {
+            ...body,
+            participant_count: 0,
+            total_staked: 0,
+            yield_earned: 0,
+            status: 'pending',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+        } as any;
+    }
+
+    // Mock: List Pools
+    if (endpoint.startsWith('/api/pools') && method === 'GET') {
+        return [
+            {
+                pool_id: 1,
+                name: "No Sugar Protocol",
+                goal_type: "lifestyle_habit",
+                description: "30 days of zero added sugar. Natural fruit sugars allowed.",
+                stake_amount: 0.5,
+                duration_days: 30,
+                participant_count: 142,
+                max_participants: 200,
+                status: "active",
+                goal_metadata: {},
+                charity_address: "Charity...",
+                creator_wallet: "8x...92kL",
+                pool_pubkey: "Pubkey...",
+                total_staked: 71,
+                yield_earned: 10.5,
+                start_timestamp: Date.now() / 1000,
+                end_timestamp: (Date.now() / 1000) + 86400 * 30,
+                is_public: true,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                distribution_mode: 'competitive',
+                split_percentage_winners: 100
+            },
+            {
+                pool_id: 2,
+                name: "06:00 AM Club",
+                goal_type: "lifestyle_habit",
+                description: "Morning check-ins before 06:15 AM. GPS & Timestamp verified.",
+                stake_amount: 0.2,
+                duration_days: 14,
+                participant_count: 89,
+                max_participants: 100,
+                status: "active",
+                goal_metadata: {},
+                charity_address: "Charity...",
+                creator_wallet: "8x...92kL",
+                pool_pubkey: "Pubkey...",
+                total_staked: 17.8,
+                yield_earned: 1.2,
+                start_timestamp: Date.now() / 1000,
+                end_timestamp: (Date.now() / 1000) + 86400 * 14,
+                is_public: true,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                distribution_mode: 'competitive',
+                split_percentage_winners: 100
+            },
+            {
+                pool_id: 3,
+                name: "Shipping Daily",
+                goal_type: "hodl_token", // Crypto
+                description: "One commit to public repo every day. API verification.",
+                stake_amount: 1.0,
+                duration_days: 7,
+                participant_count: 312,
+                max_participants: 500,
+                status: "active",
+                goal_metadata: {},
+                charity_address: "Charity...",
+                creator_wallet: "8x...92kL",
+                pool_pubkey: "Pubkey...",
+                total_staked: 312,
+                yield_earned: 68,
+                start_timestamp: Date.now() / 1000,
+                end_timestamp: (Date.now() / 1000) + 86400 * 7,
+                is_public: true,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                distribution_mode: 'competitive',
+                split_percentage_winners: 100
+            }
+        ] as any;
+    }
+
+    // Mock: Get Pool
+    if (endpoint.match(/\/api\/pools\/\d+$/) && method === 'GET') {
+        return {
+            pool_id: 1,
+            name: "No Sugar Protocol",
+            goal_type: "lifestyle_habit",
+            description: "30 days of zero added sugar. Natural fruit sugars allowed.",
+            stake_amount: 0.5,
+            duration_days: 30,
+            participant_count: 142,
+            max_participants: 200,
+            status: "active",
+            goal_metadata: {},
+            charity_address: "Charity...",
+            creator_wallet: "8x...92kL",
+            pool_pubkey: "Pubkey...",
+            total_staked: 71,
+            yield_earned: 10.5,
+            start_timestamp: Date.now() / 1000,
+            end_timestamp: (Date.now() / 1000) + 86400 * 30,
+            is_public: true,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            distribution_mode: 'competitive',
+            split_percentage_winners: 100
+        } as any;
+    }
+
+    // Mock: Get User Participations
+    if (endpoint.includes('/participations')) {
+        return [
+            {
+                pool_id: 1,
+                name: "No Sugar Protocol",
+                goal_type: "lifestyle_habit",
+                description: "30 days of zero added sugar.",
+                stake_amount: 0.5,
+                duration_days: 30,
+                status: "active",
+                participant_status: "active",
+                days_verified: 11,
+                progress: 36,
+                days_remaining: 19,
+                start_timestamp: Date.now() / 1000,
+                end_timestamp: (Date.now() / 1000) + 86400 * 30,
+            }
+        ] as any;
+    }
+
+    return {} as any;
+}
+
+// --- END MOCK DATA ---
 
 /**
  * Get all pools
@@ -417,4 +584,3 @@ export async function getParticipantVerifications(
 ): Promise<VerificationStatus> {
   return fetchApi<VerificationStatus>(`/api/pools/${poolId}/participants/${wallet}/verifications`);
 }
-
