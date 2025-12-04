@@ -1033,25 +1033,40 @@ Set up monitoring for:
 
 ## Troubleshooting
 
-### Railway Build Error: "Railpack could not determine how to build the app"
+### Railway Build Error: "Railpack could not determine how to build the app" or "Nixpacks was unable to generate a build plan"
 
-**Error Message**: `✖ Railpack could not determine how to build the app`
+**Error Message**: `✖ Railpack could not determine how to build the app` or `Nixpacks was unable to generate a build plan`
 
 **Cause**: Railway is trying to build from the repository root instead of the `backend/` directory.
 
-**Solution**:
-1. Go to your Railway service → **Settings** → **Source**
-2. Set **Root Directory** to: `backend`
-3. Save the changes
-4. Railway will automatically trigger a new deployment
-5. The build should now succeed as it will find `requirements.txt` and `main.py` in the `backend/` directory
+**Solution - Method 1: Fix Root Directory Setting**
 
-**Alternative**: If the Root Directory setting doesn't appear:
-- Delete the current service
-- Create a new service
-- When connecting the GitHub repo, immediately set **Root Directory** to `backend` before Railway tries to build
+1. Go to your Railway service → **Settings** tab
+2. Click on **Source** (or **Deploy**)
+3. Find **Root Directory** field
+4. Set it to: `backend` (not `/backend` or `./backend`, just `backend`)
+5. Click **Save** or **Update**
+6. Railway will automatically trigger a new deployment
 
-**Note**: Configuration files have been added to the `backend/` directory to help Railway detect the correct build settings.
+**Solution - Method 2: Use Dockerfile (Recommended)**
+
+A `Dockerfile` has been created in the `backend/` directory. This is the most reliable method:
+
+1. **Verify Root Directory is set**:
+   - Go to **Settings** → **Source** → **Root Directory** = `backend`
+
+2. **Verify Dockerfile exists**:
+   - The `backend/Dockerfile` should be in your repository
+   - Railway will automatically detect and use it
+
+3. **If Root Directory still doesn't work, delete and recreate the service**:
+   - Delete the current service in Railway
+   - Create a new service: **New** → **Service** → **GitHub Repo**
+   - Select your repository
+   - **IMPORTANT**: Before Railway starts building, go to **Settings** → **Source** and set **Root Directory** to `backend`
+   - Save and let it deploy
+
+**Note**: The `railway.json` has been configured to use Dockerfile builder, which is more reliable than Nixpacks auto-detection.
 
 ### Railway Build Error: "pip: command not found"
 
