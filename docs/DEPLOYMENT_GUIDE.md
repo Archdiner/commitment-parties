@@ -1051,7 +1051,37 @@ Set up monitoring for:
 - Create a new service
 - When connecting the GitHub repo, immediately set **Root Directory** to `backend` before Railway tries to build
 
-**Note**: A `railway.json` file has been added to the `backend/` directory to help Railway detect the correct build settings.
+**Note**: Configuration files have been added to the `backend/` directory to help Railway detect the correct build settings.
+
+### Railway Build Error: "pip: command not found"
+
+**Error Message**: `/bin/bash: line 1: pip: command not found`
+
+**Cause**: Nixpacks (Railway's build system) is not detecting or installing Python properly.
+
+**Solution**:
+The following configuration files have been created in the `backend/` directory to fix this:
+
+1. **`runtime.txt`** - Specifies Python 3.11
+2. **`nixpacks.toml`** - Explicitly configures Nixpacks to use Python 3.11 and pip
+3. **`Procfile`** - Alternative format Railway can use
+4. **`railway.json`** - Railway-specific configuration
+
+**Steps to fix**:
+1. Commit and push these new files to your repository:
+   ```bash
+   git add backend/runtime.txt backend/nixpacks.toml backend/Procfile backend/railway.json
+   git commit -m "Add Railway configuration files"
+   git push
+   ```
+2. Railway will automatically detect the new deployment
+3. The build should now succeed as Nixpacks will properly detect Python
+
+**If the issue persists**:
+- Verify Root Directory is set to `backend` in Settings → Source
+- Check that `requirements.txt` exists in the `backend/` directory
+- Ensure `main.py` exists in the `backend/` directory
+- Try redeploying manually from the Railway dashboard
 
 ### Backend Not Starting
 
