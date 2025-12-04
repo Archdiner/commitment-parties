@@ -14,6 +14,9 @@ import { getPersistedWalletAddress } from '@/lib/wallet';
 import { getConnection } from '@/lib/solana';
 import { Transaction } from '@solana/web3.js';
 
+// Force dynamic rendering - this page depends on route params
+export const dynamic = 'force-dynamic';
+
 // Helper for calling Solana Actions join-pool endpoint
 async function buildJoinPoolTransaction(
   poolId: number,
@@ -88,7 +91,10 @@ export default function PoolDetailPage() {
       if (typeof window === 'undefined') {
         throw new Error('Window is not available.');
       }
-      const anyWindow = window as any;
+      const anyWindow = window as typeof window & {
+        phantom?: { solana?: any };
+        solana?: any;
+      };
       const provider =
         (anyWindow.phantom && anyWindow.phantom.solana) ||
         anyWindow.solana ||

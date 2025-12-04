@@ -28,8 +28,11 @@ export const Navbar = () => {
     }
 
     try {
-      // @ts-ignore
-      const { solana } = window;
+      const { solana } = window as typeof window & {
+        solana?: {
+          connect: () => Promise<{ publicKey: { toString: () => string } }>;
+        };
+      };
       if (!solana) {
         alert("Please install Phantom Wallet.");
         return;
