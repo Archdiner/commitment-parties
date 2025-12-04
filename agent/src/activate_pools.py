@@ -66,10 +66,40 @@ class PoolActivator:
                             )
                             activated_count += 1
                         continue
+
+                    pool_id = pool.get("pool_id")
+
+                    # For scheduled (non-immediate) public pools, queue a "new pool" tweet
+                    # soon after creation so people can see and join during recruitment.
+                    # We only do this for pools with a future scheduled_start_time and rely
+                    # on SocialManager's internal tracking to avoid duplicate tweets.
+                    if (
+                        _social_manager
+                        and pool.get("is_public", True)
+                        and scheduled_start
+                        and scheduled_start > current_time
+                    ):
+                        try:
+                            from social import SocialEventType
+
+                            # Only queue if we haven't posted a POOL_CREATED event for this pool
+                            last_events = getattr(_social_manager, "last_event_post_time", {})
+                            key = (pool_id, SocialEventType.POOL_CREATED)
+                            if not last_events.get(key):
+                                await _social_manager.post_event_update(
+                                    SocialEventType.POOL_CREATED,
+                                    pool_id,
+                                )
+                                logger.info(
+                                    f"Queued POOL_CREATED tweet for newly created scheduled pool {pool_id}"
+                                )
+                        except Exception as e:
+                            logger.warning(
+                                f"Failed to queue POOL_CREATED tweet for pool {pool_id}: {e}"
+                            )
                     
                     # Check if it's time to activate
                     if current_time >= scheduled_start:
-                        pool_id = pool.get("pool_id")
                         require_min = pool.get("require_min_participants", False)
                         min_participants = pool.get("min_participants", 1)
                         participant_count = pool.get("participant_count", 0)

@@ -69,6 +69,35 @@ class SolanaTransactionBuilder:
         seeds = [b"vault", bytes(pool_pubkey)]
         pubkey, bump = Pubkey.find_program_address(seeds, self.program_pubkey)
         return pubkey, bump
+
+    def _encode_goal_type_hodl(self, token_mint: str, min_balance: int) -> bytes:
+        """
+        Encode HodlToken goal type for Anchor.
+        Matches OnChainClient._encode_goal_type_hodl.
+        """
+        mint_pubkey = Pubkey.from_string(token_mint)
+        return struct.pack("<B", 1) + bytes(mint_pubkey) + struct.pack("<Q", min_balance)
+
+    def _encode_goal_type_lifestyle(self, habit_name: str) -> bytes:
+        """
+        Encode LifestyleHabit goal type for Anchor.
+        Matches OnChainClient._encode_goal_type_lifestyle.
+        """
+        habit_bytes = habit_name.encode("utf-8")
+        return struct.pack("<B", 2) + struct.pack("<I", len(habit_bytes)) + habit_bytes
+
+    def _encode_distribution_mode(self, mode: str, winner_percent: int = 100) -> bytes:
+        """
+        Encode DistributionMode for Anchor.
+        Competitive = 0, Charity = 1, Split { winner_percent: u8 } = 2
+        """
+        if mode == "competitive":
+            return struct.pack("<B", 0)
+        if mode == "charity":
+            return struct.pack("<B", 1)
+        if mode == "split":
+            return struct.pack("<BB", 2, winner_percent)
+        return struct.pack("<B", 0)
     
     async def build_join_pool_transaction(
         self,
@@ -142,6 +171,104 @@ class SolanaTransactionBuilder:
         
         except Exception as e:
             logger.error(f"Error building join_pool transaction: {e}", exc_info=True)
+            raise
+
+    async def build_create_pool_transaction(
+        self,
+        pool_id: int,
+        creator_wallet: str,
+        goal_type: str,
+        goal_params: dict,
+        stake_amount_lamports: int,
+        duration_days: int,
+        max_participants: int,
+        min_participants: int,
+        charity_address: str,
+        distribution_mode: str = "competitive",
+        winner_percent: int = 100,
+    ) -> str:
+        """
+        Build an unsigned transaction for creating a pool.
+
+        This mirrors the encoding used by agent OnChainClient.create_pool_on_chain,
+        but builds an unsigned transaction for the user's wallet to sign.
+        """
+        try:
+            creator_pubkey = Pubkey.from_string(creator_wallet)
+
+            # Derive pool PDA
+            pool_pubkey, _ = self.derive_pool_pda(pool_id)
+
+            # Encode goal type
+            if goal_type == "lifestyle_habit":
+                habit_name = goal_params.get("habit_name", "Daily Habit")
+                goal_type_bytes = self._encode_goal_type_lifestyle(habit_name)
+            elif goal_type == "hodl_token":
+                token_mint = goal_params.get("token_mint")
+                min_balance = int(goal_params.get("min_balance", 0))
+                if not token_mint:
+                    raise ValueError("token_mint is required for hodl_token goal_type")
+                goal_type_bytes = self._encode_goal_type_hodl(token_mint, min_balance)
+            else:
+                raise ValueError(f"Unknown goal type: {goal_type}")
+
+            # Encode distribution mode
+            dist_mode_bytes = self._encode_distribution_mode(distribution_mode, winner_percent)
+
+            # Build instruction data (Anchor layout)
+            discriminator = self._anchor_discriminator("create_pool")
+            charity_pubkey = Pubkey.from_string(charity_address)
+
+            instruction_data = (
+                discriminator
+                + struct.pack("<Q", pool_id)  # pool_id: u64
+                + goal_type_bytes             # goal_type: GoalType
+                + struct.pack("<Q", stake_amount_lamports)  # stake_amount: u64
+                + struct.pack("<B", duration_days)          # duration_days: u8
+                + struct.pack("<H", max_participants)       # max_participants: u16
+                + struct.pack("<H", min_participants)       # min_participants: u16
+                + bytes(charity_pubkey)                     # charity_address: Pubkey
+                + dist_mode_bytes                           # distribution_mode: DistributionMode
+            )
+
+            # Accounts: pool PDA, creator wallet, system program
+            accounts = [
+                AccountMeta(pubkey=pool_pubkey, is_signer=False, is_writable=True),
+                AccountMeta(pubkey=creator_pubkey, is_signer=True, is_writable=True),
+                AccountMeta(pubkey=SYSTEM_PROGRAM_ID, is_signer=False, is_writable=False),
+            ]
+
+            instruction = Instruction(
+                program_id=self.program_pubkey,
+                accounts=accounts,
+                data=bytes(instruction_data),
+            )
+
+            # Get recent blockhash
+            client = await self._get_client()
+            blockhash_resp = await client.get_latest_blockhash()
+            if blockhash_resp.value is None:
+                raise RuntimeError("Failed to get latest blockhash")
+
+            blockhash = blockhash_resp.value.blockhash
+
+            # Build message (unsigned transaction)
+            message = Message.new_with_blockhash([instruction], creator_pubkey, blockhash)
+            transaction = Transaction.new_unsigned(message)
+
+            tx_bytes = bytes(transaction)
+            tx_b64 = base64.b64encode(tx_bytes).decode("utf-8")
+
+            logger.info(
+                f"Built create_pool transaction for pool {pool_id}, creator {creator_wallet}, "
+                f"stake={stake_amount_lamports}, duration_days={duration_days}"
+            )
+            logger.info(f"  Pool PDA: {pool_pubkey}")
+
+            return tx_b64
+
+        except Exception as e:
+            logger.error(f"Error building create_pool transaction: {e}", exc_info=True)
             raise
 
 

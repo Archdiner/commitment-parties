@@ -606,6 +606,38 @@ export async function getParticipantVerifications(
 }
 
 /**
+ * AI challenge parsing models
+ */
+export interface ChallengeBlueprint {
+  canonical_name: string;
+  short_description: string;
+  detailed_description?: string | null;
+  challenge_type: string;
+  goal_type: string;
+  goal_metadata: Record<string, any>;
+  suggested_stake_amount: number;
+  suggested_duration_days: number;
+  suggested_recruitment_hours: number;
+  suggested_max_participants: number;
+  suggested_min_participants: number;
+  verification_summary?: string | null;
+  tweet_hook?: string | null;
+}
+
+export async function parseChallengeDescription(
+  description: string,
+  challengeType: string
+): Promise<ChallengeBlueprint> {
+  return fetchApi<ChallengeBlueprint>('/api/ai/onchain/challenges/parse', {
+    method: 'POST',
+    body: JSON.stringify({
+      description,
+      challenge_type: challengeType,
+    }),
+  });
+}
+
+/**
  * Get aggregate pool stats (started / remaining participants)
  */
 export async function getPoolStats(

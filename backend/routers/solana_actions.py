@@ -156,3 +156,93 @@ async def build_join_pool_tx(request: Dict[str, Any]) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail="Failed to build join-pool transaction")
 
 
+@router.post(
+    "/create-pool",
+    summary="Build create-pool transaction",
+    description="Builds a Solana transaction for creating a commitment pool.",
+)
+async def build_create_pool_tx(request: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    POST handler for the create-pool Action.
+
+    Expects a request body that includes:
+      - account: creator wallet address (string)
+      - pool_id: unique pool ID (int)
+      - goal_type: 'lifestyle_habit' | 'hodl_token'
+      - goal_params: dict (see agent OnChainClient.create_pool_on_chain)
+      - stake_amount_lamports: int
+      - duration_days: int
+      - max_participants: int
+      - min_participants: int
+      - charity_address: string
+      - distribution_mode: string (optional, default 'competitive')
+      - winner_percent: int (optional, default 100)
+    """
+    try:
+        account = request.get("account")
+        pool_id = request.get("pool_id")
+        goal_type = request.get("goal_type")
+        goal_params = request.get("goal_params") or {}
+        stake_amount_lamports = request.get("stake_amount_lamports")
+        duration_days = request.get("duration_days")
+        max_participants = request.get("max_participants")
+        min_participants = request.get("min_participants")
+        charity_address = request.get("charity_address")
+        distribution_mode = request.get("distribution_mode", "competitive")
+        winner_percent = int(request.get("winner_percent", 100))
+
+        if not account or not isinstance(account, str):
+            raise HTTPException(status_code=400, detail="Missing or invalid 'account'")
+        if pool_id is None:
+            raise HTTPException(status_code=400, detail="Missing 'pool_id'")
+        if goal_type not in ("lifestyle_habit", "hodl_token"):
+            raise HTTPException(status_code=400, detail="Invalid or missing 'goal_type'")
+        if stake_amount_lamports is None or duration_days is None:
+            raise HTTPException(status_code=400, detail="Missing stake_amount_lamports or duration_days")
+        if max_participants is None or min_participants is None:
+            raise HTTPException(status_code=400, detail="Missing max_participants or min_participants")
+        if not charity_address or not isinstance(charity_address, str):
+            raise HTTPException(status_code=400, detail="Missing or invalid 'charity_address'")
+
+        pool_id_int = int(pool_id)
+        stake_lamports_int = int(stake_amount_lamports)
+        duration_days_int = int(duration_days)
+        max_participants_int = int(max_participants)
+        min_participants_int = int(min_participants)
+
+        try:
+            tx_builder = get_tx_builder()
+            tx_b64 = await tx_builder.build_create_pool_transaction(
+                pool_id=pool_id_int,
+                creator_wallet=account,
+                goal_type=goal_type,
+                goal_params=goal_params,
+                stake_amount_lamports=stake_lamports_int,
+                duration_days=duration_days_int,
+                max_participants=max_participants_int,
+                min_participants=min_participants_int,
+                charity_address=charity_address,
+                distribution_mode=distribution_mode,
+                winner_percent=winner_percent,
+            )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to build create_pool transaction: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to build create-pool transaction: {str(e)}",
+            )
+
+        response: Dict[str, Any] = {
+            "transaction": tx_b64,
+            "message": "Create commitment pool",
+        }
+        return response
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error building create-pool transaction: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to build create-pool transaction")
+
+

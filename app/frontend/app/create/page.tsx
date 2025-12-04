@@ -9,7 +9,8 @@ import { SectionLabel } from '@/components/ui/SectionLabel';
 import { InfoIcon } from '@/components/ui/Tooltip';
 import { confirmPoolCreation } from '@/lib/api';
 import { getPersistedWalletAddress } from '@/lib/wallet';
-import { derivePoolPDA, getConnection, solToLamports, buildCreatePoolInstruction, signAndSendTransaction } from '@/lib/solana';
+import { derivePoolPDA, getConnection, solToLamports } from '@/lib/solana';
+import { Transaction } from '@solana/web3.js';
 
 export default function CreatePool() {
   const router = useRouter();
@@ -19,11 +20,25 @@ export default function CreatePool() {
   // Form State
   const [formData, setFormData] = useState({
     name: '',
-    type: 'Lifestyle (Photo/GPS)',
+    descriptionText: '',
+    category: 'Crypto', // "Crypto" | "Social"
+    cryptoMode: 'HODL', // "HODL" | "DCA"
+    socialMode: 'GitHub', // "GitHub" | "Screen-time"
     duration: '14 Days',
     customDuration: '',
     stake: '0.5',
-    maxParticipants: '100'
+    maxParticipants: '100',
+    recruitmentPeriodHours: '24', // onboarding / initiation phase length (in hours)
+    requireMinParticipants: false,
+    minParticipants: '10',
+    // Crypto-specific fields
+    tokenMint: 'So11111111111111111111111111111111111111112',
+    hodlAmount: '1',          // whole tokens
+    dcaTradesPerDay: '1',     // number of trades per day
+    // Social-specific fields
+    githubCommitsPerDay: '1',
+    githubRepo: '',
+    screenTimeHours: '2',
   });
   const [useCustomDuration, setUseCustomDuration] = useState(false);
   const [validationErrors, setValidationErrors] = useState<Record<string, boolean>>({});
@@ -103,6 +118,11 @@ export default function CreatePool() {
         
         const stakeAmount = parseFloat(formData.stake);
         const maxParticipants = parseInt(formData.maxParticipants);
+        const recruitmentHours = parseInt(formData.recruitmentPeriodHours);
+        const requireMinParticipants = formData.requireMinParticipants;
+        const minParticipantsForBackend = requireMinParticipants
+          ? parseInt(formData.minParticipants)
+          : 1;
 
         // Additional validation aligned with backend constraints
         if (durationDays < 1 || durationDays > 30) {
@@ -110,29 +130,125 @@ export default function CreatePool() {
           setLoading(false);
           return;
         }
-        if (maxParticipants < 1 || maxParticipants > 100) {
-          alert("Max participants must be between 1 and 100.");
+
+        // Global economic guardrails for all challenges
+        const MIN_STAKE = 0.05;
+        const MAX_STAKE = 10;
+        if (isNaN(stakeAmount) || stakeAmount < MIN_STAKE || stakeAmount > MAX_STAKE) {
+          alert(`Stake amount must be between ${MIN_STAKE} and ${MAX_STAKE} SOL.`);
           setLoading(false);
           return;
         }
 
-        // Determine Goal Type metadata
+        const MIN_PARTICIPANTS = 1;
+        // On-chain program enforces max_participants <= 100
+        const MAX_PARTICIPANTS = 100;
+        if (
+          isNaN(maxParticipants) ||
+          maxParticipants < MIN_PARTICIPANTS ||
+          maxParticipants > MAX_PARTICIPANTS
+        ) {
+          alert(`Max participants must be between ${MIN_PARTICIPANTS} and ${MAX_PARTICIPANTS}.`);
+          setLoading(false);
+          return;
+        }
+        if (![0, 1, 24, 168].includes(recruitmentHours)) {
+          alert("Please select a valid recruitment period option.");
+          setLoading(false);
+          return;
+        }
+        if (requireMinParticipants) {
+          if (isNaN(minParticipantsForBackend) || minParticipantsForBackend < MIN_PARTICIPANTS) {
+            alert(`Minimum participants must be at least ${MIN_PARTICIPANTS} when enabled.`);
+            setLoading(false);
+            return;
+          }
+          if (minParticipantsForBackend > maxParticipants) {
+            alert("Minimum participants cannot be greater than max participants.");
+            setLoading(false);
+            return;
+          }
+        }
+
+        // Determine Goal Type metadata based on explicit form selection only
         let goalType = 'lifestyle_habit';
         let goalMetadata: Record<string, any> = {};
         let goalParamsForOnchain: Record<string, any> = {};
-        if (formData.type.includes('Crypto')) {
+
+        if (formData.category === 'Crypto') {
+          const tokenMint = formData.tokenMint.trim() || 'So11111111111111111111111111111111111111112';
+
+          // Very basic mint sanity check (length only; full validation is on-chain)
+          if (tokenMint.length < 32 || tokenMint.length > 44) {
+            alert('Please enter a valid token mint address (32–44 characters).');
+            setLoading(false);
+            return;
+          }
+
+          if (formData.cryptoMode === 'HODL') {
+            const hodlAmountTokens = parseFloat(formData.hodlAmount || '0');
+            if (isNaN(hodlAmountTokens) || hodlAmountTokens <= 0) {
+              alert('Please enter a valid minimum balance for your HODL challenge.');
+              setLoading(false);
+              return;
+            }
+            const decimals = 9; // Assume 9 decimals for now (SOL and most SPL tokens)
+            const minBalance = Math.floor(hodlAmountTokens * 10 ** decimals);
+
             goalType = 'hodl_token';
-            goalMetadata = { token_mint: 'So11111111111111111111111111111111111111112', min_balance: 1000000000 };
-            goalParamsForOnchain = { token_mint: goalMetadata.token_mint, min_balance: goalMetadata.min_balance };
-        } else if (formData.type.includes('Developer')) {
+            goalMetadata = {
+              habit_type: 'hodl_token',
+              token_mint: tokenMint,
+              min_balance: minBalance,
+            };
+            goalParamsForOnchain = { token_mint: tokenMint, min_balance: minBalance };
+          } else {
+            // DCA / trading challenge
+            const tradesPerDay = parseInt(formData.dcaTradesPerDay || '0', 10);
+            if (isNaN(tradesPerDay) || tradesPerDay < 1 || tradesPerDay > 50) {
+              alert('Daily trades must be between 1 and 50.');
+              setLoading(false);
+              return;
+            }
+
             goalType = 'lifestyle_habit';
-            goalMetadata = { habit_type: 'github_commits', min_commits_per_day: 1 };
-            goalParamsForOnchain = { habit_name: 'GitHub Commits' };
+            goalMetadata = {
+              habit_type: 'dca_trade',
+              token_mint: tokenMint,
+              min_trades_per_day: tradesPerDay,
+            };
+            // The program only needs generic params; extra fields live in goal_metadata
+            goalParamsForOnchain = { habit_name: 'Daily DCA' };
+          }
         } else {
-            // Lifestyle
-            goalType = 'lifestyle_habit';
-            goalMetadata = { habit_type: 'screen_time', max_hours: 2 };
-            goalParamsForOnchain = { habit_name: 'Lifestyle Habit' };
+          // Social challenges (GitHub / Screen-time)
+          goalType = 'lifestyle_habit';
+          if (formData.socialMode === 'GitHub') {
+            const commitsPerDay = parseInt(formData.githubCommitsPerDay || '0', 10);
+            if (isNaN(commitsPerDay) || commitsPerDay < 1 || commitsPerDay > 50) {
+              alert('Commits per day must be between 1 and 50.');
+              setLoading(false);
+              return;
+            }
+            goalMetadata = {
+              habit_type: 'github_commits',
+              min_commits_per_day: commitsPerDay,
+              repo: formData.githubRepo.trim() || undefined,
+            };
+            goalParamsForOnchain = { habit_name: 'GitHub Commits' };
+          } else {
+            const hours = parseFloat(formData.screenTimeHours || '0');
+            if (isNaN(hours) || hours <= 0 || hours > 24) {
+              alert('Allowed screen-time hours must be between 0 and 24.');
+              setLoading(false);
+              return;
+            }
+            goalMetadata = {
+              habit_type: 'screen_time',
+              max_hours: hours,
+            };
+            goalParamsForOnchain = { habit_name: 'Screen Time' };
+          }
         }
 
         // Pool ID and PDA (on-chain identity)
@@ -167,51 +283,92 @@ export default function CreatePool() {
 
         const creatorPubkey = provider.publicKey;
         const stakeLamports = solToLamports(stakeAmount);
-        const minParticipants = 1;
+        const minParticipants = minParticipantsForBackend;
         // Use a valid base58 charity address (configurable via env, fallback to system program ID)
         const charityAddress =
           process.env.NEXT_PUBLIC_CHARITY_ADDRESS || '11111111111111111111111111111111';
         const distributionMode = 'competitive';
         const winnerPercent = 100;
 
-        const createIx = await buildCreatePoolInstruction(
-          randomId,
-          creatorPubkey,
-          goalType,
-          goalParamsForOnchain,
-          stakeLamports,
-          durationDays,
-          maxParticipants,
-          minParticipants,
-          charityAddress,
-          distributionMode,
-          winnerPercent
-        );
+        // --- Build transaction via backend Solana Actions (create-pool) ---
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+        const createBody = {
+          account: creatorPubkey.toBase58(),
+          pool_id: randomId,
+          goal_type: goalType,
+          goal_params: goalParamsForOnchain,
+          stake_amount_lamports: stakeLamports,
+          duration_days: durationDays,
+          max_participants: maxParticipants,
+          min_participants: minParticipants,
+          charity_address: charityAddress,
+          distribution_mode: distributionMode,
+          winner_percent: winnerPercent,
+        };
 
-        const txSignature = await signAndSendTransaction(
-          connection,
-          createIx,
-          provider
+        const createResp = await fetch(`${apiUrl}/solana/actions/create-pool`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(createBody),
+        });
+
+        if (!createResp.ok) {
+          const errData = await createResp.json().catch(() => ({}));
+          throw new Error(errData.detail || 'Failed to build create-pool transaction');
+        }
+
+        const { transaction: txB64 } = await createResp.json();
+
+        const tx = Transaction.from(Buffer.from(txB64, 'base64'));
+
+        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+        tx.recentBlockhash = blockhash;
+        tx.feePayer = creatorPubkey;
+
+        let txSignature: string;
+        if (typeof provider.sendTransaction === 'function') {
+          txSignature = await provider.sendTransaction(tx, connection, {
+            skipPreflight: false,
+            maxRetries: 3,
+            preflightCommitment: 'confirmed',
+          });
+        } else if (typeof provider.signTransaction === 'function') {
+          const signed = await provider.signTransaction(tx);
+          txSignature = await connection.sendRawTransaction(signed.serialize(), {
+            skipPreflight: false,
+            maxRetries: 3,
+          });
+        } else {
+          throw new Error('Connected wallet does not support sending transactions.');
+        }
+
+        await connection.confirmTransaction(
+          { signature: txSignature, blockhash, lastValidBlockHeight },
+          'confirmed'
         );
 
         // --- Backend: confirm pool creation with transaction_signature ---
-        const recruitment_period_hours = 24;
-        const require_min_participants = false;
+        const recruitment_period_hours = recruitmentHours;
+        const require_min_participants = requireMinParticipants;
         const grace_period_minutes = 5;
+
+        const descriptionText =
+          formData.descriptionText.trim() ||
+          `A ${formData.category} challenge for ${durationDays} days.`;
 
         await confirmPoolCreation({
             pool_id: randomId,
           pool_pubkey: poolPubkey,
           transaction_signature: txSignature,
           creator_wallet: currentWallet,
-            name: formData.name || "Untitled Challenge",
-            description: `A ${formData.type} challenge for ${durationDays} days.`,
-            goal_type: goalType,
-            goal_metadata: goalMetadata,
-            stake_amount: stakeAmount,
-            duration_days: durationDays,
-            max_participants: maxParticipants,
-          min_participants: 1,
+          name: formData.name || "Untitled Challenge",
+          description: descriptionText,
+          goal_type: goalType,
+          goal_metadata: goalMetadata,
+          stake_amount: stakeAmount,
+          duration_days: durationDays,
+          max_participants: maxParticipants,
+          min_participants: minParticipantsForBackend,
           distribution_mode: 'competitive',
           split_percentage_winners: 100,
           charity_address: charityAddress,
@@ -280,42 +437,41 @@ export default function CreatePool() {
             {/* Section 1 */}
             <div className="space-y-6">
                <SectionLabel>Core Parameters</SectionLabel>
-               <div>
-                  <label className="flex items-center gap-2 text-xs uppercase tracking-widest text-gray-500 mb-2">
-                    Challenge Name
-                    <InfoIcon content="Give your challenge a clear name so others know what they're committing to." />
-                  </label>
-                  <input 
-                    type="text" 
-                    value={formData.name}
-                    onChange={(e) => {
-                      setFormData({...formData, name: e.target.value});
-                      if (validationErrors.name) {
-                        setValidationErrors({...validationErrors, name: false});
-                      }
-                    }}
-                    className={`w-full bg-transparent border-b py-3 text-xl text-white placeholder-gray-800 focus:outline-none transition-colors ${
-                      validationErrors.name 
-                        ? 'border-red-500 focus:border-red-500' 
-                        : 'border-white/20 focus:border-emerald-500'
-                    }`}
-                    placeholder="e.g. 100 Days of Code" 
-                  />
+               <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">Describe Your Challenge</label>
+                    <textarea
+                      value={formData.descriptionText}
+                      onChange={(e) => setFormData({ ...formData, descriptionText: e.target.value })}
+                      rows={3}
+                      className="w-full bg-transparent border border-white/20 py-3 px-3 text-sm text-white placeholder-gray-800 focus:outline-none focus:border-emerald-500 transition-colors resize-none"
+                      placeholder="e.g. 30 days of 6am gym check-ins with a mirror selfie as proof."
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">Challenge Name</label>
+                    <input 
+                      type="text" 
+                      value={formData.name}
+                      onChange={(e) => setFormData({...formData, name: e.target.value})}
+                      className="w-full bg-transparent border-b border-white/20 py-3 text-xl text-white placeholder-gray-800 focus:outline-none focus:border-emerald-500 transition-colors" 
+                      placeholder="e.g. 100 Days of Code" 
+                    />
+                  </div>
                </div>
                <div className="grid grid-cols-2 gap-6">
                   <div>
-                    <label className="flex items-center gap-2 text-xs uppercase tracking-widest text-gray-500 mb-2">
-                      Type
-                      <InfoIcon content="Choose how your goal will be verified: Lifestyle (photos/check-ins), Crypto (automatic wallet tracking), or Developer (GitHub commits)." />
-                    </label>
+                    <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">Category</label>
                     <select 
-                        value={formData.type}
-                        onChange={(e) => setFormData({...formData, type: e.target.value})}
+                        value={formData.category}
+                        onChange={(e) => setFormData({
+                          ...formData,
+                          category: e.target.value,
+                        })}
                         className="w-full bg-[#0A0A0A] border border-white/10 py-3 px-4 text-sm text-white focus:outline-none"
                     >
-                       <option>Lifestyle (Photo/GPS)</option>
-                       <option>Crypto (On-Chain)</option>
-                       <option>Developer (GitHub)</option>
+                       <option>Crypto</option>
+                       <option>Social</option>
                     </select>
                   </div>
                   <div>
@@ -421,6 +577,269 @@ export default function CreatePool() {
                     }`}
                     placeholder="100" 
                   />
+               </div>
+            </div>
+
+            {/* Section 2B - Challenge Specific Parameters */}
+            <div className="space-y-6">
+              <SectionLabel>Challenge Rules</SectionLabel>
+
+              {formData.category === 'Crypto' ? (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">Crypto Mode</label>
+                    <div className="grid grid-cols-2 gap-3">
+                      {['HODL', 'DCA'].map(mode => {
+                        const isActive = formData.cryptoMode === mode;
+                        return (
+                          <button
+                            key={mode}
+                            type="button"
+                            onClick={() => setFormData({ ...formData, cryptoMode: mode })}
+                            className={`text-left border px-3 py-3 text-xs rounded-sm transition-colors ${
+                              isActive
+                                ? 'border-emerald-500/60 bg-emerald-500/10 text-white'
+                                : 'border-white/10 bg-white/[0.02] text-gray-400 hover:border-white/30'
+                            }`}
+                          >
+                            <div className="font-mono uppercase tracking-widest text-[10px] mb-1">
+                              {mode === 'HODL' ? 'HODL Balance' : 'Daily DCA'}
+                            </div>
+                            <div className="text-[10px] text-gray-500">
+                              {mode === 'HODL'
+                                ? 'Hold a minimum balance for the full challenge'
+                                : 'Make a certain number of trades each day'}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">Token Mint</label>
+                      <input
+                        type="text"
+                        value={formData.tokenMint}
+                        onChange={(e) => setFormData({ ...formData, tokenMint: e.target.value })}
+                        className="w-full bg-transparent border-b border-white/20 py-2 text-sm text-white placeholder-gray-700 focus:outline-none focus:border-emerald-500 transition-colors"
+                        placeholder="So1111... (wrapped SOL or SPL token mint)"
+                      />
+                    </div>
+
+                    {formData.cryptoMode === 'HODL' ? (
+                      <div>
+                        <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">
+                          Minimum Balance (tokens)
+                        </label>
+                        <input
+                          type="number"
+                          min={0.000000001}
+                          step="0.000000001"
+                          value={formData.hodlAmount}
+                          onChange={(e) => setFormData({ ...formData, hodlAmount: e.target.value })}
+                          className="w-full bg-transparent border-b border-white/20 py-2 text-sm text-white placeholder-gray-700 focus:outline-none focus:border-emerald-500 transition-colors"
+                          placeholder="e.g. 1.0"
+                        />
+                      </div>
+                    ) : (
+                      <div>
+                        <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">
+                          Trades Per Day
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={50}
+                          value={formData.dcaTradesPerDay}
+                          onChange={(e) => setFormData({ ...formData, dcaTradesPerDay: e.target.value })}
+                          className="w-full bg-transparent border-b border-white/20 py-2 text-sm text-white placeholder-gray-700 focus:outline-none focus:border-emerald-500 transition-colors"
+                          placeholder="e.g. 1"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">Social Mode</label>
+                    <div className="grid grid-cols-2 gap-3">
+                      {['GitHub', 'Screen-time'].map(mode => {
+                        const isActive = formData.socialMode === mode;
+                        return (
+                          <button
+                            key={mode}
+                            type="button"
+                            onClick={() => setFormData({ ...formData, socialMode: mode })}
+                            className={`text-left border px-3 py-3 text-xs rounded-sm transition-colors ${
+                              isActive
+                                ? 'border-emerald-500/60 bg-emerald-500/10 text-white'
+                                : 'border-white/10 bg-white/[0.02] text-gray-400 hover:border-white/30'
+                            }`}
+                          >
+                            <div className="font-mono uppercase tracking-widest text-[10px] mb-1">
+                              {mode === 'GitHub' ? 'GitHub Commits' : 'Screen-time'}
+                            </div>
+                            <div className="text-[10px] text-gray-500">
+                              {mode === 'GitHub'
+                                ? 'Daily commit habit verified via GitHub'
+                                : 'Limit your daily screen-time hours'}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {formData.socialMode === 'GitHub' ? (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">
+                            Commits Per Day
+                          </label>
+                          <input
+                            type="number"
+                            min={1}
+                            max={50}
+                            value={formData.githubCommitsPerDay}
+                            onChange={(e) =>
+                              setFormData({ ...formData, githubCommitsPerDay: e.target.value })
+                            }
+                            className="w-full bg-transparent border-b border-white/20 py-2 text-sm text-white placeholder-gray-700 focus:outline-none focus:border-emerald-500 transition-colors"
+                            placeholder="e.g. 1"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">
+                            Repository (optional)
+                          </label>
+                          <input
+                            type="text"
+                            value={formData.githubRepo}
+                            onChange={(e) => setFormData({ ...formData, githubRepo: e.target.value })}
+                            className="w-full bg-transparent border-b border-white/20 py-2 text-sm text-white placeholder-gray-700 focus:outline-none focus:border-emerald-500 transition-colors"
+                            placeholder="owner/repo (leave empty for any repo)"
+                          />
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-gray-600">
+                        GitHub username is verified separately and used automatically by the agent.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">
+                        Max Screen-time Per Day (hours)
+                      </label>
+                      <input
+                        type="number"
+                        min={0.5}
+                        max={24}
+                        step="0.5"
+                        value={formData.screenTimeHours}
+                        onChange={(e) =>
+                          setFormData({ ...formData, screenTimeHours: e.target.value })
+                        }
+                        className="w-full bg-transparent border-b border-white/20 py-2 text-sm text-white placeholder-gray-700 focus:outline-none focus:border-emerald-500 transition-colors"
+                        placeholder="e.g. 2"
+                      />
+                      <p className="text-[10px] text-gray-600">
+                        Used by the agent when validating your daily screen-time check-ins.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Section 3 - Onboarding / Recruitment */}
+            <div className="space-y-6">
+               <SectionLabel>Onboarding & Start Time</SectionLabel>
+               <div>
+                  <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">Recruitment Period</label>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {[
+                      { label: 'Immediate', value: '0', hint: 'Starts as soon as you deploy' },
+                      { label: '1 Hour', value: '1', hint: 'Quick sprint with friends' },
+                      { label: '1 Day', value: '24', hint: 'Default – time to onboard' },
+                      { label: '1 Week', value: '168', hint: 'Big public campaign' },
+                    ].map(option => {
+                      const isActive = formData.recruitmentPeriodHours === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => setFormData({ ...formData, recruitmentPeriodHours: option.value })}
+                          className={`text-left border px-3 py-3 text-xs rounded-sm transition-colors ${
+                            isActive
+                              ? 'border-emerald-500/60 bg-emerald-500/10 text-white'
+                              : 'border-white/10 bg-white/[0.02] text-gray-400 hover:border-white/30'
+                          }`}
+                        >
+                          <div className="font-mono uppercase tracking-widest text-[10px] mb-1">
+                            {option.label}
+                          </div>
+                          <div className="text-[10px] text-gray-500">
+                            {option.hint}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="mt-2 text-[10px] text-gray-600">
+                    This is the onboarding window before the challenge actually starts. Longer windows give people more time to join.
+                  </p>
+               </div>
+
+               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                  <div>
+                    <label className="block text-xs uppercase tracking-widest text-gray-500 mb-1">Minimum Participants</label>
+                    <p className="text-[10px] text-gray-600 max-w-xs">
+                      Optionally require a minimum number of people before the challenge can start.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setFormData({
+                          ...formData,
+                          requireMinParticipants: !formData.requireMinParticipants,
+                        })
+                      }
+                      className={`w-10 h-5 rounded-full border flex items-center px-1 transition-colors ${
+                        formData.requireMinParticipants
+                          ? 'border-emerald-500 bg-emerald-500/20'
+                          : 'border-white/20 bg-white/[0.02]'
+                      }`}
+                    >
+                      <div
+                        className={`w-3 h-3 rounded-full bg-white transition-transform ${
+                          formData.requireMinParticipants ? 'translate-x-4' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                    <input
+                      type="number"
+                      min={1}
+                      value={formData.minParticipants}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          minParticipants: e.target.value,
+                        })
+                      }
+                      disabled={!formData.requireMinParticipants}
+                      className="w-20 bg-transparent border-b border-white/20 py-1 text-sm text-white placeholder-gray-700 focus:outline-none focus:border-emerald-500 disabled:text-gray-700 disabled:border-white/10"
+                      placeholder="10"
+                    />
+                    <span className="text-[10px] text-gray-500 uppercase tracking-widest">
+                      People
+                    </span>
+                  </div>
                </div>
             </div>
 

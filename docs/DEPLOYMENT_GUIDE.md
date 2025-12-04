@@ -162,35 +162,110 @@ After deployment, update the program ID in your source code:
 
 ## Step 3: Deploy Backend API
 
-The backend needs to be accessible 24/7 and handle HTTP requests. Choose one deployment option:
+The backend needs to be accessible 24/7 and handle HTTP requests. Below is a comprehensive comparison of deployment options to help you choose the best fit.
 
-### Option A: Railway (Recommended)
+### Backend Deployment Platform Comparison
 
-**Pros**: Easy setup, auto-deploys from GitHub, good for Python
+| Platform | GitHub Auto-Deploy | Ease of Setup | Free Tier | Pricing (Paid) | Best For |
+|----------|-------------------|---------------|-----------|----------------|----------|
+| **Railway** | ✅ Native (automatic) | ⭐⭐⭐⭐⭐ Very Easy | $5 credit/month | Usage-based (~$5-20/month) | **Recommended** - Simplest setup, great DX |
+| **Render** | ✅ Native (automatic) | ⭐⭐⭐⭐⭐ Very Easy | Free tier (spins down after 15min idle) | $7/month (Starter) | Good free tier, reliable |
+| **Fly.io** | ⚠️ Via GitHub Actions | ⭐⭐⭐ Moderate | 3 shared VMs free | ~$2-5/month per VM | Global edge, Docker-based |
+| **Heroku** | ✅ Native (automatic) | ⭐⭐⭐⭐ Easy | No free tier | $7/month (Eco) | Classic, mature platform |
+| **VPS** | ❌ Manual setup | ⭐⭐ Complex | N/A | $5-12/month | Full control, requires DevOps |
+
+#### Detailed Comparison
+
+**Railway** ⭐ **RECOMMENDED**
+- ✅ **GitHub Integration**: Native, automatic deployments on every push
+- ✅ **Ease of Use**: Zero-config Python detection, intuitive UI
+- ✅ **Setup Time**: ~5 minutes from signup to deployed
+- ✅ **Features**: Built-in database provisioning, team collaboration, great logs
+- ✅ **Pricing**: $5 free credit/month, then usage-based (very reasonable)
+- ✅ **Reliability**: Excellent uptime, automatic SSL, zero-downtime deploys
+- ⚠️ **Limitations**: Free tier limited, but paid tier is affordable
+
+**Render**
+- ✅ **GitHub Integration**: Native, automatic deployments
+- ✅ **Ease of Use**: Zero-config, similar to Railway
+- ✅ **Free Tier**: Generous free tier (spins down after 15min idle - not ideal for 24/7)
+- ✅ **Pricing**: $7/month for always-on service
+- ⚠️ **Limitations**: Free tier spins down, slower cold starts
+
+**Fly.io**
+- ⚠️ **GitHub Integration**: Requires GitHub Actions setup (not native)
+- ⚠️ **Ease of Use**: Requires CLI, Docker knowledge, more configuration
+- ✅ **Features**: Global edge deployment, excellent for low-latency
+- ✅ **Pricing**: Generous free tier (3 shared VMs)
+- ⚠️ **Limitations**: More complex setup, requires Docker knowledge
+
+**Heroku**
+- ✅ **GitHub Integration**: Native, automatic deployments
+- ✅ **Ease of Use**: Very easy, classic platform
+- ❌ **Free Tier**: Removed in 2022
+- ⚠️ **Pricing**: $7/month minimum (Eco dyno)
+- ✅ **Features**: Mature, extensive add-ons, great documentation
+
+**VPS (DigitalOcean, AWS, etc.)**
+- ❌ **GitHub Integration**: Manual setup required (webhooks, scripts)
+- ❌ **Ease of Use**: Requires DevOps knowledge, server management
+- ✅ **Control**: Full control over environment
+- ✅ **Pricing**: $5-12/month for basic VPS
+- ⚠️ **Limitations**: You manage everything (updates, security, monitoring)
+
+### Recommendation: Railway
+
+**Why Railway is the best choice for your needs:**
+
+1. **Easiest GitHub Integration**: Connect repo → auto-deploys on every push (zero config)
+2. **Fastest Setup**: 5 minutes from signup to deployed backend
+3. **Perfect for Python/FastAPI**: Auto-detects Python, handles dependencies automatically
+4. **Great Developer Experience**: Intuitive UI, excellent logs, easy debugging
+5. **Affordable**: $5 free credit/month, then pay-as-you-go (typically $5-15/month)
+6. **Reliable**: Excellent uptime, automatic SSL, zero-downtime deployments
+7. **No Cold Starts**: Unlike serverless, always warm for 24/7 API needs
+
+**When to choose alternatives:**
+- **Render**: If you want a free tier for testing (but remember it spins down)
+- **Fly.io**: If you need global edge deployment and low latency worldwide
+- **VPS**: If you need full control and have DevOps expertise
+
+---
+
+### Deployment Instructions: Railway (Recommended)
 
 1. **Create Railway Account**
    - Go to [railway.app](https://railway.app)
-   - Sign up with GitHub
+   - Click "Start a New Project"
+   - Sign up with GitHub (recommended for seamless integration)
 
 2. **Create New Project**
    - Click "New Project"
    - Select "Deploy from GitHub repo"
-   - Choose your repository
+   - Authorize Railway to access your GitHub
+   - Choose your `commitment-parties` repository
 
 3. **Add Backend Service**
-   - Click "New" → "Service"
-   - Select "GitHub Repo"
+   - In your Railway project, click "New" → "Service"
+   - Select "GitHub Repo" (or "Empty Service" if you want to configure manually)
    - Choose your repository
-   - Set **Root Directory** to: `backend`
+   - **IMPORTANT**: Set **Root Directory** to: `backend`
+     - This tells Railway to look in the `backend/` folder, not the repo root
+     - If you already created the service, go to **Settings** → **Source** → **Root Directory** and set it to `backend`
+   - Railway will auto-detect Python and create a service
 
-4. **Configure Build Settings**
-   - Railway auto-detects Python
-   - Build command: (auto-detected)
-   - Start command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
+4. **Configure Build Settings** (usually auto-detected)
+   - Railway auto-detects Python from `requirements.txt` in the `backend/` directory
+   - **Build Command**: (auto-detected, usually `pip install -r requirements.txt`)
+   - **Start Command**: `uvicorn main:app --host 0.0.0.0 --port $PORT`
+   - If not auto-detected, go to **Settings** → **Deploy** and set:
+     - **Build Command**: `pip install -r requirements.txt`
+     - **Start Command**: `uvicorn main:app --host 0.0.0.0 --port $PORT`
+   - **Note**: A `railway.json` file has been created in the `backend/` directory to help Railway detect the correct build settings
 
 5. **Set Environment Variables**
    
-   Go to **Variables** tab and add:
+   Go to your service → **Variables** tab and add all required variables:
    
    ```bash
    HOST=0.0.0.0
@@ -198,16 +273,16 @@ The backend needs to be accessible 24/7 and handle HTTP requests. Choose one dep
    ENVIRONMENT=production
    DEBUG=false
    
-   # Database
+   # Database (from Step 2)
    DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT].supabase.co:5432/postgres
    SUPABASE_URL=https://[PROJECT].supabase.co
    SUPABASE_KEY=your_supabase_anon_key_here
    
-   # Solana
+   # Solana (from Step 1)
    SOLANA_RPC_URL=https://api.devnet.solana.com
    PROGRAM_ID=your_program_id_from_step_1
    
-   # CORS (update after frontend deployment)
+   # CORS (update after frontend deployment in Step 4)
    CORS_ORIGINS=https://your-frontend.vercel.app
    
    # GitHub OAuth (if using)
@@ -222,41 +297,73 @@ The backend needs to be accessible 24/7 and handle HTTP requests. Choose one dep
    ```
 
 6. **Deploy**
-   - Railway will automatically deploy on git push
-   - Or click "Deploy" to trigger manually
-   - Wait for deployment to complete
+   - Railway automatically deploys when you push to your connected branch (usually `main`)
+   - Or click **Deploy** in the Railway dashboard to trigger manually
+   - Watch the deployment logs in real-time
+   - Wait for deployment to complete (usually 2-3 minutes)
 
 7. **Get Backend URL**
-   - Railway provides a URL like: `https://your-backend.up.railway.app`
-   - Copy this URL - you'll need it for frontend and agent!
+   - Railway automatically generates a URL: `https://your-service-name.up.railway.app`
+   - You can customize the domain in **Settings** → **Networking**
+   - Copy this URL - you'll need it for frontend and agent configuration!
 
-### Option B: Render
+8. **Verify Deployment**
+   ```bash
+   # Test health endpoint
+   curl https://your-service-name.up.railway.app/health
+   
+   # Should return: {"status":"ok","service":"commitment-agent-backend","version":"1.0.0"}
+   
+   # Test API docs (open in browser)
+   # https://your-service-name.up.railway.app/docs
+   ```
+
+**GitHub Auto-Deploy Setup:**
+- Railway automatically deploys on every push to your main branch
+- To configure which branch to deploy from: **Settings** → **Deploy** → **Source**
+- You can also set up preview deployments for pull requests
+
+---
+
+### Alternative: Render (If you prefer Render)
 
 1. **Create Render Account**
    - Go to [render.com](https://render.com)
-   - Sign up
+   - Sign up with GitHub
 
 2. **Create Web Service**
    - Click "New" → "Web Service"
    - Connect your GitHub repository
+   - Select your `commitment-parties` repository
    - Set **Root Directory** to: `backend`
 
 3. **Configure**
+   - **Name**: `commitment-backend` (or your choice)
+   - **Region**: Choose closest to your users
+   - **Branch**: `main` (or your default branch)
+   - **Runtime**: Python 3
    - **Build Command**: `pip install -r requirements.txt`
    - **Start Command**: `uvicorn main:app --host 0.0.0.0 --port $PORT`
-   - **Environment**: Python 3
 
 4. **Set Environment Variables** (same as Railway above)
+   - Go to **Environment** tab
+   - Add all variables from the Railway section above
 
 5. **Deploy**
-   - Render will deploy automatically
-   - Get your URL: `https://your-backend.onrender.com`
+   - Render will automatically deploy on every push to main branch
+   - Get your URL: `https://commitment-backend.onrender.com`
+   - **Note**: Free tier spins down after 15min idle. Upgrade to Starter ($7/month) for always-on.
 
-### Option C: Fly.io
+---
+
+### Alternative: Fly.io (If you need global edge deployment)
+
+**Note**: Fly.io requires more setup and uses GitHub Actions for auto-deploy (not native).
 
 1. **Install Fly CLI**
    ```bash
    curl -L https://fly.io/install.sh | sh
+   # Or on macOS: brew install flyctl
    ```
 
 2. **Login**
@@ -269,17 +376,64 @@ The backend needs to be accessible 24/7 and handle HTTP requests. Choose one dep
    cd backend
    fly launch
    ```
+   - Follow prompts to create app
+   - Choose region(s) for deployment
+   - Don't deploy yet (we'll set up GitHub Actions first)
 
-4. **Configure**
-   - Follow prompts
-   - Set environment variables: `fly secrets set KEY=value`
-
-5. **Deploy**
-   ```bash
-   fly deploy
+4. **Create Dockerfile** (if not exists)
+   ```dockerfile
+   FROM python:3.11-slim
+   
+   WORKDIR /app
+   
+   COPY requirements.txt .
+   RUN pip install --no-cache-dir -r requirements.txt
+   
+   COPY . .
+   
+   EXPOSE 8080
+   CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
    ```
 
-### Option D: VPS (DigitalOcean, AWS EC2, etc.)
+5. **Set Secrets**
+   ```bash
+   fly secrets set DATABASE_URL="postgresql://..."
+   fly secrets set SUPABASE_URL="https://..."
+   # ... set all other secrets
+   ```
+
+6. **Setup GitHub Actions for Auto-Deploy**
+   Create `.github/workflows/fly-deploy.yml`:
+   ```yaml
+   name: Fly Deploy
+   on:
+     push:
+       branches: [main]
+       paths:
+         - 'backend/**'
+   jobs:
+     deploy:
+       name: Deploy app
+       runs-on: ubuntu-latest
+       steps:
+         - uses: actions/checkout@v3
+         - uses: superfly/flyctl-actions/setup-flyctl@master
+         - run: flyctl deploy --remote-only -c backend/fly.toml
+           env:
+             FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+   ```
+   - Get your Fly API token: `fly auth token`
+   - Add to GitHub Secrets: Settings → Secrets → New secret: `FLY_API_TOKEN`
+
+7. **Deploy**
+   ```bash
+   fly deploy
+   # Or push to GitHub to trigger auto-deploy
+   ```
+
+---
+
+### Alternative: VPS (DigitalOcean, AWS EC2, etc.)
 
 1. **Create Server**
    - Ubuntu 22.04 LTS
@@ -879,6 +1033,26 @@ Set up monitoring for:
 
 ## Troubleshooting
 
+### Railway Build Error: "Railpack could not determine how to build the app"
+
+**Error Message**: `✖ Railpack could not determine how to build the app`
+
+**Cause**: Railway is trying to build from the repository root instead of the `backend/` directory.
+
+**Solution**:
+1. Go to your Railway service → **Settings** → **Source**
+2. Set **Root Directory** to: `backend`
+3. Save the changes
+4. Railway will automatically trigger a new deployment
+5. The build should now succeed as it will find `requirements.txt` and `main.py` in the `backend/` directory
+
+**Alternative**: If the Root Directory setting doesn't appear:
+- Delete the current service
+- Create a new service
+- When connecting the GitHub repo, immediately set **Root Directory** to `backend` before Railway tries to build
+
+**Note**: A `railway.json` file has been added to the `backend/` directory to help Railway detect the correct build settings.
+
 ### Backend Not Starting
 
 1. Check environment variables are set correctly
@@ -886,6 +1060,7 @@ Set up monitoring for:
 3. Check logs for specific errors
 4. Ensure port is not already in use
 5. Verify PROGRAM_ID is correct
+6. **For Railway**: Verify Root Directory is set to `backend` in Settings → Source
 
 ### Agent Not Running
 

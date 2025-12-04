@@ -386,14 +386,25 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
         description = pool.get("description") or ""
         goal_metadata = pool.get("goal_metadata") or {}
         if not description and isinstance(goal_metadata, dict):
-            # Try to extract a short description from goal metadata
-            description = goal_metadata.get("habit_name") or goal_metadata.get("habit_type") or ""
+            # Prefer explicit summary from AI blueprint when available
+            description = (
+                goal_metadata.get("summary")
+                or goal_metadata.get("habit_name")
+                or goal_metadata.get("habit_type")
+                or ""
+            )
+
         description_snippet = self._truncate_body(description, max_len=80)
         stake = float(pool.get("stake_amount", 0.0))
         participant_count = stats.get("participant_count", pool.get("participant_count", 0))
         max_participants = pool.get("max_participants") or participant_count or 0
         potential_prize = stake * float(max_participants or 0)
         signup_deadline = self._format_signup_deadline(pool)
+
+        # Optional extra hook from AI blueprint
+        tweet_hook = None
+        if isinstance(goal_metadata, dict):
+            tweet_hook = goal_metadata.get("tweet_hook")
         
         base = (
             f"🎉 New challenge: {name}\n"
@@ -402,6 +413,9 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
             f"🏆 Potential pool: ~{potential_prize:.2f} SOL\n"
             f"⏰ Sign-up closes: {signup_deadline}"
         )
+        if tweet_hook:
+            hook_snippet = self._truncate_body(str(tweet_hook), max_len=80)
+            base = base + f"\n🔥 {hook_snippet}"
         return self._truncate_body(base, max_len=220)
 
     def generate_midway_tweet(self, pool: Dict[str, Any], stats: Dict[str, Any]) -> str:
