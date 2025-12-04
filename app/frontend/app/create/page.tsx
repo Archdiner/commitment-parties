@@ -3,11 +3,12 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ChevronRight, Zap, Loader2 } from 'lucide-react';
+import { ChevronRight, Zap } from 'lucide-react';
 import { ButtonPrimary } from '@/components/ui/ButtonPrimary';
 import { SectionLabel } from '@/components/ui/SectionLabel';
-import { createPool } from '@/lib/api';
+import { confirmPoolCreation } from '@/lib/api';
 import { getPersistedWalletAddress } from '@/lib/wallet';
+import { derivePoolPDA, getConnection, solToLamports, buildCreatePoolInstruction, signAndSendTransaction } from '@/lib/solana';
 
 export default function CreatePool() {
   const router = useRouter();
@@ -26,16 +27,30 @@ export default function CreatePool() {
   const [useCustomDuration, setUseCustomDuration] = useState(false);
 
   useEffect(() => {
+    // Initial load from persisted storage
     const address = getPersistedWalletAddress();
     setWalletAddress(address);
+
+    // Also listen for storage changes so connecting in Navbar while this
+    // page is open will update the local state.
+    if (typeof window !== 'undefined') {
+      const handleStorage = () => {
+        const updated = getPersistedWalletAddress();
+        setWalletAddress(updated);
+      };
+      window.addEventListener('storage', handleStorage);
+      return () => window.removeEventListener('storage', handleStorage);
+    }
   }, []);
 
   const handleDeploy = async () => {
-    if (!walletAddress) {
-        alert("Please connect your wallet first (top right).");
-        return;
+    // Always read latest wallet from storage (Navbar may have updated it)
+    const currentWallet = getPersistedWalletAddress();
+    if (!currentWallet) {
+      alert("Please connect your wallet first (top right).");
+      return;
     }
-    
+
     setLoading(true);
     try {
         const durationDays = useCustomDuration 
@@ -50,46 +65,128 @@ export default function CreatePool() {
         const stakeAmount = parseFloat(formData.stake);
         const maxParticipants = parseInt(formData.maxParticipants);
 
+        // Basic validation aligned with backend constraints
+        if (durationDays < 1 || durationDays > 30) {
+          alert("Duration must be between 1 and 30 days.");
+          setLoading(false);
+          return;
+        }
+        if (stakeAmount <= 0) {
+          alert("Stake amount must be greater than 0.");
+          setLoading(false);
+          return;
+        }
+        if (maxParticipants < 1 || maxParticipants > 100) {
+          alert("Max participants must be between 1 and 100.");
+          setLoading(false);
+          return;
+        }
+
         // Determine Goal Type metadata
         let goalType = 'lifestyle_habit';
-        let goalMetadata = {};
+        let goalMetadata: Record<string, any> = {};
+        let goalParamsForOnchain: Record<string, any> = {};
         if (formData.type.includes('Crypto')) {
             goalType = 'hodl_token';
             goalMetadata = { token_mint: 'So11111111111111111111111111111111111111112', min_balance: 1000000000 };
+            goalParamsForOnchain = { token_mint: goalMetadata.token_mint, min_balance: goalMetadata.min_balance };
         } else if (formData.type.includes('Developer')) {
             goalType = 'lifestyle_habit';
             goalMetadata = { habit_type: 'github_commits', min_commits_per_day: 1 };
+            goalParamsForOnchain = { habit_name: 'GitHub Commits' };
         } else {
             // Lifestyle
             goalType = 'lifestyle_habit';
             goalMetadata = { habit_type: 'screen_time', max_hours: 2 };
+            goalParamsForOnchain = { habit_name: 'Lifestyle Habit' };
         }
 
-        // Mock ID and Pubkey for MVP (Backend expects unique ID)
-        const randomId = Math.floor(Math.random() * 1000000);
-        const mockPubkey = `Pool${randomId}PubKeymock11111111111111111`;
+        // Pool ID and PDA (on-chain identity)
+        const randomId = Math.floor(Math.random() * 1_000_000);
+        const [poolPDA] = await derivePoolPDA(randomId);
+        const poolPubkey = poolPDA.toBase58();
         
         // Timestamps
         const now = Math.floor(Date.now() / 1000);
         const end = now + (durationDays * 86400);
 
-        await createPool({
-            pool_id: randomId,
-            pool_pubkey: mockPubkey,
-            creator_wallet: walletAddress,
-            name: formData.name || "Untitled Challenge",
-            description: `A ${formData.type} challenge for ${durationDays} days.`,
-            goal_type: goalType,
-            goal_metadata: goalMetadata,
-            stake_amount: stakeAmount,
-            duration_days: durationDays,
-            max_participants: maxParticipants,
-            charity_address: "CharityWalletAddress11111111111111111111111",
-            start_timestamp: now,
-            end_timestamp: end,
-            is_public: true,
-            distribution_mode: 'competitive',
-            split_percentage_winners: 100
+        // --- On-chain: build and send create_pool transaction ---
+        const connection = getConnection();
+
+        // Phantom / Solana provider
+        const anyWindow = typeof window !== 'undefined' ? (window as any) : null;
+        const provider =
+          (anyWindow?.phantom && anyWindow.phantom.solana) ||
+          anyWindow?.solana ||
+          null;
+
+        if (!provider) {
+          alert("Wallet provider not available. Please install or open your Solana wallet and try again.");
+          setLoading(false);
+          return;
+        }
+
+        // Ensure wallet is connected and we have a public key
+        if (!provider.publicKey) {
+          await provider.connect();
+        }
+
+        const creatorPubkey = provider.publicKey;
+        const stakeLamports = solToLamports(stakeAmount);
+        const minParticipants = 1;
+        // Use a valid base58 charity address (configurable via env, fallback to system program ID)
+        const charityAddress =
+          process.env.NEXT_PUBLIC_CHARITY_ADDRESS || '11111111111111111111111111111111';
+        const distributionMode = 'competitive';
+        const winnerPercent = 100;
+
+        const createIx = await buildCreatePoolInstruction(
+          randomId,
+          creatorPubkey,
+          goalType,
+          goalParamsForOnchain,
+          stakeLamports,
+          durationDays,
+          maxParticipants,
+          minParticipants,
+          charityAddress,
+          distributionMode,
+          winnerPercent
+        );
+
+        const txSignature = await signAndSendTransaction(
+          connection,
+          createIx,
+          provider
+        );
+
+        // --- Backend: confirm pool creation with transaction_signature ---
+        const recruitment_period_hours = 24;
+        const require_min_participants = false;
+        const grace_period_minutes = 5;
+
+        await confirmPoolCreation({
+          pool_id: randomId,
+          pool_pubkey: poolPubkey,
+          transaction_signature: txSignature,
+          creator_wallet: currentWallet,
+          name: formData.name || "Untitled Challenge",
+          description: `A ${formData.type} challenge for ${durationDays} days.`,
+          goal_type: goalType,
+          goal_metadata: goalMetadata,
+          stake_amount: stakeAmount,
+          duration_days: durationDays,
+          max_participants: maxParticipants,
+          min_participants: 1,
+          distribution_mode: 'competitive',
+          split_percentage_winners: 100,
+          charity_address: charityAddress,
+          start_timestamp: now,
+          end_timestamp: end,
+          is_public: true,
+          recruitment_period_hours,
+          require_min_participants,
+          grace_period_minutes,
         });
         
         // Success

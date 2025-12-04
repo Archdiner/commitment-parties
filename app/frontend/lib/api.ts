@@ -27,6 +27,9 @@ export interface PoolCreateRequest {
   start_timestamp: number;
   end_timestamp: number;
   is_public?: boolean;
+  recruitment_period_hours?: number;
+  require_min_participants?: boolean;
+  grace_period_minutes?: number;
 }
 
 export interface PoolResponse {
@@ -149,8 +152,15 @@ async function fetchApi<T>(
     
     return response.json();
   } catch (err) {
-      console.warn("API Request Failed, falling back to mock data for demo.", err);
-      return getMockResponse<T>(endpoint, options);
+      console.error("API request failed:", err);
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      throw new ApiError(
+        'Network error contacting backend API',
+        0,
+        err
+      );
   }
 }
 
@@ -573,6 +583,7 @@ export interface VerificationStatus {
   }>;
   total_verifications: number;
   passed_verifications: number;
+  next_window_end?: number | null;
 }
 
 /**
@@ -583,4 +594,15 @@ export async function getParticipantVerifications(
   wallet: string
 ): Promise<VerificationStatus> {
   return fetchApi<VerificationStatus>(`/api/pools/${poolId}/participants/${wallet}/verifications`);
+}
+
+/**
+ * Get aggregate pool stats (started / remaining participants)
+ */
+export async function getPoolStats(
+  poolId: number
+): Promise<{ pool_id: number; started: number; remaining: number }> {
+  return fetchApi<{ pool_id: number; started: number; remaining: number }>(
+    `/api/pools/${poolId}/stats`
+  );
 }

@@ -407,7 +407,28 @@ async def get_participant_verifications(
         if start_timestamp and current_time >= start_timestamp:
             days_elapsed = (current_time - start_timestamp) // 86400
             current_day = days_elapsed + 1
-        
+
+        # Calculate next verification window end (approximate daily windows)
+        grace_value = pool.get("grace_period_minutes", 5)
+        # Respect explicit 0; only default when value is missing/None
+        if grace_value is None:
+            grace_value = 5
+        grace_minutes = int(grace_value)
+        grace_seconds = grace_minutes * 60
+        next_window_end = None
+        if start_timestamp:
+            if current_time < start_timestamp:
+                # Before pool start: first window ends after first day minus grace
+                next_window_end = start_timestamp + 86400 - grace_seconds
+            else:
+                days_elapsed = (current_time - start_timestamp) // 86400
+                window_end = start_timestamp + (days_elapsed + 1) * 86400 - grace_seconds
+                if current_time <= window_end:
+                    next_window_end = window_end
+                else:
+                    # Move to next day
+                    next_window_end = start_timestamp + (days_elapsed + 2) * 86400 - grace_seconds
+
         return {
             "pool_id": pool_id,
             "wallet_address": wallet,
@@ -424,7 +445,8 @@ async def get_participant_verifications(
                 for v in verifications
             ],
             "total_verifications": len(verifications),
-            "passed_verifications": len([v for v in verifications if v.get("passed")])
+            "passed_verifications": len([v for v in verifications if v.get("passed")]),
+            "next_window_end": next_window_end,
         }
     
     except HTTPException:
@@ -432,6 +454,37 @@ async def get_participant_verifications(
     except Exception as e:
         logger.error(f"Error fetching verifications: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to fetch verifications: {str(e)}")
+
+
+@router.get(
+    "/{pool_id}/stats",
+    summary="Get aggregate pool stats",
+    description="Returns simple aggregate stats for a pool (started / remaining participants).",
+)
+async def get_pool_stats(pool_id: int) -> dict:
+    """Get aggregate stats for a pool."""
+    try:
+        participants = await execute_query(
+            table="participants",
+            operation="select",
+            filters={"pool_id": pool_id},
+        )
+        started = len(participants)
+        remaining = len(
+            [
+                p
+                for p in participants
+                if p.get("status") in ("active", "pending", None)
+            ]
+        )
+        return {
+            "pool_id": pool_id,
+            "started": started,
+            "remaining": remaining,
+        }
+    except Exception as e:
+        logger.error(f"Error fetching pool stats for {pool_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch pool stats")
 
 
 @router.delete(

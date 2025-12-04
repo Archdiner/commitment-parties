@@ -3,10 +3,11 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ChevronDown, Check, Smartphone, ArrowRight, Users, TrendingDown } from 'lucide-react';
-import { getUserParticipations, UserParticipation } from '@/lib/api';
+import { getUserParticipations, UserParticipation, getPoolStats, getParticipantVerifications } from '@/lib/api';
 import { getPersistedWalletAddress } from '@/lib/wallet';
 import { SectionLabel } from '@/components/ui/SectionLabel';
 import { Stat } from '@/components/ui/Stat';
+import { getConnection } from '@/lib/solana';
 
 export default function Dashboard() {
   const [loading, setLoading] = useState(true);
@@ -17,6 +18,8 @@ export default function Dashboard() {
   const [checkedIn, setCheckedIn] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [participantStats, setParticipantStats] = useState<{ started: number; remaining: number } | null>(null);
+  const [timeLeft, setTimeLeft] = useState<string | null>(null);
+  const [currentBlock, setCurrentBlock] = useState<number | null>(null);
 
   useEffect(() => {
     const address = getPersistedWalletAddress();
@@ -65,14 +68,13 @@ export default function Dashboard() {
   };
 
   const loadParticipantStats = async (poolId: number) => {
-    // TODO: Replace with actual API call
-    // For now, using mock data
-    // This would be: const stats = await getPoolParticipantStats(poolId);
-    const mockStats = {
-      started: 42,
-      remaining: 28
-    };
-    setParticipantStats(mockStats);
+    try {
+      const stats = await getPoolStats(poolId);
+      setParticipantStats({ started: stats.started, remaining: stats.remaining });
+    } catch (e) {
+      console.error('Failed to load participant stats:', e);
+      setParticipantStats(null);
+    }
   };
 
   // Reload stats when challenge changes
@@ -81,6 +83,65 @@ export default function Dashboard() {
       loadParticipantStats(selectedChallengeId);
     }
   }, [selectedChallengeId]);
+
+  // Load Solana block (devnet) for display
+  useEffect(() => {
+    const loadBlock = async () => {
+      try {
+        const conn = getConnection();
+        const slot = await conn.getSlot();
+        setCurrentBlock(slot);
+      } catch (e) {
+        console.error('Failed to load current block:', e);
+      }
+    };
+    loadBlock();
+  }, []);
+
+  // Load verification window and compute "closes in" countdown
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout | null = null;
+
+    const loadWindow = async () => {
+      if (!walletAddress || !selectedChallengeId) {
+        setTimeLeft(null);
+        return;
+      }
+      try {
+        const status = await getParticipantVerifications(selectedChallengeId, walletAddress);
+        if (!status.next_window_end) {
+          setTimeLeft(null);
+          return;
+        }
+        const update = () => {
+          const now = Math.floor(Date.now() / 1000);
+          const diff = status.next_window_end! - now;
+          if (diff <= 0) {
+            setTimeLeft('0 minutes');
+            return;
+          }
+          const hours = Math.floor(diff / 3600);
+          const minutes = Math.floor((diff % 3600) / 60);
+          if (hours > 0) {
+            setTimeLeft(`${hours}h ${minutes}m`);
+          } else {
+            setTimeLeft(`${minutes}m`);
+          }
+        };
+        update();
+        intervalId = setInterval(update, 60_000);
+      } catch (e) {
+        console.error('Failed to load verification window:', e);
+        setTimeLeft(null);
+      }
+    };
+
+    loadWindow();
+
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [walletAddress, selectedChallengeId]);
 
   const handleCheckIn = () => {
     setVerifying(true);
@@ -199,7 +260,9 @@ export default function Dashboard() {
                  <div className="border-l-2 border-emerald-500 pl-6">
                     <h3 className="text-xl font-light mb-2">{activeChallenge.title}</h3>
                     <p className="text-sm text-gray-500 leading-relaxed">
-                      You are on track. Next verification window closes in 4 hours.
+                      {timeLeft
+                        ? `You are on track. Next verification window closes in ${timeLeft}.`
+                        : 'You are on track. Waiting for next verification window.'}
                     </p>
                  </div>
 
@@ -232,12 +295,23 @@ export default function Dashboard() {
                           <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden">
                              <div 
                                 className="bg-emerald-500 h-full transition-all"
-                                style={{ width: `${(participantStats.remaining / participantStats.started) * 100}%` }}
+                                style={{
+                                  width:
+                                    participantStats.started > 0
+                                      ? `${(participantStats.remaining / participantStats.started) * 100}%`
+                                      : '0%',
+                                }}
                              />
                           </div>
                           <div className="flex justify-between mt-2 text-[10px] text-gray-600">
                              <span>{participantStats.started - participantStats.remaining} eliminated</span>
-                             <span>{Math.round((participantStats.remaining / participantStats.started) * 100)}% still in</span>
+                             <span>
+                               {participantStats.started > 0
+                                 ? `${Math.round(
+                                     (participantStats.remaining / participantStats.started) * 100
+                                   )}% still in`
+                                 : '0% still in'}
+                             </span>
                           </div>
                        </div>
                     </div>
@@ -267,7 +341,7 @@ export default function Dashboard() {
                     </div>
                  )}
                  <div className="flex justify-between mt-4 text-[9px] text-gray-600 font-mono">
-                    <span>BLOCK: #8829102</span>
+                    <span>BLOCK: #{currentBlock ?? '...'}</span>
                     <span>STATUS: CONFIRMED</span>
                  </div>
               </div>
