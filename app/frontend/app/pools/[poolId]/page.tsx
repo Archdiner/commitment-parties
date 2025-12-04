@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, Loader2, Users, Clock, ShieldCheck } from 'lucide-react';
+import { InfoIcon } from '@/components/ui/Tooltip';
 import {
   getPool,
   PoolResponse,
@@ -185,9 +186,10 @@ export default function PoolDetailPage() {
           {/* Main info */}
           <div className="md:col-span-2 space-y-6">
             <div>
-              <p className="text-[10px] uppercase tracking-widest text-gray-500 mb-2">
-                Commitment Pool #{pool.pool_id}
-              </p>
+              <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-gray-500 mb-2">
+                <p>Commitment Pool #{pool.pool_id}</p>
+                <InfoIcon content="Each challenge has a unique ID on the Solana blockchain. This helps track and verify the challenge." />
+              </div>
               <h1 className="text-3xl md:text-4xl font-light mb-3">{pool.name}</h1>
               <p className="text-sm text-gray-400 leading-relaxed">
                 {pool.description || 'No description provided.'}
@@ -196,25 +198,40 @@ export default function PoolDetailPage() {
 
             <div className="grid grid-cols-2 md:grid-cols-3 gap-6 pt-4 border-t border-white/10">
               <div>
-                <div className="text-[9px] uppercase tracking-widest text-gray-500 mb-1">Stake</div>
+                <div className="flex items-center gap-1 text-[9px] uppercase tracking-widest text-gray-500 mb-1">
+                  Stake
+                  <InfoIcon content="The amount of money you need to put down to join this challenge. This money is locked until the challenge ends." />
+                </div>
                 <div className="font-mono text-sm">{pool.stake_amount} SOL</div>
               </div>
               <div>
-                <div className="text-[9px] uppercase tracking-widest text-gray-500 mb-1">Duration</div>
+                <div className="flex items-center gap-1 text-[9px] uppercase tracking-widest text-gray-500 mb-1">
+                  Duration
+                  <InfoIcon content="How long this challenge lasts. You must verify your progress every day during this period." />
+                </div>
                 <div className="font-mono text-sm">{pool.duration_days} days</div>
               </div>
               <div>
-                <div className="text-[9px] uppercase tracking-widest text-gray-500 mb-1">Participants</div>
+                <div className="flex items-center gap-1 text-[9px] uppercase tracking-widest text-gray-500 mb-1">
+                  Participants
+                  <InfoIcon content="Number of people who have joined this challenge. More participants means a bigger prize pool for winners." />
+                </div>
                 <div className="font-mono text-sm">
                   {pool.participant_count}/{pool.max_participants}
                 </div>
               </div>
               <div>
-                <div className="text-[9px] uppercase tracking-widest text-gray-500 mb-1">Status</div>
+                <div className="flex items-center gap-1 text-[9px] uppercase tracking-widest text-gray-500 mb-1">
+                  Status
+                  <InfoIcon content={pool.status === 'pending' ? 'Challenge hasn\'t started yet. You can still join.' : pool.status === 'active' ? 'Challenge is in progress. You can still join if it just started.' : 'Challenge status'} />
+                </div>
                 <div className="font-mono text-sm uppercase">{pool.status}</div>
               </div>
               <div>
-                <div className="text-[9px] uppercase tracking-widest text-gray-500 mb-1">Visibility</div>
+                <div className="flex items-center gap-1 text-[9px] uppercase tracking-widest text-gray-500 mb-1">
+                  Visibility
+                  <InfoIcon content={pool.is_public ? 'Anyone can see and join this challenge' : 'This is a private challenge - you need an invite to join'} />
+                </div>
                 <div className="font-mono text-sm uppercase">
                   {pool.is_public ? 'Public' : 'Private'}
                 </div>
@@ -222,11 +239,14 @@ export default function PoolDetailPage() {
             </div>
 
             <div className="mt-8 p-4 border border-white/10 bg-white/[0.02] rounded-xl flex items-start gap-3">
-              <ShieldCheck className="w-5 h-5 text-emerald-500 mt-0.5" />
-              <div>
+              <ShieldCheck className="w-5 h-5 text-emerald-500 mt-0.5 flex-shrink-0" />
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-2">
+                  <p className="text-xs font-medium text-gray-300">How This Works</p>
+                  <InfoIcon content="When you join, your money is locked until the challenge ends. Our system automatically checks if you're meeting your goal each day. Complete the challenge and you split the prize pool with other winners. Fail and you lose your stake. Your money is safe and locked - you can't withdraw it early, which ensures everyone stays committed." />
+                </div>
                 <p className="text-xs text-gray-400 leading-relaxed">
-                  When you join, your SOL is locked in the on-chain commitment pool. AI agents
-                  monitor verification proofs, and winners split the pool when the challenge ends.
+                  Join by putting down your stake. Verify daily. Complete and win money, or fail and lose your stake.
                 </p>
               </div>
             </div>
@@ -236,45 +256,68 @@ export default function PoolDetailPage() {
           <div className="space-y-4">
             <div className="border border-white/10 rounded-2xl p-6 bg-white/[0.01]">
               <div className="flex items-center justify-between mb-4">
-                <span className="text-[10px] uppercase tracking-widest text-gray-500">
-                  Join Challenge
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] uppercase tracking-widest text-gray-500">
+                    Join Challenge
+                  </span>
+                  <InfoIcon content="This is where you commit to the challenge. Your SOL will be locked in the smart contract until the challenge ends." />
+                </div>
                 <Clock className="w-4 h-4 text-gray-500" />
               </div>
 
               <div className="mb-4">
-                <div className="text-xs text-gray-400 mb-1">Your Stake</div>
+                <div className="flex items-center gap-2 text-xs text-gray-400 mb-1">
+                  Your Stake
+                  <InfoIcon content="This is the amount you'll put down to join. It's locked until the challenge ends. Complete the challenge to win more, or fail and lose this amount." />
+                </div>
                 <div className="text-xl font-light">{pool.stake_amount} SOL</div>
               </div>
 
               <div className="flex items-center justify-between text-[11px] text-gray-500 mb-4">
                 <div className="flex items-center gap-2">
                   <Users className="w-3 h-3" />
-                  <span>
-                    {spotsRemaining > 0 ? `${spotsRemaining} spots left` : 'Pool is full'}
-                  </span>
+                  <div className="flex items-center gap-1">
+                    <span>
+                      {spotsRemaining > 0 ? `${spotsRemaining} spots left` : 'Pool is full'}
+                    </span>
+                    <InfoIcon content="The number of available slots for new participants. Once full, no one else can join." />
+                  </div>
                 </div>
               </div>
 
-              <button
-                onClick={handleJoin}
-                disabled={joining || spotsRemaining <= 0 || pool.status !== 'pending' && pool.status !== 'active'}
-                className="w-full h-11 border border-emerald-500 text-xs uppercase tracking-widest font-medium rounded-full flex items-center justify-center gap-2 bg-emerald-500/10 hover:bg-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {joining ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Joining...
-                  </>
-                ) : (
-                  <>Join Pool</>
-                )}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleJoin}
+                  disabled={joining || spotsRemaining <= 0 || pool.status !== 'pending' && pool.status !== 'active'}
+                  className="flex-1 h-11 border border-emerald-500 text-xs uppercase tracking-widest font-medium rounded-full flex items-center justify-center gap-2 bg-emerald-500/10 hover:bg-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {joining ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Joining...
+                    </>
+                  ) : (
+                    <>Join Challenge</>
+                  )}
+                </button>
+                <InfoIcon content="Click to join this challenge. You'll be asked to approve a transaction in your wallet. This locks your stake until the challenge ends. Make sure you're ready to commit!" />
+              </div>
+              <p className="text-[10px] text-gray-600 mt-3 text-center leading-relaxed">
+                You'll be asked to approve a transaction in your wallet. This locks your stake until the challenge ends.
+              </p>
 
               {!walletAddress && (
-                <p className="mt-3 text-[10px] text-amber-500">
-                  Connect your wallet first using the button in the top-right.
-                </p>
+                <div className="mt-4 p-3 border border-amber-500/30 bg-amber-500/5 rounded-lg">
+                  <div className="flex items-start gap-2 text-[10px] text-amber-400">
+                    <InfoIcon content="Click 'Connect Wallet' in the top-right corner. If you don't have a wallet, install the free Phantom app (like a digital wallet for your commitment money)." />
+                    <div>
+                      <p className="font-medium mb-1">Need a Wallet?</p>
+                      <p className="text-amber-300/80 leading-relaxed">
+                        Connect your wallet in the top-right corner to join challenges.
+                      </p>
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
           </div>

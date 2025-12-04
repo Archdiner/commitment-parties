@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { ArrowRight, Search, Filter } from 'lucide-react';
+import { ArrowRight, Search, Filter, Info } from 'lucide-react';
 import { getPools } from '@/lib/api';
 import { Badge } from '@/components/ui/Badge';
 import { ButtonPrimary } from '@/components/ui/ButtonPrimary';
@@ -60,11 +60,17 @@ export default function PoolsPage() {
         <div className="flex flex-col gap-8 mb-12">
           <div className="flex justify-between items-end border-b border-white/10 pb-6">
              <div>
-               <h2 className="text-3xl font-light tracking-tight mb-2">Active Pools</h2>
-               <p className="text-gray-500 text-xs font-mono">LIVE ON SOLANA MAINNET</p>
+               <h2 className="text-3xl font-light tracking-tight mb-2">Active Challenges</h2>
+               <p className="text-gray-500 text-xs mb-3">Browse commitment challenges you can join</p>
+               <div className="flex items-start gap-2 text-[10px] text-gray-600">
+                 <Info className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                 <span>
+                   Click on any challenge to see details and join. You'll need to connect a wallet first (top-right corner).
+                 </span>
+               </div>
              </div>
              <Link href="/create">
-                <ButtonPrimary className="hidden md:flex">Create Pool</ButtonPrimary>
+                <ButtonPrimary className="hidden md:flex">Create Challenge</ButtonPrimary>
              </Link>
           </div>
 
@@ -87,6 +93,14 @@ export default function PoolsPage() {
             <div className="space-y-4">
                 {[1,2,3].map(i => <div key={i} className="h-32 bg-white/[0.02] border border-white/5 animate-pulse" />)}
             </div>
+        ) : filteredPools.length === 0 ? (
+            <div className="text-center py-20">
+              <p className="text-gray-500 mb-4">No challenges found</p>
+              <p className="text-sm text-gray-600 mb-8">Try adjusting your filters or create a new challenge</p>
+              <Link href="/create">
+                <ButtonPrimary>Create Your First Challenge</ButtonPrimary>
+              </Link>
+            </div>
         ) : (
             <div className="grid grid-cols-1 gap-4">
             {filteredPools.map((challenge) => (
@@ -107,15 +121,18 @@ export default function PoolsPage() {
                 <div className="grid grid-cols-3 gap-8 border-l border-white/5 pl-8 md:w-1/3">
                     <div>
                     <div className="text-[9px] uppercase tracking-wider text-gray-500 mb-1">Stake</div>
-                    <div className="font-mono text-sm">{challenge.stake} SOL</div>
+                    <div className="font-mono text-sm mb-1">{challenge.stake} SOL</div>
+                    <div className="text-[9px] text-gray-600">To join</div>
                     </div>
                     <div>
                     <div className="text-[9px] uppercase tracking-wider text-gray-500 mb-1">Duration</div>
-                    <div className="font-mono text-sm">{challenge.duration}</div>
+                    <div className="font-mono text-sm mb-1">{challenge.duration}</div>
+                    <div className="text-[9px] text-gray-600">Challenge length</div>
                     </div>
                     <div>
                     <div className="text-[9px] uppercase tracking-wider text-gray-500 mb-1">Capacity</div>
-                    <div className="font-mono text-sm">{challenge.participants}/{challenge.maxParticipants}</div>
+                    <div className="font-mono text-sm mb-1">{challenge.participants}/{challenge.maxParticipants}</div>
+                    <div className="text-[9px] text-gray-600">Joined / Max</div>
                     </div>
                 </div>
 

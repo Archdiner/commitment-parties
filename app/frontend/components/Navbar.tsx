@@ -90,7 +90,7 @@ export const Navbar = () => {
       const provider = getProvider();
 
       if (!provider) {
-        alert("Please install Phantom Wallet to connect.");
+        alert("Please install Phantom Wallet to connect.\n\nPhantom is a free wallet app (like a digital bank account).\nYou can install it from phantom.app - it takes just 2 minutes!");
         return;
       }
 
@@ -112,6 +112,7 @@ export const Navbar = () => {
   };
 
   const navLinks = [
+    { name: 'Home', href: '/' },
     { name: 'Challenges', href: '/pools' },
     { name: 'Leaderboard', href: '/leaderboard' },
     { name: 'Dashboard', href: '/dashboard' },

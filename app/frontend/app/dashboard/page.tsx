@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ChevronDown, Check, Smartphone, ArrowRight, Users, TrendingDown } from 'lucide-react';
+import { InfoIcon } from '@/components/ui/Tooltip';
 import { getUserParticipations, UserParticipation, getPoolStats, getParticipantVerifications } from '@/lib/api';
 import { getPersistedWalletAddress } from '@/lib/wallet';
 import { SectionLabel } from '@/components/ui/SectionLabel';
@@ -154,10 +155,24 @@ export default function Dashboard() {
 
   if (!walletAddress) {
     return (
-      <div className="min-h-screen bg-[#050505] text-white pt-32 px-6 flex flex-col items-center justify-center text-center">
-        <SectionLabel>Access Restricted</SectionLabel>
-        <h1 className="text-4xl font-light mb-6">Please Connect Wallet</h1>
-        <p className="text-gray-500 mb-8">You need to connect your Solana wallet to view your dashboard.</p>
+      <div className="min-h-screen bg-[#050505] text-white pt-32 px-6 flex flex-col items-center justify-center text-center max-w-2xl mx-auto">
+        <SectionLabel>Connect Your Wallet</SectionLabel>
+        <h1 className="text-4xl font-light mb-6">Get Started</h1>
+        <p className="text-gray-400 mb-6 leading-relaxed">
+          To see your challenges and track your progress, you need to connect a wallet. 
+          Think of it like logging into your account.
+        </p>
+        <div className="p-6 border border-white/10 bg-white/[0.02] rounded-xl text-left mb-8">
+          <div className="flex items-start gap-3 text-sm text-gray-400">
+            <InfoIcon content="Install the free Phantom wallet app (available for Chrome, iOS, or Android). It's like a digital wallet for your commitment money - completely free and takes 2 minutes to set up. Click 'Connect Wallet' in the top-right corner to get started." />
+            <div>
+              <p className="font-medium text-gray-300 mb-2">Don't have a wallet?</p>
+              <p className="leading-relaxed mb-3">
+                Install the free Phantom wallet app. Click "Connect Wallet" in the top-right corner to get started.
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -172,10 +187,26 @@ export default function Dashboard() {
 
   if (activeChallenges.length === 0) {
     return (
-      <div className="min-h-screen bg-[#050505] text-white pt-32 px-6 text-center">
-         <SectionLabel>No Active Protocols</SectionLabel>
+      <div className="min-h-screen bg-[#050505] text-white pt-32 px-6 text-center max-w-2xl mx-auto">
+         <SectionLabel>No Active Challenges</SectionLabel>
          <h1 className="text-4xl font-light mb-6">Start Your Journey</h1>
-         <p className="text-gray-500 mb-12">You have not joined any commitment pools yet.</p>
+         <p className="text-gray-400 mb-6 leading-relaxed">
+           You haven't joined any challenges yet. Browse available challenges and find one that matches your goals.
+         </p>
+         <div className="p-6 border border-white/10 bg-white/[0.02] rounded-xl text-left mb-8">
+           <div className="flex items-start gap-3 text-sm text-gray-400">
+             <InfoIcon content="Browse challenges that interest you. Join one by putting down your stake (commitment money). Verify your progress daily. Complete the challenge and win money, or fail and lose your stake." />
+             <div>
+               <p className="font-medium text-gray-300 mb-2">How it works:</p>
+               <ol className="list-decimal list-inside space-y-2 text-xs leading-relaxed">
+                 <li>Browse challenges that interest you</li>
+                 <li>Join one by putting down your stake (commitment money)</li>
+                 <li>Verify your progress daily</li>
+                 <li>Complete the challenge and win money, or fail and lose your stake</li>
+               </ol>
+             </div>
+           </div>
+         </div>
          <Link href="/pools" className="inline-flex items-center gap-2 px-6 py-3 border border-emerald-500 text-emerald-500 uppercase tracking-widest text-xs hover:bg-emerald-500 hover:text-white transition-colors">
             Browse Challenges <ArrowRight className="w-4 h-4" />
          </Link>
@@ -198,7 +229,10 @@ export default function Dashboard() {
                     className="flex items-center gap-3 px-8 py-3 border border-white/10 rounded-full bg-white/[0.02] hover:border-white/30 transition-all min-w-[280px] justify-between"
                 >
                     <div className="flex flex-col text-left">
-                        <span className="text-[9px] text-gray-500 uppercase tracking-widest mb-0.5">Active Protocol</span>
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <span className="text-[9px] text-gray-500 uppercase tracking-widest">Active Protocol</span>
+                          <InfoIcon content="This is your current active challenge. Track your progress and see how you're doing compared to others." />
+                        </div>
                         <span className="text-xs font-medium uppercase tracking-widest text-white">{activeChallenge.title}</span>
                     </div>
                     <ChevronDown className={`w-4 h-4 text-emerald-500 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
@@ -248,7 +282,10 @@ export default function Dashboard() {
                  />
                  
                  <div className="text-center">
-                    <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-2">Streak</div>
+                    <div className="flex items-center justify-center gap-2 text-[10px] uppercase tracking-widest text-gray-500 mb-2">
+                      Days Completed
+                      <InfoIcon content="Your current streak of consecutive successful verifications. Keep it going!" />
+                    </div>
                     <div className="text-6xl font-light tracking-tighter text-white">{activeChallenge.streak}</div>
                  </div>
               </div>
@@ -259,16 +296,28 @@ export default function Dashboard() {
               <div className="space-y-8">
                  <div className="border-l-2 border-emerald-500 pl-6">
                     <h3 className="text-xl font-light mb-2">{activeChallenge.title}</h3>
-                    <p className="text-sm text-gray-500 leading-relaxed">
+                    <p className="text-sm text-gray-500 leading-relaxed mb-3">
                       {timeLeft
                         ? `You are on track. Next verification window closes in ${timeLeft}.`
                         : 'You are on track. Waiting for next verification window.'}
                     </p>
+                    <div className="flex items-start gap-2 text-[10px] text-gray-600">
+                      <InfoIcon content="You need to verify your progress every day. Missing a day means you're out of the challenge." />
+                      <span>
+                        You need to verify your progress every day. Missing a day means you're out of the challenge.
+                      </span>
+                    </div>
                  </div>
 
                  <div className="grid grid-cols-2 gap-8">
+                    <div>
                     <Stat label="Staked" value={`${activeChallenge.stake} SOL`} />
+                      <p className="text-[9px] text-gray-600 mt-2">Money you committed</p>
+                    </div>
+                    <div>
                     <Stat label="Projected" value={`+${activeChallenge.potentialWin.toFixed(2)} SOL`} />
+                      <p className="text-[9px] text-gray-600 mt-2">Potential winnings</p>
+                    </div>
                  </div>
 
                  {/* Participant Statistics */}
@@ -277,18 +326,21 @@ export default function Dashboard() {
                        <div className="flex items-center gap-2 mb-4">
                           <Users className="w-4 h-4 text-gray-500" />
                           <span className="text-xs uppercase tracking-widest text-gray-500">Challenge Stats</span>
+                          <InfoIcon content="See how other participants are performing in this challenge. 'Started' shows total participants, 'Remaining' shows who's still in. Stay motivated!" />
                        </div>
                        <div className="grid grid-cols-2 gap-6">
                           <div className="flex flex-col">
                              <div className="text-2xl font-light text-white mb-1">{participantStats.started}</div>
-                             <div className="text-[10px] uppercase tracking-wider text-gray-500">Started</div>
+                             <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">Started</div>
+                             <div className="text-[9px] text-gray-600">Total participants</div>
                           </div>
                           <div className="flex flex-col">
                              <div className="text-2xl font-light text-emerald-400 mb-1">{participantStats.remaining}</div>
-                             <div className="text-[10px] uppercase tracking-wider text-gray-500 flex items-center gap-1">
+                             <div className="text-[10px] uppercase tracking-wider text-gray-500 flex items-center gap-1 mb-1">
                                 <TrendingDown className="w-3 h-3" />
                                 Remaining
                              </div>
+                             <div className="text-[9px] text-gray-600">Still in challenge</div>
                           </div>
                        </div>
                        <div className="mt-4 pt-4 border-t border-white/5">
@@ -303,7 +355,7 @@ export default function Dashboard() {
                                 }}
                              />
                           </div>
-                          <div className="flex justify-between mt-2 text-[10px] text-gray-600">
+                       <div className="flex justify-between mt-2 text-[10px] text-gray-600">
                              <span>{participantStats.started - participantStats.remaining} eliminated</span>
                              <span>
                                {participantStats.started > 0
@@ -312,7 +364,10 @@ export default function Dashboard() {
                                    )}% still in`
                                  : '0% still in'}
                              </span>
-                          </div>
+                       </div>
+                       <p className="text-[9px] text-gray-600 mt-2">
+                         People who fail are eliminated. Their stake goes to the winners at the end.
+                       </p>
                        </div>
                     </div>
                  )}
@@ -320,20 +375,28 @@ export default function Dashboard() {
 
               <div>
                  {!checkedIn ? (
-                    <button 
-                       onClick={handleCheckIn}
-                       disabled={verifying}
-                       className="w-full h-20 border border-white/20 hover:border-emerald-500 hover:bg-emerald-500/5 text-white uppercase tracking-widest text-xs font-medium transition-all flex items-center justify-center gap-4 group"
-                    >
-                       {verifying ? (
-                          <span className="animate-pulse">Verifying On-Chain...</span>
-                       ) : (
-                          <>
-                             <span>Submit Daily Proof</span>
-                             <Smartphone strokeWidth={1} className="w-5 h-5 group-hover:-translate-y-1 transition-transform" />
-                          </>
-                       )}
-                    </button>
+                    <div>
+                      <div className="flex items-center justify-center gap-2 mb-2">
+                        <button 
+                           onClick={handleCheckIn}
+                           disabled={verifying}
+                           className="flex-1 h-20 border border-white/20 hover:border-emerald-500 hover:bg-emerald-500/5 text-white uppercase tracking-widest text-xs font-medium transition-all flex items-center justify-center gap-4 group"
+                        >
+                           {verifying ? (
+                              <span className="animate-pulse">Verifying...</span>
+                           ) : (
+                              <>
+                                 <span>Submit Daily Proof</span>
+                                 <Smartphone strokeWidth={1} className="w-5 h-5 group-hover:-translate-y-1 transition-transform" />
+                              </>
+                           )}
+                        </button>
+                        <InfoIcon content="Click here to submit your daily proof of progress. Our AI agent will verify it! Upload a photo, screenshot, or other proof that you completed your goal today." />
+                      </div>
+                      <p className="text-[9px] text-gray-600 mt-2 text-center">
+                        Upload proof that you completed your goal today (photo, screenshot, etc.)
+                      </p>
+                    </div>
                  ) : (
                     <div className="w-full h-20 bg-white text-black flex items-center justify-center gap-3 uppercase tracking-widest text-xs font-medium">
                        <Check strokeWidth={1.5} className="w-5 h-5" />
@@ -341,8 +404,13 @@ export default function Dashboard() {
                     </div>
                  )}
                  <div className="flex justify-between mt-4 text-[9px] text-gray-600 font-mono">
-                    <span>BLOCK: #{currentBlock ?? '...'}</span>
-                    <span>STATUS: CONFIRMED</span>
+                    <span>Verified</span>
+                    <div className="flex items-center gap-2">
+                      <span>Status: Active</span>
+                      {currentBlock && (
+                        <InfoIcon content={`This shows the latest Solana blockchain block (#${currentBlock}) and the status of your last on-chain interaction. 'Confirmed' means your transaction was successfully processed.`} />
+                      )}
+                    </div>
                  </div>
               </div>
 

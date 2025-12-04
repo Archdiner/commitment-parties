@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { ArrowRight, Zap, Target, Trophy } from 'lucide-react';
 import { ButtonPrimary } from '@/components/ui/ButtonPrimary';
 import { SectionLabel } from '@/components/ui/SectionLabel';
+import { InfoIcon } from '@/components/ui/Tooltip';
 
 export default function LandingPage() {
   return (
@@ -15,16 +16,27 @@ export default function LandingPage() {
         <div className="relative z-10 max-w-4xl">
           <div className="inline-flex items-center gap-2 px-3 py-1 mb-8 border border-white/10 rounded-full bg-white/5">
              <Zap className="w-3 h-3 text-emerald-400" />
-             <span className="text-[9px] uppercase tracking-widest text-gray-300">AI-Powered Accountability Protocol</span>
+             <span className="text-[9px] uppercase tracking-widest text-gray-300">AI-Powered Commitment Platform</span>
           </div>
           <h1 className="text-6xl md:text-8xl font-medium tracking-tighter leading-[0.9] mb-8">
             Turn Commitments<br/>
             into <span className="text-emerald-500 font-serif italic font-light">Capital.</span>
           </h1>
-          <p className="max-w-xl mx-auto text-gray-400 font-light text-lg mb-12">
-            Stake SOL on your goals. Allow us to verify your progress <br/>
-            Win and earn SOL. Fail and lose SOL. Nothing creates accountability faster.
+          <p className="max-w-xl mx-auto text-gray-400 font-light text-lg mb-6">
+            Put money on your goals. We verify your progress automatically. <br/>
+            Succeed and earn money. Fail and lose your stake. Nothing creates accountability faster.
           </p>
+          <div className="max-w-xl mx-auto mb-12 p-4 border border-white/10 bg-white/[0.02] rounded-lg">
+            <div className="flex items-start gap-3 text-xs text-gray-500">
+              <InfoIcon content="SOL is a digital currency (like dollars, but digital). You'll need a free wallet app called 'Phantom' to get started. Think of it like a digital bank account for your commitment money." />
+              <div>
+                <p className="font-medium text-gray-400 mb-1">What is SOL?</p>
+                <p className="leading-relaxed">
+                  SOL is a digital currency. You'll need a free wallet app called "Phantom" to get started.
+                </p>
+              </div>
+            </div>
+          </div>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link href="/pools">
               <ButtonPrimary icon={ArrowRight}>Browse Challenges</ButtonPrimary>
@@ -40,9 +52,21 @@ export default function LandingPage() {
       <div className="border-y border-white/10 bg-white/[0.01]">
         <div className="max-w-6xl mx-auto px-6 py-20 grid grid-cols-1 md:grid-cols-3 gap-12">
           {[
-            { icon: Target, title: "01. Create or Join", desc: "Select a habit protocol. Lock SOL in the smart contract to commit." },
-            { icon: Zap, title: "02. Auto-Verification", desc: "AI agents monitor GitHub API, GPS, or Vision to verify daily." },
-            { icon: Trophy, title: "03. Settlement", desc: "Winners split the pool." }
+            { 
+              icon: Target, 
+              title: "01. Create or Join", 
+              desc: "Choose a challenge or create your own. Put money down to commit (this money is locked until the challenge ends)." 
+            },
+            { 
+              icon: Zap, 
+              title: "02. Auto-Verification", 
+              desc: "Our system automatically checks if you're meeting your goal each day. No manual tracking needed." 
+            },
+            { 
+              icon: Trophy, 
+              title: "03. Get Rewarded", 
+              desc: "If you complete your challenge, you split the prize pool with other winners. If you fail, you lose your stake." 
+            }
           ].map((item, i) => (
             <div key={i} className="flex flex-col items-start group">
               <div className="mb-6 text-emerald-500 opacity-50 group-hover:opacity-100 transition-opacity">
@@ -64,8 +88,11 @@ export default function LandingPage() {
              </div>
              <SectionLabel>Protocol A</SectionLabel>
              <h3 className="text-3xl font-light mb-4">Crypto<br/>Challenges</h3>
-             <p className="text-gray-500 font-light text-sm max-w-sm mb-8">
-               On-chain verification for holding (HODL), staking, and DCA consistency.
+             <p className="text-gray-500 font-light text-sm max-w-sm mb-4">
+               Challenges that automatically verify your crypto activity (like holding tokens or making regular trades).
+             </p>
+             <p className="text-[10px] text-gray-600 mb-8">
+               Perfect if you want to commit to crypto trading habits.
              </p>
              <ul className="space-y-2 text-xs text-gray-400 font-mono uppercase tracking-wide">
                <li className="flex items-center gap-2"><div className="w-1 h-1 bg-gray-600 rounded-full"/> Diamond Hands</li>
@@ -78,8 +105,11 @@ export default function LandingPage() {
              </div>
              <SectionLabel>Protocol B</SectionLabel>
              <h3 className="text-3xl font-light mb-4">Lifestyle<br/>Optimization</h3>
-             <p className="text-gray-500 font-light text-sm max-w-sm mb-8">
-               Computer vision and GPS verification for real-world habits.
+             <p className="text-gray-500 font-light text-sm max-w-sm mb-4">
+               Challenges for real-life habits like gym attendance, screen time limits, or daily routines.
+             </p>
+             <p className="text-[10px] text-gray-600 mb-8">
+               You submit photos or check-ins to prove you're sticking to your commitment.
              </p>
              <ul className="space-y-2 text-xs text-gray-400 font-mono uppercase tracking-wide">
                <li className="flex items-center gap-2"><div className="w-1 h-1 bg-gray-600 rounded-full"/> Screen Time</li>

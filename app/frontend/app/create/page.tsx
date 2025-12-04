@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { ChevronRight, Zap } from 'lucide-react';
 import { ButtonPrimary } from '@/components/ui/ButtonPrimary';
 import { SectionLabel } from '@/components/ui/SectionLabel';
+import { InfoIcon } from '@/components/ui/Tooltip';
 import { confirmPoolCreation } from '@/lib/api';
 import { getPersistedWalletAddress } from '@/lib/wallet';
 import { derivePoolPDA, getConnection, solToLamports, buildCreatePoolInstruction, signAndSendTransaction } from '@/lib/solana';
@@ -25,6 +26,8 @@ export default function CreatePool() {
     maxParticipants: '100'
   });
   const [useCustomDuration, setUseCustomDuration] = useState(false);
+  const [validationErrors, setValidationErrors] = useState<Record<string, boolean>>({});
+  const [showValidationError, setShowValidationError] = useState(false);
 
   useEffect(() => {
     // Initial load from persisted storage
@@ -43,36 +46,67 @@ export default function CreatePool() {
     }
   }, []);
 
+  const validateForm = (): boolean => {
+    const errors: Record<string, boolean> = {};
+    
+    // Validate name
+    if (!formData.name || formData.name.trim() === '') {
+      errors.name = true;
+    }
+    
+    // Validate duration
+    if (useCustomDuration) {
+      const customDays = parseInt(formData.customDuration);
+      if (isNaN(customDays) || customDays <= 0) {
+        errors.customDuration = true;
+      }
+    }
+    
+    // Validate stake
+    const stakeAmount = parseFloat(formData.stake);
+    if (isNaN(stakeAmount) || stakeAmount <= 0) {
+      errors.stake = true;
+    }
+    
+    // Validate max participants
+    const maxParticipants = parseInt(formData.maxParticipants);
+    if (isNaN(maxParticipants) || maxParticipants <= 0) {
+      errors.maxParticipants = true;
+    }
+    
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
   const handleDeploy = async () => {
     // Always read latest wallet from storage (Navbar may have updated it)
     const currentWallet = getPersistedWalletAddress();
     if (!currentWallet) {
-      alert("Please connect your wallet first (top right).");
+        alert("Please connect your wallet first (top right).");
+        return;
+    }
+    
+    // Validate form first
+    if (!validateForm()) {
+      setShowValidationError(true);
+      // Scroll to top to show error message
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
-
+    
+    setShowValidationError(false);
     setLoading(true);
     try {
         const durationDays = useCustomDuration 
           ? parseInt(formData.customDuration) 
           : parseInt(formData.duration.split(' ')[0]);
         
-        if (isNaN(durationDays) || durationDays <= 0) {
-          alert("Please enter a valid duration (number of days).");
-          setLoading(false);
-          return;
-        }
         const stakeAmount = parseFloat(formData.stake);
         const maxParticipants = parseInt(formData.maxParticipants);
 
-        // Basic validation aligned with backend constraints
+        // Additional validation aligned with backend constraints
         if (durationDays < 1 || durationDays > 30) {
           alert("Duration must be between 1 and 30 days.");
-          setLoading(false);
-          return;
-        }
-        if (stakeAmount <= 0) {
-          alert("Stake amount must be greater than 0.");
           setLoading(false);
           return;
         }
@@ -166,24 +200,24 @@ export default function CreatePool() {
         const grace_period_minutes = 5;
 
         await confirmPoolCreation({
-          pool_id: randomId,
+            pool_id: randomId,
           pool_pubkey: poolPubkey,
           transaction_signature: txSignature,
           creator_wallet: currentWallet,
-          name: formData.name || "Untitled Challenge",
-          description: `A ${formData.type} challenge for ${durationDays} days.`,
-          goal_type: goalType,
-          goal_metadata: goalMetadata,
-          stake_amount: stakeAmount,
-          duration_days: durationDays,
-          max_participants: maxParticipants,
+            name: formData.name || "Untitled Challenge",
+            description: `A ${formData.type} challenge for ${durationDays} days.`,
+            goal_type: goalType,
+            goal_metadata: goalMetadata,
+            stake_amount: stakeAmount,
+            duration_days: durationDays,
+            max_participants: maxParticipants,
           min_participants: 1,
           distribution_mode: 'competitive',
           split_percentage_winners: 100,
           charity_address: charityAddress,
-          start_timestamp: now,
-          end_timestamp: end,
-          is_public: true,
+            start_timestamp: now,
+            end_timestamp: end,
+            is_public: true,
           recruitment_period_hours,
           require_min_participants,
           grace_period_minutes,
@@ -234,25 +268,46 @@ export default function CreatePool() {
             <ChevronRight className="w-3 h-3 rotate-180" /> Cancel
          </Link>
          
-         <h1 className="text-4xl font-light mb-12">Initialize Protocol</h1>
+         <div className="mb-12">
+           <h1 className="text-4xl font-light mb-4">Create Your Challenge</h1>
+           <p className="text-sm text-gray-500 leading-relaxed max-w-2xl">
+             Set up a commitment challenge where you and others put money on the line. 
+             Complete your goal and win money. Fail and lose your stake.
+           </p>
+         </div>
          
          <div className="space-y-12">
             {/* Section 1 */}
             <div className="space-y-6">
                <SectionLabel>Core Parameters</SectionLabel>
                <div>
-                  <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">Challenge Name</label>
+                  <label className="flex items-center gap-2 text-xs uppercase tracking-widest text-gray-500 mb-2">
+                    Challenge Name
+                    <InfoIcon content="Give your challenge a clear name so others know what they're committing to." />
+                  </label>
                   <input 
                     type="text" 
                     value={formData.name}
-                    onChange={(e) => setFormData({...formData, name: e.target.value})}
-                    className="w-full bg-transparent border-b border-white/20 py-3 text-xl text-white placeholder-gray-800 focus:outline-none focus:border-emerald-500 transition-colors" 
+                    onChange={(e) => {
+                      setFormData({...formData, name: e.target.value});
+                      if (validationErrors.name) {
+                        setValidationErrors({...validationErrors, name: false});
+                      }
+                    }}
+                    className={`w-full bg-transparent border-b py-3 text-xl text-white placeholder-gray-800 focus:outline-none transition-colors ${
+                      validationErrors.name 
+                        ? 'border-red-500 focus:border-red-500' 
+                        : 'border-white/20 focus:border-emerald-500'
+                    }`}
                     placeholder="e.g. 100 Days of Code" 
                   />
                </div>
                <div className="grid grid-cols-2 gap-6">
                   <div>
-                    <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">Type</label>
+                    <label className="flex items-center gap-2 text-xs uppercase tracking-widest text-gray-500 mb-2">
+                      Type
+                      <InfoIcon content="Choose how your goal will be verified: Lifestyle (photos/check-ins), Crypto (automatic wallet tracking), or Developer (GitHub commits)." />
+                    </label>
                     <select 
                         value={formData.type}
                         onChange={(e) => setFormData({...formData, type: e.target.value})}
@@ -264,10 +319,13 @@ export default function CreatePool() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">Duration</label>
+                    <label className="flex items-center gap-2 text-xs uppercase tracking-widest text-gray-500 mb-2">
+                      Duration
+                      <InfoIcon content="How long your challenge will last. You must verify your progress every day during this period." />
+                    </label>
                     {!useCustomDuration ? (
-                      <select 
-                          value={formData.duration}
+                    <select 
+                        value={formData.duration}
                           onChange={(e) => {
                             if (e.target.value === 'Custom') {
                               setUseCustomDuration(true);
@@ -275,20 +333,29 @@ export default function CreatePool() {
                               setFormData({...formData, duration: e.target.value});
                             }
                           }}
-                          className="w-full bg-[#0A0A0A] border border-white/10 py-3 px-4 text-sm text-white focus:outline-none"
-                      >
-                         <option>7 Days</option>
-                         <option>14 Days</option>
-                         <option>30 Days</option>
+                        className="w-full bg-[#0A0A0A] border border-white/10 py-3 px-4 text-sm text-white focus:outline-none"
+                    >
+                       <option>7 Days</option>
+                       <option>14 Days</option>
+                       <option>30 Days</option>
                          <option>Custom</option>
-                      </select>
+                    </select>
                     ) : (
                       <div className="flex gap-2">
                         <input 
                           type="number" 
                           value={formData.customDuration}
-                          onChange={(e) => setFormData({...formData, customDuration: e.target.value})}
-                          className="flex-1 bg-transparent border-b border-white/20 py-3 text-xl text-white placeholder-gray-800 focus:outline-none focus:border-emerald-500 transition-colors" 
+                          onChange={(e) => {
+                            setFormData({...formData, customDuration: e.target.value});
+                            if (validationErrors.customDuration) {
+                              setValidationErrors({...validationErrors, customDuration: false});
+                            }
+                          }}
+                          className={`flex-1 bg-transparent border-b py-3 text-xl text-white placeholder-gray-800 focus:outline-none transition-colors ${
+                            validationErrors.customDuration 
+                              ? 'border-red-500 focus:border-red-500' 
+                              : 'border-white/20 focus:border-emerald-500'
+                          }`}
                           placeholder="Enter days" 
                           min="1"
                         />
@@ -310,25 +377,48 @@ export default function CreatePool() {
 
             {/* Section 2 */}
             <div className="space-y-6">
-               <SectionLabel>Financial Stakes</SectionLabel>
+               <SectionLabel>Money & Participants</SectionLabel>
                <div>
-                  <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">Stake Amount (SOL)</label>
+                  <label className="flex items-center gap-2 text-xs uppercase tracking-widest text-gray-500 mb-2">
+                    Stake Amount (SOL)
+                    <InfoIcon content="This is the amount of money each person must put down to join. This money is locked until the challenge ends. If you complete your goal, you can win more. If you fail, you lose this amount." />
+                  </label>
                   <input 
                     type="number" 
                     value={formData.stake}
-                    onChange={(e) => setFormData({...formData, stake: e.target.value})}
-                    className="w-full bg-transparent border-b border-white/20 py-3 text-xl text-white placeholder-gray-800 focus:outline-none focus:border-emerald-500 transition-colors" 
+                    onChange={(e) => {
+                      setFormData({...formData, stake: e.target.value});
+                      if (validationErrors.stake) {
+                        setValidationErrors({...validationErrors, stake: false});
+                      }
+                    }}
+                    className={`w-full bg-transparent border-b py-3 text-xl text-white placeholder-gray-800 focus:outline-none transition-colors ${
+                      validationErrors.stake 
+                        ? 'border-red-500 focus:border-red-500' 
+                        : 'border-white/20 focus:border-emerald-500'
+                    }`}
                     placeholder="0.5" 
                   />
-                  <p className="mt-2 text-[10px] text-gray-600">This amount will be locked for every participant.</p>
                </div>
                <div>
-                  <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">Max Participants</label>
+                  <label className="flex items-center gap-2 text-xs uppercase tracking-widest text-gray-500 mb-2">
+                    Max Participants
+                    <InfoIcon content="Maximum number of people who can join this challenge. More participants = bigger prize pool for winners." />
+                  </label>
                   <input 
                     type="number" 
                     value={formData.maxParticipants}
-                    onChange={(e) => setFormData({...formData, maxParticipants: e.target.value})}
-                    className="w-full bg-transparent border-b border-white/20 py-3 text-xl text-white placeholder-gray-800 focus:outline-none focus:border-emerald-500 transition-colors" 
+                    onChange={(e) => {
+                      setFormData({...formData, maxParticipants: e.target.value});
+                      if (validationErrors.maxParticipants) {
+                        setValidationErrors({...validationErrors, maxParticipants: false});
+                      }
+                    }}
+                    className={`w-full bg-transparent border-b py-3 text-xl text-white placeholder-gray-800 focus:outline-none transition-colors ${
+                      validationErrors.maxParticipants 
+                        ? 'border-red-500 focus:border-red-500' 
+                        : 'border-white/20 focus:border-emerald-500'
+                    }`}
                     placeholder="100" 
                   />
                </div>
@@ -336,15 +426,17 @@ export default function CreatePool() {
 
             {/* Section 3 */}
             <div className="space-y-6">
-               <SectionLabel>Verification Logic</SectionLabel>
+               <SectionLabel>How Verification Works</SectionLabel>
                <div className="p-6 border border-white/10 bg-white/[0.01]">
                   <div className="flex items-start gap-4">
                      <Zap className="w-5 h-5 text-emerald-500 mt-1" />
                      <div>
-                        <h4 className="text-sm font-medium text-white mb-1">AI Agent Verification</h4>
+                        <div className="flex items-start gap-2">
+                          <h4 className="text-sm font-medium text-white mb-1">How Verification Works</h4>
+                          <InfoIcon content="Our system automatically checks if you're meeting your goal each day. For lifestyle challenges, you'll upload photos as proof. For crypto challenges, we check your wallet automatically. You'll need to verify daily - missing a day means you're out of the challenge." />
+                        </div>
                         <p className="text-xs text-gray-500 leading-relaxed">
-                           Our centralized AI agent will monitor the verification proof submitted by users. 
-                           For "Lifestyle" challenges, this involves vision analysis of uploaded photos.
+                           Automatic daily verification. Upload photos for lifestyle challenges, or we check your wallet for crypto challenges.
                         </p>
                      </div>
                   </div>
@@ -352,14 +444,41 @@ export default function CreatePool() {
             </div>
 
             <div className="pt-8 border-t border-white/10">
-               <ButtonPrimary 
-                className="w-full" 
-                onClick={handleDeploy}
-                disabled={loading}
-               >
-                 {loading ? <span className="animate-pulse">Initializing...</span> : "Deploy Protocol"}
-               </ButtonPrimary>
-               <p className="text-center mt-4 text-[10px] text-gray-600 font-mono">0.05 SOL deployment fee applies</p>
+               {showValidationError && (
+                 <div className="mb-6 p-4 border border-red-500/50 bg-red-500/10 rounded-lg">
+                   <div className="flex items-start gap-3 text-xs text-red-400">
+                     <div className="flex-1">
+                       <p className="font-medium mb-1 text-red-300">Please fill in all required fields</p>
+                       <p className="text-red-400/80 leading-relaxed">
+                         All fields are required. Please check the highlighted fields above and fill them in before creating your challenge.
+                       </p>
+                     </div>
+                   </div>
+                 </div>
+               )}
+               {!walletAddress && (
+                 <div className="mb-6 p-4 border border-amber-500/30 bg-amber-500/5 rounded-lg">
+                   <div className="flex items-start gap-3 text-xs text-amber-400">
+                     <InfoIcon content="You need to connect a wallet (like Phantom) in the top-right corner before creating a challenge. This is like connecting your bank account - it's where your commitment money comes from." />
+                     <div>
+                       <p className="font-medium mb-1">Connect Your Wallet First</p>
+                       <p className="text-amber-300/80 leading-relaxed">
+                         Click "Connect Wallet" in the top-right corner to get started.
+                       </p>
+                     </div>
+                   </div>
+                 </div>
+               )}
+               <div className="flex items-center justify-center gap-2 mb-4">
+                 <ButtonPrimary 
+                   className="w-full" 
+                   onClick={handleDeploy}
+                   disabled={loading || !walletAddress}
+                 >
+                   {loading ? <span className="animate-pulse">Creating Challenge...</span> : "Create Challenge"}
+                 </ButtonPrimary>
+                 <InfoIcon content="Creating a challenge costs a small fee (about 0.001-0.002 SOL, roughly $0.10-$0.40) to cover blockchain transaction fees and account creation. This is separate from the stake amount participants will pay." />
+               </div>
             </div>
          </div>
       </div>
