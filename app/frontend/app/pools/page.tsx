@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowRight, Search, Filter } from 'lucide-react';
+import { ArrowRight, Search, Filter, Info } from 'lucide-react';
 import { getPools } from '@/lib/api';
 import { Badge } from '@/components/ui/Badge';
 import { ButtonPrimary } from '@/components/ui/ButtonPrimary';
