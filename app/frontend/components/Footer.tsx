@@ -71,6 +71,11 @@ export const Footer = () => {
                   FAQ
                 </Link>
               </li>
+              <li>
+                <Link href="/how-to" className="text-sm text-gray-400 hover:text-emerald-400 transition-colors">
+                  How to Guide
+                </Link>
+              </li>
             </ul>
           </div>
 

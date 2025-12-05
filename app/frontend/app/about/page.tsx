@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { ArrowRight, Zap, Target, Shield, Users, Code, Rocket } from 'lucide-react';
+import { ArrowRight, Zap, Target, Shield, Users, Code, Rocket, Mail, MessageSquare } from 'lucide-react';
 import { SectionLabel } from '@/components/ui/SectionLabel';
 import { ButtonPrimary } from '@/components/ui/ButtonPrimary';
 
@@ -14,12 +14,12 @@ export default function AboutPage() {
         <div className="text-center mb-20">
           <SectionLabel>About Us</SectionLabel>
           <h1 className="text-5xl md:text-6xl font-light tracking-tighter mb-6">
-            Turning Commitments<br/>
-            into <span className="text-emerald-500 font-serif italic font-light">Capital</span>
+            Building the Future<br/>
+            of <span className="text-emerald-500 font-serif italic font-light">Accountability</span>
           </h1>
           <p className="text-lg text-gray-400 leading-relaxed max-w-2xl mx-auto">
-            Commitment Agent is an AI-powered accountability protocol built on Solana. 
-            We help you achieve your goals by putting real money on the line.
+            Learn more about our mission, values, and the team behind Commitment Agent. 
+            Discover how we're revolutionizing goal achievement through blockchain technology and AI.
           </p>
         </div>
 
@@ -187,6 +187,43 @@ export default function AboutPage() {
               <p className="text-sm text-gray-400 leading-relaxed">
                 We're pushing the boundaries of what's possible with AI and 
                 blockchain technology to help people achieve their goals.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Contact Us */}
+        <div className="mb-20 space-y-6">
+          <h2 className="text-2xl font-light mb-6">Contact Us</h2>
+          <div className="grid md:grid-cols-2 gap-6">
+            <div className="p-6 border border-white/10 bg-white/[0.01] rounded-xl">
+              <div className="flex items-center gap-3 mb-4">
+                <Mail className="w-6 h-6 text-emerald-500" />
+                <h3 className="text-lg font-medium">Email</h3>
+              </div>
+              <a 
+                href="mailto:Accountability-Agent@googlegroups.com" 
+                className="text-emerald-400 hover:text-emerald-300 transition-colors"
+              >
+                Accountability-Agent@googlegroups.com
+              </a>
+              <p className="text-sm text-gray-500 mt-3">
+                For general inquiries, support, or partnerships
+              </p>
+            </div>
+            <div className="p-6 border border-white/10 bg-white/[0.01] rounded-xl">
+              <div className="flex items-center gap-3 mb-4">
+                <MessageSquare className="w-6 h-6 text-emerald-500" />
+                <h3 className="text-lg font-medium">Contact Form</h3>
+              </div>
+              <Link 
+                href="/contact" 
+                className="text-emerald-400 hover:text-emerald-300 transition-colors inline-block"
+              >
+                Visit Contact Page →
+              </Link>
+              <p className="text-sm text-gray-500 mt-3">
+                Send us a message directly through our contact form
               </p>
             </div>
           </div>

@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { HelpCircle, X } from 'lucide-react';
 
 export const HelpBar = () => {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(true);
 
   return (
     <div className="fixed top-16 left-0 right-0 z-40 bg-[#0A0A0A]/95 backdrop-blur-sm border-b border-white/10">
@@ -17,7 +17,7 @@ export const HelpBar = () => {
             <HelpCircle className="w-4 h-4" />
             <span className="uppercase tracking-widest">Questions? Hover over the info icons</span>
           </div>
-          <X className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
+          <X className="w-4 h-4" />
         </button>
         
         {isOpen && (

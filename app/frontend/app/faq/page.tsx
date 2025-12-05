@@ -68,10 +68,6 @@ const faqCategories = {
       answer: 'Our AI verification system is designed to be fair and accurate. If you believe there\'s been an error, contact our support team immediately. We review disputed verifications on a case-by-case basis. However, the system is generally very reliable.'
     },
     {
-      question: 'Are smart contracts audited?',
-      answer: 'PLACEHOLDER: Information about smart contract audits, security measures, and third-party reviews will be detailed here.'
-    },
-    {
       question: 'What happens if the website goes down?',
       answer: 'Since everything runs on the Solana blockchain, the smart contracts continue to function even if our website is temporarily unavailable. Your funds remain safe in the blockchain. You can always interact with the contracts directly if needed.'
     }

@@ -15,19 +15,44 @@ export default function ContactPage() {
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setLoading(true);
     
-    // Simulate form submission
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    const form = e.currentTarget;
+    const formDataObj = new FormData(form);
     
-    setSubmitted(true);
-    setLoading(false);
-    setFormData({ name: '', email: '', subject: '', message: '' });
-    
-    // Reset success message after 5 seconds
-    setTimeout(() => setSubmitted(false), 5000);
+    try {
+      const response = await fetch('https://formsubmit.co/ajax/Accountability-Agent@googlegroups.com', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({
+          name: formData.name,
+          email: formData.email,
+          subject: formData.subject,
+          message: formData.message,
+          _captcha: false,
+          _template: 'box',
+          _subject: `Contact Form: ${formData.subject}`
+        })
+      });
+
+      if (response.ok) {
+        setSubmitted(true);
+        setFormData({ name: '', email: '', subject: '', message: '' });
+        setTimeout(() => setSubmitted(false), 5000);
+      } else {
+        alert('Failed to send message. Please try again or email us directly.');
+      }
+    } catch (error) {
+      console.error('Error sending form:', error);
+      alert('Failed to send message. Please try again or email us directly.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -60,10 +85,10 @@ export default function ContactPage() {
                 <div>
                   <h3 className="text-sm font-medium text-gray-300 mb-1">Email</h3>
                   <a 
-                    href="mailto:support@commitmentagent.com" 
+                    href="mailto:Accountability-Agent@googlegroups.com" 
                     className="text-sm text-emerald-400 hover:text-emerald-300 transition-colors"
                   >
-                    support@commitmentagent.com
+                    Accountability-Agent@googlegroups.com
                   </a>
                   <p className="text-xs text-gray-500 mt-2">For general inquiries and support</p>
                 </div>
@@ -120,6 +145,7 @@ export default function ContactPage() {
                     </label>
                     <input
                       type="text"
+                      name="name"
                       value={formData.name}
                       onChange={(e) => setFormData({...formData, name: e.target.value})}
                       required
@@ -134,6 +160,7 @@ export default function ContactPage() {
                     </label>
                     <input
                       type="email"
+                      name="email"
                       value={formData.email}
                       onChange={(e) => setFormData({...formData, email: e.target.value})}
                       required
@@ -148,6 +175,7 @@ export default function ContactPage() {
                     </label>
                     <input
                       type="text"
+                      name="subject"
                       value={formData.subject}
                       onChange={(e) => setFormData({...formData, subject: e.target.value})}
                       required
@@ -161,6 +189,7 @@ export default function ContactPage() {
                       Message
                     </label>
                     <textarea
+                      name="message"
                       value={formData.message}
                       onChange={(e) => setFormData({...formData, message: e.target.value})}
                       required
@@ -182,12 +211,6 @@ export default function ContactPage() {
               )}
             </div>
 
-            <div className="mt-6 p-4 border border-white/10 bg-white/[0.01] rounded-lg">
-              <p className="text-xs text-gray-500 leading-relaxed">
-                <strong className="text-gray-400">Note:</strong> This is a demo form. 
-                In production, this would connect to your email service or support system.
-              </p>
-            </div>
           </div>
         </div>
 
@@ -212,7 +235,7 @@ export default function ContactPage() {
             <div className="p-6 border border-white/10 bg-white/[0.01] rounded-xl">
               <h3 className="text-lg font-medium mb-2 text-emerald-400">What if I have a technical issue?</h3>
               <p className="text-sm text-gray-400 leading-relaxed">
-                Contact us through this form or email support@commitmentagent.com. 
+                Contact us through this form or email Accountability-Agent@googlegroups.com. 
                 Include as much detail as possible about the issue you're experiencing.
               </p>
             </div>

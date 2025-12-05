@@ -160,20 +160,6 @@ export default function TermsOfServicePage() {
               </p>
             </div>
             <div className="p-6 border border-white/10 bg-white/[0.01] rounded-xl">
-              <h3 className="text-lg font-medium mb-3 text-emerald-400">Smart Contract Risk</h3>
-              <p className="text-gray-400 leading-relaxed">
-                While we strive for security, smart contracts may contain bugs or vulnerabilities. You use the 
-                platform at your own risk. We are not liable for losses due to smart contract failures.
-              </p>
-            </div>
-            <div className="p-6 border border-white/10 bg-white/[0.01] rounded-xl">
-              <h3 className="text-lg font-medium mb-3 text-emerald-400">AI Verification</h3>
-              <p className="text-gray-400 leading-relaxed">
-                Our AI verification system may make errors. While we review disputed verifications, the system's 
-                decisions are generally final. We are not liable for false positives or negatives in verification.
-              </p>
-            </div>
-            <div className="p-6 border border-white/10 bg-white/[0.01] rounded-xl">
               <h3 className="text-lg font-medium mb-3 text-emerald-400">Platform Availability</h3>
               <p className="text-gray-400 leading-relaxed">
                 We do not guarantee uninterrupted access to the platform. The platform may be unavailable due to 
@@ -227,40 +213,8 @@ export default function TermsOfServicePage() {
               INTANGIBLE LOSSES RESULTING FROM YOUR USE OF THE PLATFORM.
             </p>
             <p className="text-gray-400 leading-relaxed mt-4">
-              We are not responsible for losses due to: smart contract bugs, wallet security breaches, 
-              blockchain network issues, AI verification errors, or user error.
-            </p>
-          </div>
-        </div>
-
-        {/* Intellectual Property */}
-        <div className="mb-12 space-y-6">
-          <h2 className="text-2xl font-light mb-6">Intellectual Property</h2>
-          <p className="text-gray-400 leading-relaxed">
-            The Platform and its original content, features, and functionality are owned by Commitment Agent and 
-            are protected by international copyright, trademark, and other intellectual property laws. The smart 
-            contract code is open source and available on GitHub.
-          </p>
-        </div>
-
-        {/* Termination */}
-        <div className="mb-12 space-y-6">
-          <h2 className="text-2xl font-light mb-6">Termination</h2>
-          <p className="text-gray-400 leading-relaxed">
-            We reserve the right to terminate or suspend your access to the Platform at any time, with or without 
-            cause or notice, for any reason, including violation of these Terms. Termination does not affect your 
-            obligations under active challenges or your ability to claim rewards from completed challenges.
-          </p>
-        </div>
-
-        {/* Governing Law */}
-        <div className="mb-12 space-y-6">
-          <h2 className="text-2xl font-light mb-6">Governing Law</h2>
-          <div className="p-6 border border-white/10 bg-white/[0.01] rounded-xl">
-            <p className="text-sm text-gray-400 leading-relaxed">
-              <strong className="text-white">PLACEHOLDER:</strong> Specify the governing law and jurisdiction for 
-              disputes (e.g., "These Terms shall be governed by the laws of [Jurisdiction] without regard to its 
-              conflict of law provisions. Any disputes shall be resolved in the courts of [Jurisdiction].")
+              We are not responsible for losses due to: wallet security breaches, 
+              blockchain network issues, or user error.
             </p>
           </div>
         </div>
@@ -282,7 +236,7 @@ export default function TermsOfServicePage() {
             If you have any questions about these Terms of Service, please contact us:
           </p>
           <ul className="space-y-2 text-gray-400">
-            <li>Email: <a href="mailto:support@commitmentagent.com" className="text-emerald-400 hover:text-emerald-300">support@commitmentagent.com</a></li>
+            <li>Email: <a href="mailto:Accountability-Agent@googlegroups.com" className="text-emerald-400 hover:text-emerald-300">Accountability-Agent@googlegroups.com</a></li>
             <li>Website: <a href="/contact" className="text-emerald-400 hover:text-emerald-300">Contact Page</a></li>
           </ul>
         </div>
