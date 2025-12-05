@@ -706,6 +706,22 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
                 logger.warning(f"Tweet posted but no ID returned for pool {pool_id}")
             return None
         
+        except tweepy.Forbidden as e:
+            # Check if this is a duplicate content error
+            error_message = str(e).lower()
+            if "duplicate content" in error_message or "duplicate" in error_message:
+                # Tweet was already posted - treat as success
+                logger.info(
+                    f"Tweet for pool {pool_id} already exists (duplicate content). "
+                    f"Marking as posted."
+                )
+                # Update last post time to prevent immediate retry
+                self.last_post_time[pool_id] = time.time()
+                return "duplicate"
+            else:
+                # Other 403 errors - log and return None
+                logger.error(f"Twitter forbidden (403) for pool {pool_id}: {e}")
+                return None
         except tweepy.Unauthorized as e:
             logger.error(
                 f"Twitter authentication failed (401 Unauthorized) for pool {pool_id}. "
@@ -831,10 +847,16 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
                 tweet_id = await self._process_tweet_task(task)
                 
                 if tweet_id:
-                    # Success - mark as posted
+                    # Success (including duplicate content - tweet already exists)
                     key = (task.pool_id, task.event_type)
                     self.last_event_post_time[key] = time.time()
-                    logger.info(f"Successfully posted tweet {tweet_id} for pool {task.pool_id} ({task.event_type.value})")
+                    if tweet_id == "duplicate":
+                        logger.info(
+                            f"Tweet for pool {task.pool_id} ({task.event_type.value}) already posted "
+                            f"(duplicate detected). Marked as completed."
+                        )
+                    else:
+                        logger.info(f"Successfully posted tweet {tweet_id} for pool {task.pool_id} ({task.event_type.value})")
                 else:
                     # Failed - retry or give up
                     if task.retry_count < task.max_retries:
@@ -996,6 +1018,23 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
                 logger.warning(f"Tweet posted but no ID returned for pool {task.pool_id}")
                 return None
                 
+        except tweepy.Forbidden as e:
+            # Check if this is a duplicate content error
+            error_message = str(e).lower()
+            if "duplicate content" in error_message or "duplicate" in error_message:
+                # Tweet was already posted - treat as success
+                logger.info(
+                    f"Tweet for pool {task.pool_id} ({task.event_type.value}) already exists "
+                    f"(duplicate content). Marking as posted."
+                )
+                # Return a special marker to indicate duplicate (treated as success)
+                return "duplicate"
+            else:
+                # Other 403 errors - log and don't retry
+                logger.error(
+                    f"Twitter account {account.account_id} forbidden (403) for pool {task.pool_id}: {e}"
+                )
+                return None
         except tweepy.Unauthorized as e:
             # Invalid credentials - don't retry, mark account as invalid
             logger.error(

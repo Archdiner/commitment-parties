@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ChevronRight, Zap } from 'lucide-react';
+import { ChevronRight, Zap, ChevronDown } from 'lucide-react';
 import { ButtonPrimary } from '@/components/ui/ButtonPrimary';
 import { SectionLabel } from '@/components/ui/SectionLabel';
 import { InfoIcon } from '@/components/ui/Tooltip';
@@ -11,6 +11,7 @@ import { confirmPoolCreation } from '@/lib/api';
 import { getPersistedWalletAddress } from '@/lib/wallet';
 import { derivePoolPDA, getConnection, solToLamports } from '@/lib/solana';
 import { Transaction } from '@solana/web3.js';
+import { POPULAR_TOKENS, getTokenByMint, type TokenInfo } from '@/lib/tokens';
 
 export default function CreatePool() {
   const router = useRouter();
@@ -43,6 +44,8 @@ export default function CreatePool() {
   const [useCustomDuration, setUseCustomDuration] = useState(false);
   const [validationErrors, setValidationErrors] = useState<Record<string, boolean>>({});
   const [showValidationError, setShowValidationError] = useState(false);
+  const [showTokenDropdown, setShowTokenDropdown] = useState(false);
+  const [customTokenMint, setCustomTokenMint] = useState('');
 
   useEffect(() => {
     // Initial load from persisted storage
@@ -60,6 +63,21 @@ export default function CreatePool() {
       return () => window.removeEventListener('storage', handleStorage);
     }
   }, []);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    if (!showTokenDropdown) return;
+    
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('.token-selector-dropdown')) {
+        setShowTokenDropdown(false);
+      }
+    };
+    
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, [showTokenDropdown]);
 
   const validateForm = (): boolean => {
     const errors: Record<string, boolean> = {};
@@ -487,7 +505,7 @@ export default function CreatePool() {
                       value={formData.descriptionText}
                       onChange={(e) => setFormData({ ...formData, descriptionText: e.target.value })}
                       rows={3}
-                      className="w-full bg-transparent border border-white/20 py-3 px-3 text-sm text-white placeholder-gray-800 focus:outline-none focus:border-emerald-500 transition-colors resize-none"
+                      className="w-full bg-transparent border-b border-white/20 py-3 px-3 text-sm text-white placeholder-gray-800 focus:outline-none focus:border-emerald-500 transition-colors resize-none"
                       placeholder="e.g. 30 days of 6am gym check-ins with a mirror selfie as proof."
                     />
                   </div>
@@ -511,7 +529,7 @@ export default function CreatePool() {
                           ...formData,
                           category: e.target.value,
                         })}
-                        className="w-full bg-[#0A0A0A] border border-white/10 py-3 px-4 text-sm text-white focus:outline-none"
+                        className="w-full bg-transparent border-b border-white/20 py-3 px-4 text-sm text-white placeholder-gray-800 focus:outline-none focus:border-emerald-500 transition-colors"
                     >
                        <option>Crypto</option>
                        <option>Social</option>
@@ -532,7 +550,7 @@ export default function CreatePool() {
                               setFormData({...formData, duration: e.target.value});
                             }
                           }}
-                        className="w-full bg-[#0A0A0A] border border-white/10 py-3 px-4 text-sm text-white focus:outline-none"
+                        className="w-full bg-transparent border-b border-white/20 py-3 px-4 text-sm text-white placeholder-gray-800 focus:outline-none focus:border-emerald-500 transition-colors"
                     >
                        <option>7 Days</option>
                        <option>14 Days</option>
@@ -660,15 +678,149 @@ export default function CreatePool() {
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">Token Mint</label>
-                      <input
-                        type="text"
-                        value={formData.tokenMint}
-                        onChange={(e) => setFormData({ ...formData, tokenMint: e.target.value })}
-                        className="w-full bg-transparent border-b border-white/20 py-2 text-sm text-white placeholder-gray-700 focus:outline-none focus:border-emerald-500 transition-colors"
-                        placeholder="So1111... (wrapped SOL or SPL token mint)"
-                      />
+                    <div className="relative">
+                      <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">
+                        Token
+                        <InfoIcon content="Select a popular token or enter a custom token mint address. Only tokens available on Solana can be tracked." />
+                      </label>
+                      
+                      {/* Token Selector Dropdown */}
+                      <div className="relative token-selector-dropdown">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowTokenDropdown(!showTokenDropdown);
+                          }}
+                          className="w-full bg-transparent border-b border-white/20 py-2 text-sm text-white focus:outline-none focus:border-emerald-500 transition-colors flex items-center justify-between"
+                        >
+                          <div className="flex items-center gap-2">
+                            {(() => {
+                              const selectedToken = getTokenByMint(formData.tokenMint);
+                              if (selectedToken) {
+                                return (
+                                  <>
+                                    {selectedToken.iconUrl ? (
+                                      <img 
+                                        src={selectedToken.iconUrl} 
+                                        alt={selectedToken.symbol}
+                                        className="w-5 h-5 rounded-full"
+                                        onError={(e) => {
+                                          (e.target as HTMLImageElement).style.display = 'none';
+                                        }}
+                                      />
+                                    ) : (
+                                      <div className="w-5 h-5 rounded-full bg-emerald-500/20 flex items-center justify-center text-xs font-mono">
+                                        {selectedToken.symbol[0]}
+                                      </div>
+                                    )}
+                                    <span className="font-medium">{selectedToken.symbol}</span>
+                                    <span className="text-gray-500 text-xs">({selectedToken.name})</span>
+                                  </>
+                                );
+                              } else if (formData.tokenMint) {
+                                return (
+                                  <>
+                                    <div className="w-5 h-5 rounded-full bg-gray-500/20 flex items-center justify-center text-xs font-mono">
+                                      ?
+                                    </div>
+                                    <span className="font-mono text-xs text-gray-400">
+                                      {formData.tokenMint.slice(0, 8)}...
+                                    </span>
+                                  </>
+                                );
+                              }
+                              return <span className="text-gray-600">Select a token...</span>;
+                            })()}
+                          </div>
+                          <ChevronRight 
+                            className={`w-4 h-4 text-gray-500 transition-transform ${showTokenDropdown ? 'rotate-90' : ''}`}
+                          />
+                        </button>
+                        
+                        {showTokenDropdown && (
+                          <div 
+                            className="absolute z-50 w-full mt-1 bg-[#0a0a0a] border border-white/20 rounded-lg shadow-lg max-h-64 overflow-y-auto"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {/* Popular Tokens */}
+                            <div className="p-2">
+                              <div className="text-[10px] uppercase tracking-widest text-gray-500 px-2 py-1">
+                                Popular Tokens
+                              </div>
+                              {POPULAR_TOKENS.map((token) => (
+                                <button
+                                  key={token.mint}
+                                  type="button"
+                                  onClick={() => {
+                                    setFormData({ ...formData, tokenMint: token.mint });
+                                    setShowTokenDropdown(false);
+                                    setCustomTokenMint('');
+                                  }}
+                                  className={`w-full flex items-center gap-3 px-3 py-2 rounded hover:bg-white/5 transition-colors ${
+                                    formData.tokenMint === token.mint ? 'bg-emerald-500/10' : ''
+                                  }`}
+                                >
+                                  {token.iconUrl ? (
+                                    <img 
+                                      src={token.iconUrl} 
+                                      alt={token.symbol}
+                                      className="w-6 h-6 rounded-full"
+                                      onError={(e) => {
+                                        (e.target as HTMLImageElement).style.display = 'none';
+                                      }}
+                                    />
+                                  ) : (
+                                    <div className="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center text-xs font-mono">
+                                      {token.symbol[0]}
+                                    </div>
+                                  )}
+                                  <div className="flex-1 text-left">
+                                    <div className="text-sm font-medium text-white">{token.symbol}</div>
+                                    <div className="text-xs text-gray-400">{token.name}</div>
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                            
+                            {/* Custom Token Input */}
+                            <div className="p-2 border-t border-white/10">
+                              <div className="text-[10px] uppercase tracking-widest text-gray-500 px-2 py-1 mb-2">
+                                Custom Token
+                              </div>
+                              <input
+                                type="text"
+                                value={customTokenMint}
+                                onChange={(e) => {
+                                  setCustomTokenMint(e.target.value);
+                                  if (e.target.value.length >= 32) {
+                                    setFormData({ ...formData, tokenMint: e.target.value });
+                                  }
+                                }}
+                                onBlur={() => {
+                                  if (customTokenMint && customTokenMint.length >= 32) {
+                                    setFormData({ ...formData, tokenMint: customTokenMint });
+                                  }
+                                  setShowTokenDropdown(false);
+                                }}
+                                placeholder="Enter token mint address..."
+                                className="w-full bg-white/5 border border-white/10 rounded px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-emerald-500"
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                              <p className="text-[10px] text-gray-500 mt-1 px-2">
+                                Only Solana (SPL) tokens supported
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      
+                      {/* Selected Token Mint (read-only display) */}
+                      {formData.tokenMint && (
+                        <div className="mt-2 text-[10px] text-gray-500 font-mono break-all">
+                          Mint: {formData.tokenMint}
+                        </div>
+                      )}
                     </div>
 
                     {formData.cryptoMode === 'HODL' ? (

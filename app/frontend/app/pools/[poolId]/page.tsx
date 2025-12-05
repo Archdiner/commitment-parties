@@ -13,6 +13,7 @@ import {
 import { getPersistedWalletAddress } from '@/lib/wallet';
 import { getConnection } from '@/lib/solana';
 import { Transaction } from '@solana/web3.js';
+import { getTokenByMint } from '@/lib/tokens';
 
 // Force dynamic rendering - this page depends on route params
 export const dynamic = 'force-dynamic';
@@ -176,11 +177,13 @@ export default function PoolDetailPage() {
   const spotsRemaining = pool.max_participants - pool.participant_count;
 
   const isHodl = pool.goal_type === 'hodl_token';
+  const isDCA = pool.goal_type === 'DailyDCA' || pool.goal_type === 'dca';
   const goalMetadata = (pool.goal_metadata || {}) as any;
-  const hodlTokenMint: string | undefined = goalMetadata.token_mint;
+  const tokenMint: string | undefined = goalMetadata.token_mint;
   const hodlMinBalanceRaw: number | undefined = goalMetadata.min_balance;
   const hodlMinBalanceTokens =
     typeof hodlMinBalanceRaw === 'number' ? hodlMinBalanceRaw / 1_000_000_000 : undefined;
+  const dcaTradesPerDay: number | undefined = goalMetadata.min_trades_per_day;
 
   return (
     <div className="min-h-screen bg-[#050505] text-white pt-24 px-6 pb-20">
@@ -251,38 +254,131 @@ export default function PoolDetailPage() {
               </div>
             </div>
 
-            {isHodl && (
-              <div className="mt-6 p-4 border border-emerald-500/40 bg-emerald-500/5 rounded-xl space-y-2">
-                <div className="text-[10px] uppercase tracking-widest text-emerald-400">
-                  HODL Requirement
-                </div>
-                <p className="text-xs text-gray-300">
-                  This is a HODL challenge. To stay in the challenge, you must keep at least{' '}
-                  {hodlMinBalanceTokens !== undefined ? (
-                    <span className="font-mono text-emerald-300">
-                      {hodlMinBalanceTokens.toLocaleString(undefined, {
-                        maximumFractionDigits: 9,
-                      })}{' '}
-                    </span>
-                  ) : (
-                    <span className="font-mono text-emerald-300">the required</span>
-                  )}
-                  tokens of the asset below in your connected wallet for the entire duration.
-                </p>
-                {hodlTokenMint && (
-                  <div className="text-[11px] text-gray-400">
-                    <span className="uppercase tracking-widest text-gray-500 mr-2">
-                      Token Mint
-                    </span>
-                    <span className="font-mono break-all text-gray-200">{hodlTokenMint}</span>
+            {isHodl && (() => {
+              const tokenInfo = tokenMint ? getTokenByMint(tokenMint) : undefined;
+              return (
+                <div className="mt-6 p-4 border border-emerald-500/40 bg-emerald-500/5 rounded-xl space-y-3">
+                  <div className="text-[10px] uppercase tracking-widest text-emerald-400">
+                    HODL Requirement
                   </div>
-                )}
-                <p className="text-[11px] text-amber-400">
-                  You must already hold at least this amount when you join; otherwise, your join
-                  will be rejected.
-                </p>
-              </div>
-            )}
+                  
+                  {/* Token Display with Icon */}
+                  {tokenInfo && (
+                    <div className="flex items-center gap-3 p-3 bg-white/5 rounded-lg border border-white/10">
+                      {tokenInfo.iconUrl ? (
+                        <img 
+                          src={tokenInfo.iconUrl} 
+                          alt={tokenInfo.symbol}
+                          className="w-10 h-10 rounded-full"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = 'none';
+                          }}
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center text-lg font-mono">
+                          {tokenInfo.symbol[0]}
+                        </div>
+                      )}
+                      <div className="flex-1">
+                        <div className="text-sm font-medium text-white">{tokenInfo.name}</div>
+                        <div className="text-xs text-gray-400 font-mono">{tokenInfo.symbol}</div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  <p className="text-xs text-gray-300">
+                    This is a HODL challenge. To stay in the challenge, you must keep at least{' '}
+                    {hodlMinBalanceTokens !== undefined ? (
+                      <span className="font-mono text-emerald-300">
+                        {hodlMinBalanceTokens.toLocaleString(undefined, {
+                          maximumFractionDigits: 9,
+                        })}{' '}
+                      </span>
+                    ) : (
+                      <span className="font-mono text-emerald-300">the required</span>
+                    )}
+                    {tokenInfo ? ` ${tokenInfo.symbol}` : ' tokens'} of the asset{' '}
+                    {tokenInfo ? `(${tokenInfo.name})` : ''} in your connected Solana wallet for the entire duration.
+                  </p>
+                  
+                  {tokenMint && !tokenInfo && (
+                    <div className="text-[11px] text-gray-400">
+                      <span className="uppercase tracking-widest text-gray-500 mr-2">
+                        Token Mint
+                      </span>
+                      <span className="font-mono break-all text-gray-200">{tokenMint}</span>
+                    </div>
+                  )}
+                  
+                  <p className="text-[11px] text-amber-400">
+                    You must already hold at least this amount when you join; otherwise, your join
+                    will be rejected.
+                  </p>
+                </div>
+              );
+            })()}
+
+            {isDCA && (() => {
+              const tokenInfo = tokenMint ? getTokenByMint(tokenMint) : undefined;
+              return (
+                <div className="mt-6 p-4 border border-blue-500/40 bg-blue-500/5 rounded-xl space-y-3">
+                  <div className="text-[10px] uppercase tracking-widest text-blue-400">
+                    Daily DCA Requirement
+                  </div>
+                  
+                  {/* Token Display with Icon */}
+                  {tokenInfo && (
+                    <div className="flex items-center gap-3 p-3 bg-white/5 rounded-lg border border-white/10">
+                      {tokenInfo.iconUrl ? (
+                        <img 
+                          src={tokenInfo.iconUrl} 
+                          alt={tokenInfo.symbol}
+                          className="w-10 h-10 rounded-full"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = 'none';
+                          }}
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center text-lg font-mono">
+                          {tokenInfo.symbol[0]}
+                        </div>
+                      )}
+                      <div className="flex-1">
+                        <div className="text-sm font-medium text-white">{tokenInfo.name}</div>
+                        <div className="text-xs text-gray-400 font-mono">{tokenInfo.symbol}</div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  <p className="text-xs text-gray-300">
+                    This is a Daily DCA challenge. You must make at least{' '}
+                    <span className="font-mono text-blue-300">
+                      {dcaTradesPerDay || 1}
+                    </span>{' '}
+                    transaction{dcaTradesPerDay !== 1 ? 's' : ''} per day from your connected Solana wallet.{' '}
+                    {tokenInfo && (
+                      <>
+                        This challenge is for <span className="font-mono text-blue-300">{tokenInfo.symbol}</span> ({tokenInfo.name}).
+                      </>
+                    )}
+                  </p>
+                  
+                  {tokenMint && !tokenInfo && (
+                    <div className="text-[11px] text-gray-400">
+                      <span className="uppercase tracking-widest text-gray-500 mr-2">
+                        Token Mint
+                      </span>
+                      <span className="font-mono break-all text-gray-200">{tokenMint}</span>
+                    </div>
+                  )}
+                  
+                  <p className="text-[11px] text-amber-400">
+                    Note: Verification counts wallet transactions as a proxy for trading activity. 
+                    Currently does not verify specific token swaps.
+                  </p>
+                </div>
+              );
+            })()}
 
             <div className="mt-8 p-4 border border-white/10 bg-white/[0.02] rounded-xl flex items-start gap-3">
               <ShieldCheck className="w-5 h-5 text-emerald-500 mt-0.5 flex-shrink-0" />
