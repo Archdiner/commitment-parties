@@ -179,11 +179,15 @@ export default function PoolDetailPage() {
   const isHodl = pool.goal_type === 'hodl_token';
   const isDCA = pool.goal_type === 'DailyDCA' || pool.goal_type === 'dca';
   const goalMetadata = (pool.goal_metadata || {}) as any;
+  const habitType = goalMetadata.habit_type;
+  const isGitHubCommits = habitType === 'github_commits';
   const tokenMint: string | undefined = goalMetadata.token_mint;
   const hodlMinBalanceRaw: number | undefined = goalMetadata.min_balance;
   const hodlMinBalanceTokens =
     typeof hodlMinBalanceRaw === 'number' ? hodlMinBalanceRaw / 1_000_000_000 : undefined;
   const dcaTradesPerDay: number | undefined = goalMetadata.min_trades_per_day;
+  const minCommitsPerDay: number | undefined = goalMetadata.min_commits_per_day;
+  const minLinesPerCommit: number | undefined = goalMetadata.min_lines_per_commit;
 
   return (
     <div className="min-h-screen bg-[#050505] text-white pt-24 px-6 pb-20">
@@ -313,6 +317,46 @@ export default function PoolDetailPage() {
                   <p className="text-[11px] text-amber-400">
                     You must already hold at least this amount when you join; otherwise, your join
                     will be rejected.
+                  </p>
+                </div>
+              );
+            })()}
+
+            {isGitHubCommits && (() => {
+              return (
+                <div className="mt-6 p-4 border border-purple-500/40 bg-purple-500/5 rounded-xl space-y-3">
+                  <div className="text-[10px] uppercase tracking-widest text-purple-400">
+                    GitHub Commits Requirement
+                  </div>
+                  
+                  <p className="text-xs text-gray-300">
+                    This is a GitHub commits challenge. You must make at least{' '}
+                    <span className="font-mono text-purple-300">
+                      {minCommitsPerDay || 1}
+                    </span>{' '}
+                    commit{minCommitsPerDay !== 1 ? 's' : ''} per day to your GitHub account.
+                    {minLinesPerCommit && minLinesPerCommit > 0 && (
+                      <>
+                        {' '}Each commit must have at least{' '}
+                        <span className="font-mono text-purple-300">
+                          {minLinesPerCommit}
+                        </span>{' '}
+                        line{minLinesPerCommit !== 1 ? 's' : ''} changed.
+                      </>
+                    )}
+                  </p>
+                  
+                  {goalMetadata.repo && (
+                    <div className="text-[11px] text-gray-400">
+                      <span className="uppercase tracking-widest text-gray-500 mr-2">
+                        Repository
+                      </span>
+                      <span className="font-mono break-all text-gray-200">{goalMetadata.repo}</span>
+                    </div>
+                  )}
+                  
+                  <p className="text-[11px] text-amber-400">
+                    Commits are automatically verified. Only genuine commits count - nonsensical or useless commits will be rejected.
                   </p>
                 </div>
               );

@@ -6,11 +6,12 @@ Monitors pools and participants to verify goal completion.
 
 import asyncio
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timezone, timedelta
 import time
 
 import httpx
+from openai import AsyncOpenAI
 
 from solana_client import SolanaClient
 from verify import Verifier
@@ -29,6 +30,10 @@ class Monitor:
         self.verifier = verifier
         self.distributor = distributor
         self.db = None  # Database module reference
+        # Initialize OpenAI client if API key is available
+        self.openai_client = None
+        if settings.OPENAI_API_KEY:
+            self.openai_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
     
     def _calculate_current_day(self, start_timestamp: int) -> Optional[int]:
         """
@@ -59,7 +64,133 @@ class Monitor:
             logger.error(f"Error calculating current day: {e}", exc_info=True)
             return None
 
-    async def verify_github_commits(self, pool: Dict[str, Any], participant: Dict[str, Any], day: int) -> Optional[bool]:
+    async def _fetch_commit_code(self, repo_full_name: str, sha: str) -> Optional[str]:
+        """
+        Fetch the code diff/patch for a commit from GitHub API.
+        
+        Args:
+            repo_full_name: Repository name in format "owner/repo"
+            sha: Commit SHA
+        
+        Returns:
+            Commit diff/patch as string, or None if fetch fails
+        """
+        try:
+            commit_api_url = f"https://api.github.com/repos/{repo_full_name}/commits/{sha}"
+            
+            async with httpx.AsyncClient(timeout=15) as client:
+                response = await client.get(
+                    commit_api_url,
+                    headers={
+                        "Accept": "application/vnd.github+json",
+                    },
+                )
+            
+            if response.status_code == 200:
+                commit_data = response.json()
+                # Get the patch/diff from the commit
+                files = commit_data.get("files", [])
+                patches = []
+                for file in files:
+                    patch = file.get("patch", "")
+                    if patch:
+                        filename = file.get("filename", "unknown")
+                        patches.append(f"--- {filename}\n{patch}")
+                
+                if patches:
+                    return "\n\n".join(patches)
+                else:
+                    # No patch available (might be binary file or empty commit)
+                    return ""
+            else:
+                logger.debug(
+                    f"Could not fetch commit code for {sha[:7]} in {repo_full_name}: "
+                    f"status {response.status_code}"
+                )
+                return None
+        except Exception as e:
+            logger.debug(f"Error fetching commit code for {sha[:7]}: {e}")
+            return None
+
+    def _estimate_token_count(self, text: str) -> int:
+        """
+        Rough estimate of token count for text.
+        Uses a simple heuristic: ~4 characters per token.
+        This is conservative and will err on the side of caution.
+        
+        Args:
+            text: Text to estimate tokens for
+        
+        Returns:
+            Estimated token count
+        """
+        # Rough estimate: 1 token ≈ 4 characters
+        # This is conservative - actual tokenization varies
+        return len(text) // 4
+
+    async def _check_if_nonsensical_commit(self, code: str, commit_message: str) -> Optional[bool]:
+        """
+        Check if a commit is nonsensical/useless (just to fulfill commit requirement).
+        Only flags obviously bad commits, not genuine work.
+        
+        Args:
+            code: The code diff/patch to verify
+            commit_message: The commit message
+        
+        Returns:
+            True if nonsensical/useless, False if genuine, None if check can't be performed
+        """
+        if not self.openai_client:
+            logger.debug("OpenAI client not available, skipping code quality check")
+            return None
+        
+        try:
+            # Estimate token count (conservative estimate)
+            # Reserve space for prompt (~500 tokens) and response (~100 tokens)
+            # Use ~80k tokens as safe limit (well below 128k context window)
+            estimated_tokens = self._estimate_token_count(code)
+            max_code_tokens = 80000  # Safe limit for code
+            
+            if estimated_tokens > max_code_tokens:
+                logger.info(
+                    f"Code exceeds context limit (estimated {estimated_tokens} tokens, "
+                    f"max {max_code_tokens}). Passing commit without quality check."
+                )
+                return None  # Pass without checking if too large
+            
+            # Build brief prompt - only flag obviously nonsensical commits
+            prompt = f"""Is this commit nonsensical or useless (just to fulfill commit requirement)? 
+Only say yes if it's clearly garbage like random characters, empty changes, or meaningless edits.
+
+Commit: {commit_message}
+Code:
+{code[:50000]}
+
+Respond with only "yes" or "no"."""
+
+            response = await self.openai_client.chat.completions.create(
+                model="gpt-4o-mini",  # Use cheaper model
+                messages=[
+                    {"role": "system", "content": "You detect only obviously nonsensical commits. Be very lenient - genuine work always passes. Respond with only 'yes' or 'no'."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=5,
+                temperature=0.2,  # Lower temperature for more consistent detection
+            )
+            
+            response_text = response.choices[0].message.content.strip().lower()
+            
+            # Check if response indicates nonsensical
+            if "yes" in response_text:
+                return True  # Nonsensical
+            else:
+                return False  # Genuine (or unclear, default to genuine)
+                
+        except Exception as e:
+            logger.error(f"Error checking if commit is nonsensical: {e}", exc_info=True)
+            return None  # On error, assume genuine
+
+    async def verify_github_commits(self, pool: Dict[str, Any], participant: Dict[str, Any], day: int) -> Tuple[Optional[bool], List[str]]:
         """
         Verify that a participant has made enough GitHub commits for the specified challenge day.
 
@@ -91,9 +222,9 @@ class Monitor:
             day: Challenge day number (1-indexed) to verify
         
         Returns:
-            True if commits found (passed)
-            False if day ended and no commits found (failed)
-            None if day still active and no commits yet (pending - user still has time)
+            Tuple of (passed, checked_commit_shas):
+            - passed: True if commits found, False if day ended and no commits found, None if day still active
+            - checked_commit_shas: List of commit SHAs that were checked in this verification
         """
         try:
             goal_metadata = pool.get("goal_metadata") or {}
@@ -274,77 +405,162 @@ class Monitor:
                     except Exception as parse_err:
                         logger.debug("Error parsing GitHub event: %s", parse_err)
                 
-                # If minimum lines threshold is set, fetch commit details to check line counts
-                if min_lines_per_commit > 0 and candidate_commits:
-                    logger.info(
-                        f"Checking {len(candidate_commits)} candidate commits for minimum {min_lines_per_commit} lines threshold"
+                # Get previously checked commits from existing verifications to avoid re-checking
+                checked_commits = set()
+                try:
+                    existing_verifications = await execute_query(
+                        table="verifications",
+                        operation="select",
+                        filters={
+                            "pool_id": pool.get("pool_id"),
+                            "participant_wallet": participant_wallet,
+                        }
                     )
-                    
-                    # Fetch commit stats for each candidate commit
-                    # Note: We need to use the commit URL from the PushEvent, but we can also construct it
-                    valid_commits = []
-                    for commit_info in candidate_commits:
-                        try:
-                            # Construct commit API URL: https://api.github.com/repos/{owner}/{repo}/commits/{sha}
-                            # commit_info["url"] should be the commit URL, but we need the API endpoint
-                            repo_full_name = commit_info["repo"]
-                            sha = commit_info["sha"]
-                            
-                            # Convert from "owner/repo" format
-                            commit_api_url = f"https://api.github.com/repos/{repo_full_name}/commits/{sha}"
-                            
-                            async with httpx.AsyncClient(timeout=10) as commit_client:
-                                commit_response = await commit_client.get(
-                                    commit_api_url,
-                                    headers={
-                                        "Accept": "application/vnd.github+json",
-                                    },
-                                )
-                            
-                            if commit_response.status_code == 200:
-                                commit_data = commit_response.json()
-                                stats = commit_data.get("stats", {})
-                                total_lines = stats.get("total", 0)  # Total lines changed (additions + deletions)
-                                
-                                if total_lines >= min_lines_per_commit:
-                                    valid_commits.append({
-                                        "repo": repo_full_name,
-                                        "sha": sha[:7],
-                                        "lines": total_lines,
-                                        "message": commit_info["message"][:60]
-                                    })
-                                    commit_count += 1
-                                else:
-                                    logger.debug(
-                                        f"Commit {sha[:7]} in {repo_full_name} has {total_lines} lines "
-                                        f"(minimum required: {min_lines_per_commit}), skipping"
-                                    )
-                            else:
-                                # If we can't fetch commit details, fall back to counting it
-                                # (API might be rate-limited or commit might be in private repo)
-                                logger.debug(
-                                    f"Could not fetch commit details for {sha[:7]} in {repo_full_name}: "
-                                    f"status {commit_response.status_code}. Counting commit anyway."
-                                )
-                                valid_commits.append({
-                                    "repo": repo_full_name,
-                                    "sha": sha[:7],
-                                    "lines": "unknown",
-                                    "message": commit_info["message"][:60]
-                                })
-                                commit_count += 1
-                        except Exception as commit_err:
-                            logger.debug(f"Error fetching commit details for {commit_info.get('sha', 'unknown')}: {commit_err}")
-                            # On error, count the commit anyway to avoid false negatives
-                            commit_count += 1
-                    
-                    if valid_commits:
+                    for verification in existing_verifications:
+                        proof_data = verification.get("proof_data") or {}
+                        checked_shas = proof_data.get("checked_commit_shas", [])
+                        if isinstance(checked_shas, list):
+                            checked_commits.update(checked_shas)
+                    if checked_commits:
                         logger.info(
-                            f"Valid commits (>= {min_lines_per_commit} lines): {valid_commits[:5]}"
+                            f"Found {len(checked_commits)} previously checked commits for pool={pool.get('pool_id')}, "
+                            f"wallet={participant_wallet}"
                         )
-                else:
-                    # No minimum lines threshold - count all commits with non-trivial messages
-                    commit_count = len(candidate_commits)
+                except Exception as e:
+                    logger.debug(f"Error fetching checked commits: {e}")
+                
+                # Verify code quality for commits using LLM
+                valid_commits = []
+                quality_checked_commits = []
+                checked_commit_shas = []  # Track SHAs we check in this run
+                
+                for commit_info in candidate_commits:
+                    sha = commit_info["sha"]
+                    
+                    # Skip if we've already checked this commit
+                    if sha in checked_commits:
+                        logger.debug(
+                            f"Commit {sha[:7]} already checked, skipping"
+                        )
+                        # Still count it as valid if it was previously checked
+                        valid_commits.append({
+                            "repo": commit_info["repo"],
+                            "sha": sha[:7],
+                            "message": commit_info["message"][:60],
+                            "quality_score": None,
+                            "reason": "already_checked"
+                        })
+                        commit_count += 1
+                        continue
+                    try:
+                        repo_full_name = commit_info["repo"]
+                        sha = commit_info["sha"]
+                        message = commit_info["message"]
+                        
+                        # Fetch commit code
+                        code = await self._fetch_commit_code(repo_full_name, sha)
+                        
+                        if code is None:
+                            # Couldn't fetch code - might be private repo or API issue
+                            # Count it anyway to avoid false negatives
+                            logger.debug(
+                                f"Could not fetch code for commit {sha[:7]} in {repo_full_name}, "
+                                f"counting as valid (may be private repo or API issue)"
+                            )
+                            valid_commits.append({
+                                "repo": repo_full_name,
+                                "sha": sha[:7],
+                                "message": message[:60],
+                                "quality_score": None,
+                                "reason": "code_unavailable"
+                            })
+                            commit_count += 1
+                            continue
+                        
+                        # Check minimum lines if required
+                        if min_lines_per_commit > 0:
+                            # Count lines in the patch (rough estimate)
+                            lines_changed = len(code.split('\n'))
+                            if lines_changed < min_lines_per_commit:
+                                logger.debug(
+                                    f"Commit {sha[:7]} in {repo_full_name} has {lines_changed} lines "
+                                    f"(minimum required: {min_lines_per_commit}), skipping"
+                                )
+                                continue
+                        
+                        # Verify code quality with LLM (only to detect nonsensical/useless commits)
+                        is_nonsensical = await self._check_if_nonsensical_commit(code, message)
+                        
+                        if is_nonsensical is None:
+                            # Code too large or LLM unavailable - pass it (assume genuine)
+                            logger.info(
+                                f"Commit {sha[:7]} in {repo_full_name} passed without quality check "
+                                f"(code too large or LLM unavailable)"
+                            )
+                            valid_commits.append({
+                                "repo": repo_full_name,
+                                "sha": sha[:7],
+                                "message": message[:60],
+                                "quality_score": None,
+                                "reason": "context_limit_or_llm_unavailable"
+                            })
+                            checked_commit_shas.append(sha)
+                            commit_count += 1
+                        elif not is_nonsensical:
+                            # Commit is genuine (not nonsensical) - pass it
+                            logger.info(
+                                f"Commit {sha[:7]} in {repo_full_name} passed quality check (genuine commit)"
+                            )
+                            valid_commits.append({
+                                "repo": repo_full_name,
+                                "sha": sha[:7],
+                                "message": message[:60],
+                                "quality_score": None,
+                                "reason": "genuine_commit"
+                            })
+                            checked_commit_shas.append(sha)
+                            commit_count += 1
+                        else:
+                            # Commit is nonsensical/useless - reject it
+                            logger.info(
+                                f"Commit {sha[:7]} in {repo_full_name} failed quality check "
+                                f"(detected as nonsensical/useless commit)"
+                            )
+                            quality_checked_commits.append({
+                                "repo": repo_full_name,
+                                "sha": sha[:7],
+                                "message": message[:60],
+                                "quality_score": None,
+                                "reason": "nonsensical_commit"
+                            })
+                            checked_commit_shas.append(sha)  # Still track it as checked
+                    except Exception as commit_err:
+                        logger.debug(f"Error processing commit {commit_info.get('sha', 'unknown')}: {commit_err}")
+                        # On error, count the commit anyway to avoid false negatives
+                        error_sha = commit_info.get("sha", "")
+                        valid_commits.append({
+                            "repo": commit_info.get("repo", "unknown"),
+                            "sha": error_sha[:7] if error_sha else "unknown",
+                            "message": commit_info.get("message", "")[:60],
+                            "quality_score": None,
+                            "reason": "error_processing"
+                        })
+                        if error_sha:
+                            checked_commit_shas.append(error_sha)
+                        commit_count += 1
+                
+                if valid_commits:
+                    logger.info(
+                        f"Valid commits after quality check: {len(valid_commits)} passed, "
+                        f"{len(quality_checked_commits)} failed quality check"
+                    )
+                    if len(valid_commits) <= 5:
+                        logger.info(f"Passed commits: {valid_commits}")
+                    else:
+                        logger.info(f"Passed commits (first 5): {valid_commits[:5]}")
+                
+                if quality_checked_commits and len(quality_checked_commits) <= 5:
+                    logger.info(f"Failed quality check commits: {quality_checked_commits}")
                 
                 # Log detailed information for debugging
                 logger.info(
@@ -404,12 +620,12 @@ class Monitor:
             # Return None if day still active and no commits yet (caller should handle this)
             if passed is None:
                 # Day still active, no commits yet - don't mark as failed
-                return None
-            return passed
+                return (None, checked_commit_shas)
+            return (passed, checked_commit_shas)
 
         except Exception as e:
             logger.error(f"Error verifying GitHub commits: {e}", exc_info=True)
-            return False
+            return (False, [])
 
     async def verify_screentime(self, pool_id: int, wallet: str, day: int, pool: Optional[Dict[str, Any]] = None) -> bool:
         """
@@ -1211,8 +1427,9 @@ class Monitor:
                                     continue
 
                                 # Route verification based on lifestyle habit type
+                                checked_commit_shas = []
                                 if habit_type == "github_commits":
-                                    passed = await self.verify_github_commits(
+                                    passed, checked_commit_shas = await self.verify_github_commits(
                                         pool, participant, current_day
                                     )
                                 elif habit_type == "screen_time":
@@ -1259,16 +1476,22 @@ class Monitor:
                                     
                                     if not existing_verifications:
                                         # Store new verification (only if day ended or user passed)
+                                        proof_data = {
+                                            "verified_at": datetime.now(timezone.utc).isoformat(),
+                                            "habit_type": habit_type
+                                        }
+                                        # Store checked commit SHAs for GitHub commits to avoid re-checking
+                                        if habit_type == "github_commits" and checked_commit_shas:
+                                            # Merge with any previously checked commits
+                                            proof_data["checked_commit_shas"] = checked_commit_shas
+                                        
                                         verification_data = {
                                             "pool_id": pool_id,
                                             "participant_wallet": wallet,
                                             "day": current_day,
                                             "passed": passed,
                                             "verification_type": habit_type or "lifestyle_habit",
-                                            "proof_data": {
-                                                "verified_at": datetime.now(timezone.utc).isoformat(),
-                                                "habit_type": habit_type
-                                            }
+                                            "proof_data": proof_data
                                         }
                                         await execute_query(
                                             table="verifications",
@@ -1283,7 +1506,23 @@ class Monitor:
                                         # Update existing verification if result changed
                                         existing = existing_verifications[0]
                                         existing_passed = existing.get("passed")
+                                        existing_proof = existing.get("proof_data") or {}
+                                        existing_checked_shas = set(existing_proof.get("checked_commit_shas", []))
+                                        
+                                        # Merge new checked SHAs with existing ones
+                                        if habit_type == "github_commits" and checked_commit_shas:
+                                            existing_checked_shas.update(checked_commit_shas)
+                                        
+                                        update_data = {}
                                         if existing_passed != passed:
+                                            update_data["passed"] = passed
+                                        
+                                        # Update proof_data with merged checked SHAs
+                                        if habit_type == "github_commits" and existing_checked_shas:
+                                            existing_proof["checked_commit_shas"] = list(existing_checked_shas)
+                                            update_data["proof_data"] = existing_proof
+                                        
+                                        if update_data:
                                             await execute_query(
                                                 table="verifications",
                                                 operation="update",
@@ -1292,7 +1531,7 @@ class Monitor:
                                                     "participant_wallet": wallet,
                                                     "day": current_day
                                                 },
-                                                data={"passed": passed}
+                                                data=update_data
                                             )
                                             logger.info(
                                                 f"Updated verification in database: pool={pool_id}, "
