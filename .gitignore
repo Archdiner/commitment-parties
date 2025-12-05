@@ -94,6 +94,10 @@ coverage/
 scripts/delete_all_pools.py
 scripts/verify_deletion.py
 
+# Tweet generation scripts
+scripts/generate_*_tweet.py
+scripts/generate_*_tweets.py
+
 # Database
 *.db
 *.sqlite
