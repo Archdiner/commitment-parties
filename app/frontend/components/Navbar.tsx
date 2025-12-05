@@ -11,70 +11,11 @@ export const Navbar = () => {
   const [isConnected, setIsConnected] = useState(false);
   const [walletAddress, setWalletAddress] = useState('');
 
-  // Helper to get a Solana provider (Phantom or compatible)
-  const getProvider = (): any | null => {
-    if (typeof window === 'undefined') return null;
-    const anyWindow = window as any;
-
-    if (anyWindow?.phantom?.solana) {
-      return anyWindow.phantom.solana;
-    }
-    if (anyWindow?.solana) {
-      return anyWindow.solana;
-    }
-    return null;
-  };
-
   useEffect(() => {
-    // 1) Hydrate from localStorage (our own persisted value)
     const saved = getPersistedWalletAddress();
     if (saved) {
       setIsConnected(true);
       setWalletAddress(saved);
-    }
-
-    // 2) Try to auto-connect with provider if it's already trusted
-    const provider = getProvider();
-    if (provider) {
-      try {
-        // Phantom convention: onlyIfTrusted=true will not trigger a popup
-        provider
-          .connect({ onlyIfTrusted: true })
-          .then((resp: any) => {
-            const pk =
-              resp?.publicKey?.toString?.() ??
-              provider.publicKey?.toString?.();
-            if (pk) {
-              setIsConnected(true);
-              setWalletAddress(pk);
-              persistWalletAddress(pk);
-            }
-          })
-          .catch(() => {
-            // ignore if not yet trusted
-          });
-
-        // Listen for future connects (e.g. user approves later)
-        provider.on?.('connect', (pubkey: any) => {
-          const pk =
-            pubkey?.toString?.() ??
-            provider.publicKey?.toString?.();
-          if (pk) {
-            setIsConnected(true);
-            setWalletAddress(pk);
-            persistWalletAddress(pk);
-          }
-        });
-
-        // Listen for disconnects
-        provider.on?.('disconnect', () => {
-          setIsConnected(false);
-          setWalletAddress('');
-          clearPersistedWalletAddress();
-        });
-      } catch (e) {
-        console.warn('Auto-connect to wallet failed:', e);
-      }
     }
   }, []);
 
@@ -87,27 +28,22 @@ export const Navbar = () => {
     }
 
     try {
-      const provider = getProvider();
-
-      if (!provider) {
-        alert("Please install Phantom Wallet to connect.\n\nPhantom is a free wallet app (like a digital bank account).\nYou can install it from phantom.app - it takes just 2 minutes!");
+      const { solana } = window as typeof window & {
+        solana?: {
+          connect: () => Promise<{ publicKey: { toString: () => string } }>;
+        };
+      };
+      if (!solana) {
+        alert("Please install Phantom Wallet.");
         return;
       }
-
-      const response = await provider.connect();
-      const pubKey =
-        response?.publicKey?.toString?.() ??
-        provider.publicKey?.toString?.();
-      if (!pubKey) {
-        throw new Error("Failed to read wallet public key from Phantom.");
-      }
-
+      const response = await solana.connect();
+      const pubKey = response.publicKey.toString();
       setWalletAddress(pubKey);
       setIsConnected(true);
       persistWalletAddress(pubKey);
     } catch (err) {
-      console.error("Failed to connect wallet:", err);
-      alert("Failed to connect wallet. Please check Phantom and try again.");
+      console.error(err);
     }
   };
 
@@ -162,4 +98,3 @@ export const Navbar = () => {
     </nav>
   );
 };
-

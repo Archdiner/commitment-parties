@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
 import { ArrowRight, Search, Filter, Info } from 'lucide-react';
 import { getPools } from '@/lib/api';
 import { Badge } from '@/components/ui/Badge';
@@ -12,17 +11,8 @@ export default function PoolsPage() {
   const [pools, setPools] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('ALL');
-  const searchParams = useSearchParams();
 
   useEffect(() => {
-    // Initialize filter from query param (e.g. ?type=crypto or ?type=lifestyle)
-    const type = searchParams.get('type');
-    if (type === 'crypto') {
-      setFilter('CRYPTO');
-    } else if (type === 'lifestyle') {
-      setFilter('LIFESTYLE');
-    }
-
     async function loadPools() {
       try {
         const data = await getPools();

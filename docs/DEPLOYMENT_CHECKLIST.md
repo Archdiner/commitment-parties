@@ -44,20 +44,27 @@ Use this checklist to track your deployment progress.
 
 ## Step 3: Backend API
 
-**Platform**: [ ] Railway [ ] Render [ ] Fly.io [ ] VPS [ ] Other: ________
+**Platform**: [x] Railway (Recommended) [ ] Render [ ] Fly.io [ ] VPS [ ] Other: ________
 
-- [ ] Create account on chosen platform
-- [ ] Connect GitHub repository
+**Why Railway?** Easiest GitHub auto-deploy, zero-config Python detection, best developer experience.
+
+- [ ] Create Railway account at [railway.app](https://railway.app)
+- [ ] Sign up with GitHub (for seamless integration)
+- [ ] Create new project → Deploy from GitHub repo
+- [ ] Add new service → Select your repository
 - [ ] Set root directory to `backend`
-- [ ] Configure build/start commands
-- [ ] Set all environment variables:
-  - [ ] HOST, PORT, ENVIRONMENT
+- [ ] Verify build/start commands (usually auto-detected):
+  - Build: `pip install -r requirements.txt`
+  - Start: `uvicorn main:app --host 0.0.0.0 --port $PORT`
+- [ ] Set all environment variables in Variables tab:
+  - [ ] HOST, PORT, ENVIRONMENT, DEBUG
   - [ ] DATABASE_URL, SUPABASE_URL, SUPABASE_KEY
   - [ ] SOLANA_RPC_URL, PROGRAM_ID
   - [ ] CORS_ORIGINS (update after frontend)
   - [ ] GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET (if using)
   - [ ] LLM_API_KEY (if using)
-- [ ] Deploy
+- [ ] Deploy (automatic on git push, or manual trigger)
+- [ ] Verify GitHub auto-deploy is working (push a test commit)
 - [ ] Test: `curl https://your-backend-url/health`
 - [ ] Test API docs: `https://your-backend-url/docs`
 

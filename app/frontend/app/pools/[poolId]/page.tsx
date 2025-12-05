@@ -14,6 +14,9 @@ import { getPersistedWalletAddress } from '@/lib/wallet';
 import { getConnection } from '@/lib/solana';
 import { Transaction } from '@solana/web3.js';
 
+// Force dynamic rendering - this page depends on route params
+export const dynamic = 'force-dynamic';
+
 // Helper for calling Solana Actions join-pool endpoint
 async function buildJoinPoolTransaction(
   poolId: number,
@@ -88,7 +91,10 @@ export default function PoolDetailPage() {
       if (typeof window === 'undefined') {
         throw new Error('Window is not available.');
       }
-      const anyWindow = window as any;
+      const anyWindow = window as typeof window & {
+        phantom?: { solana?: any };
+        solana?: any;
+      };
       const provider =
         (anyWindow.phantom && anyWindow.phantom.solana) ||
         anyWindow.solana ||
@@ -169,6 +175,13 @@ export default function PoolDetailPage() {
 
   const spotsRemaining = pool.max_participants - pool.participant_count;
 
+  const isHodl = pool.goal_type === 'hodl_token';
+  const goalMetadata = (pool.goal_metadata || {}) as any;
+  const hodlTokenMint: string | undefined = goalMetadata.token_mint;
+  const hodlMinBalanceRaw: number | undefined = goalMetadata.min_balance;
+  const hodlMinBalanceTokens =
+    typeof hodlMinBalanceRaw === 'number' ? hodlMinBalanceRaw / 1_000_000_000 : undefined;
+
   return (
     <div className="min-h-screen bg-[#050505] text-white pt-24 px-6 pb-20">
       <div className="max-w-4xl mx-auto">
@@ -237,6 +250,39 @@ export default function PoolDetailPage() {
                 </div>
               </div>
             </div>
+
+            {isHodl && (
+              <div className="mt-6 p-4 border border-emerald-500/40 bg-emerald-500/5 rounded-xl space-y-2">
+                <div className="text-[10px] uppercase tracking-widest text-emerald-400">
+                  HODL Requirement
+                </div>
+                <p className="text-xs text-gray-300">
+                  This is a HODL challenge. To stay in the challenge, you must keep at least{' '}
+                  {hodlMinBalanceTokens !== undefined ? (
+                    <span className="font-mono text-emerald-300">
+                      {hodlMinBalanceTokens.toLocaleString(undefined, {
+                        maximumFractionDigits: 9,
+                      })}{' '}
+                    </span>
+                  ) : (
+                    <span className="font-mono text-emerald-300">the required</span>
+                  )}
+                  tokens of the asset below in your connected wallet for the entire duration.
+                </p>
+                {hodlTokenMint && (
+                  <div className="text-[11px] text-gray-400">
+                    <span className="uppercase tracking-widest text-gray-500 mr-2">
+                      Token Mint
+                    </span>
+                    <span className="font-mono break-all text-gray-200">{hodlTokenMint}</span>
+                  </div>
+                )}
+                <p className="text-[11px] text-amber-400">
+                  You must already hold at least this amount when you join; otherwise, your join
+                  will be rejected.
+                </p>
+              </div>
+            )}
 
             <div className="mt-8 p-4 border border-white/10 bg-white/[0.02] rounded-xl flex items-start gap-3">
               <ShieldCheck className="w-5 h-5 text-emerald-500 mt-0.5 flex-shrink-0" />

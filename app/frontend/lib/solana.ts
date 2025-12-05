@@ -291,100 +291,61 @@ export async function signAndSendTransaction(
   instruction: TransactionInstruction,
   wallet: any // Phantom wallet object (window.solana) with publicKey
 ): Promise<string> {
-  // Build transaction
+  // Basic sanity check
+  if (!wallet || !wallet.publicKey) {
+    throw new Error('Wallet not connected. Please connect your Solana wallet.');
+  }
+
+  // Build transaction with single instruction
   const transaction = new Transaction().add(instruction);
   
-  // Get recent blockhash - this is critical for Phantom
+  // Fetch recent blockhash (critical for wallet signing)
   const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
   transaction.recentBlockhash = blockhash;
   transaction.feePayer = wallet.publicKey;
   
-  // Validate transaction before sending
+  let signature: string;
+
   try {
-    // This will throw if transaction is invalid
-    transaction.serialize({ requireAllSignatures: false, verifySignatures: false });
-  } catch (error: any) {
-    throw new Error(`Invalid transaction: ${error.message}`);
-  }
-  
-  // Phantom wallet's sendTransaction method (this is the standard way)
-  // It handles both signing and sending in one call
-  if (wallet.sendTransaction && typeof wallet.sendTransaction === 'function') {
-    try {
-      // Phantom's sendTransaction signature: sendTransaction(transaction, connection, options)
-      const signature = await wallet.sendTransaction(transaction, connection, {
+    // Preferred path: modern Phantom / wallet adapters expose sendTransaction
+    if (typeof wallet.sendTransaction === 'function') {
+      signature = await wallet.sendTransaction(transaction, connection, {
         skipPreflight: false,
         maxRetries: 3,
         preflightCommitment: 'confirmed',
       });
-      
-      // Wait for confirmation with timeout
-      const confirmation = await connection.confirmTransaction({
-        signature,
-        blockhash,
-        lastValidBlockHeight,
-      }, 'confirmed');
-      
-      if (confirmation.value.err) {
-        throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
-      }
-      
-      return signature;
-    } catch (error: any) {
-      // Provide more detailed error information
-      const errorMessage = error.message || error.toString() || 'Unknown error';
-      
-      // If it's a user rejection, throw a user-friendly error
-      if (errorMessage.includes('User rejected') || errorMessage.includes('User cancelled')) {
-        throw new Error('Transaction was cancelled by user');
-      }
-      
-      // If sendTransaction fails with "Unexpected error", it might be a transaction format issue
-      if (errorMessage.includes('Unexpected error')) {
-        console.error('Phantom wallet unexpected error. Transaction details:', {
-          instruction: {
-            programId: instruction.programId.toString(),
-            keys: instruction.keys.map(k => ({
-              pubkey: k.pubkey.toString(),
-              isSigner: k.isSigner,
-              isWritable: k.isWritable,
-            })),
-            dataLength: instruction.data.length,
-          },
-          transaction: {
-            feePayer: transaction.feePayer?.toString(),
-            recentBlockhash: transaction.recentBlockhash?.toString(),
-            instructions: transaction.instructions.length,
-          },
-        });
-        throw new Error('Transaction format error. Please check that all accounts are valid and the program is deployed.');
-      }
-      
-      // Re-throw with original message
-      throw new Error(`Transaction failed: ${errorMessage}`);
     }
-  } 
-  // Fallback: sign first, then send via RPC
-  else if (wallet.signTransaction && typeof wallet.signTransaction === 'function') {
-    const signed = await wallet.signTransaction(transaction);
-    const signature = await connection.sendRawTransaction(signed.serialize(), {
-      skipPreflight: false,
-      maxRetries: 3,
-    });
-    
-    const confirmation = await connection.confirmTransaction({
-      signature,
-      blockhash,
-      lastValidBlockHeight,
-    }, 'confirmed');
-    
+    // Fallback: older or custom adapters that only expose signTransaction
+    else if (typeof wallet.signTransaction === 'function') {
+      const signed = await wallet.signTransaction(transaction);
+      signature = await connection.sendRawTransaction(signed.serialize(), {
+        skipPreflight: false,
+        maxRetries: 3,
+      });
+    } else {
+      throw new Error('Connected wallet does not support sending transactions.');
+    }
+
+    // Wait for confirmation
+    const confirmation = await connection.confirmTransaction(
+      { signature, blockhash, lastValidBlockHeight },
+      'confirmed',
+    );
+
     if (confirmation.value.err) {
       throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
     }
-    
+
     return signature;
-  } else {
-    throw new Error('Phantom wallet sendTransaction or signTransaction method not available. Make sure Phantom is installed and connected.');
+  } catch (error: any) {
+    const msg = error?.message || error?.toString() || 'Unknown error';
+
+    if (msg.toLowerCase().includes('user rejected') || msg.toLowerCase().includes('cancel')) {
+      throw new Error('Transaction was cancelled by the user.');
+    }
+
+    console.error('Error sending Solana transaction:', { error: msg });
+    throw new Error(`Transaction failed: ${msg}`);
   }
 }
 

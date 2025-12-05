@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     
     # CORS (comma-separated string, will be split)
-    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:3001,https://commitment-agent.vercel.app"
+    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:3001,https://commitment-parties.vercel.app,https://commitment-agent.vercel.app"
     
     @property
     def cors_origins_list(self) -> List[str]:
