@@ -655,9 +655,14 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
         is_at_midway = 45 <= percent_complete <= 75
         
         if is_at_midway:
-            logger.debug(
+            logger.info(
                 f"Pool {pool.get('pool_id')} is at midway point: "
                 f"{percent_complete:.1f}% complete ({elapsed_time}/{total_duration} seconds)"
+            )
+        else:
+            logger.debug(
+                f"Pool {pool.get('pool_id')} not at midway: "
+                f"{percent_complete:.1f}% complete (needs 45-75%)"
             )
         
         return is_at_midway
@@ -928,21 +933,34 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
             
             status = pool.get("status")
             
-            # Skip immediate start pools for POOL_CREATED events
+            # Handle POOL_CREATED events
             if event_type is SocialEventType.POOL_CREATED:
                 recruitment_hours = pool.get("recruitment_period_hours", 24)
                 scheduled_start = pool.get("scheduled_start_time")
-                # Immediate start pools have recruitment_period_hours == 0 or no scheduled_start_time
-                if recruitment_hours == 0 or scheduled_start is None:
-                    logger.debug(
-                        f"Skipping POOL_CREATED tweet for pool {pool_id} "
-                        f"(immediate start pool - recruitment_hours={recruitment_hours}, "
-                        f"scheduled_start={scheduled_start})"
-                    )
+                is_public = pool.get("is_public", True)
+                
+                # Check if pool is public (required for tweets)
+                if not is_public:
+                    logger.debug(f"Skipping POOL_CREATED tweet for pool {pool_id} (not public)")
                     return None
+                
+                # Allow both scheduled and immediate start pools to get POOL_CREATED tweets
+                # Immediate start pools (recruitment_hours == 0) should still get a tweet when created
                 if status not in ("pending", "active"):
                     logger.debug(f"Skipping event {event_type} for pool {pool_id} (status={status})")
                     return None
+                
+                # Log what type of pool this is
+                if recruitment_hours == 0 or scheduled_start is None:
+                    logger.info(
+                        f"Queuing POOL_CREATED tweet for immediate start pool {pool_id} "
+                        f"(recruitment_hours={recruitment_hours}, status={status})"
+                    )
+                else:
+                    logger.info(
+                        f"Queuing POOL_CREATED tweet for scheduled pool {pool_id} "
+                        f"(recruitment_hours={recruitment_hours}, scheduled_start={scheduled_start}, status={status})"
+                    )
             elif event_type is SocialEventType.POOL_MIDWAY:
                 if status not in ("pending", "active"):
                     logger.debug(f"Skipping event {event_type} for pool {pool_id} (status={status})")
@@ -975,6 +993,7 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
         Handles rate limits, retries, and exponential backoff.
         """
         if self.queue_worker_running:
+            logger.warning("Tweet queue worker already running, skipping duplicate start")
             return
         self.queue_worker_running = True
         logger.info("Tweet queue worker started")
@@ -995,7 +1014,10 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
                         self.tweet_queue.get(), 
                         timeout=60.0
                     )
+                    logger.debug(f"Processing tweet task: pool {task.pool_id}, event {task.event_type.value}")
                 except asyncio.TimeoutError:
+                    # No tasks in queue - this is normal, just continue waiting
+                    logger.debug(f"Queue worker waiting for tasks (queue size: {self.tweet_queue.qsize()})")
                     continue
                 
                 # Check if task should be retried now
@@ -1319,8 +1341,43 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
                 
                 logger.info(f"Found {len(pools)} active pools to potentially post about")
                 
+                # First, check for newly created pools that haven't been tweeted about yet
+                # This catches immediate start pools and scheduled pools that were activated before getting a tweet
+                new_pool_count = 0
+                for pool in pools:
+                    pool_id = pool.get("pool_id")
+                    if not pool_id:
+                        continue
+                    
+                    is_public = pool.get("is_public", True)
+                    if not is_public:
+                        continue
+                    
+                    # Check if we've already posted a POOL_CREATED tweet for this pool
+                    key = (pool_id, SocialEventType.POOL_CREATED)
+                    last_created = self.last_event_post_time.get(key, 0.0)
+                    
+                    # If pool was created recently (within last 24 hours) and we haven't tweeted about it
+                    start_time = pool.get("start_timestamp")
+                    if start_time and time.time() - start_time < 86400:  # Created within last 24 hours
+                        if last_created == 0.0:  # Never posted about this pool
+                            logger.info(f"Pool {pool_id}: Newly created, queuing POOL_CREATED tweet")
+                            result = await self.post_event_update(
+                                SocialEventType.POOL_CREATED,
+                                pool_id
+                            )
+                            if result:
+                                new_pool_count += 1
+                                await asyncio.sleep(5)  # Small delay between queuing
+                            else:
+                                logger.warning(f"Pool {pool_id}: Failed to queue POOL_CREATED tweet")
+                
                 # Queue updates for pools that are actually at the midway point
                 queued_count = 0
+                skipped_recent = 0
+                skipped_not_midway = 0
+                skipped_no_timestamps = 0
+                
                 for pool in pools:
                     pool_id = pool.get("pool_id")
                     if not pool_id:
@@ -1330,13 +1387,38 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
                     key = (pool_id, SocialEventType.POOL_MIDWAY)
                     last = self.last_event_post_time.get(key, 0.0)
                     if time.time() - last < self.post_interval:
+                        skipped_recent += 1
+                        logger.debug(f"Pool {pool_id}: Skipped (posted {int(time.time() - last)}s ago, need {self.post_interval}s)")
                         continue  # Skip if posted recently
+                    
+                    # Check if pool has required timestamps
+                    start_time = pool.get("start_timestamp")
+                    end_time = pool.get("end_timestamp")
+                    if not start_time or not end_time:
+                        skipped_no_timestamps += 1
+                        logger.debug(f"Pool {pool_id}: Skipped (missing timestamps: start={start_time}, end={end_time})")
+                        continue
                     
                     # Check if pool is actually at the midway point
                     if not self._is_pool_at_midway(pool):
+                        # Log why it's not at midway
+                        current_time = int(time.time())
+                        total_duration = end_time - start_time
+                        elapsed_time = current_time - start_time
+                        if total_duration > 0 and elapsed_time >= 0:
+                            percent_complete = (elapsed_time / total_duration) * 100
+                            skipped_not_midway += 1
+                            logger.debug(
+                                f"Pool {pool_id}: Skipped (not at midway: {percent_complete:.1f}% complete, "
+                                f"needs 45-75%)"
+                            )
+                        else:
+                            skipped_not_midway += 1
+                            logger.debug(f"Pool {pool_id}: Skipped (invalid duration: {total_duration}s, elapsed: {elapsed_time}s)")
                         continue  # Skip if not at midway point
                     
                     # Queue a midway update (non-blocking)
+                    logger.info(f"Pool {pool_id}: Queuing midway update")
                     result = await self.post_event_update(
                         SocialEventType.POOL_MIDWAY,
                         pool_id
@@ -1345,11 +1427,21 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
                         queued_count += 1
                         # Small delay between queuing to avoid overwhelming queue
                         await asyncio.sleep(5)  # 5 seconds between queuing
+                    else:
+                        logger.warning(f"Pool {pool_id}: Failed to queue midway update (post_event_update returned None)")
+                
+                if new_pool_count > 0:
+                    logger.info(f"Queued {new_pool_count} new pool (POOL_CREATED) tweet(s)")
                 
                 if queued_count > 0:
-                    logger.info(f"Queued {queued_count} pool updates (queue size: {self.tweet_queue.qsize()})")
+                    logger.info(f"Queued {queued_count} midway pool update(s) (queue size: {self.tweet_queue.qsize()})")
                 else:
-                    logger.debug("No pool updates queued (all pools posted recently)")
+                    logger.info(
+                        f"No midway updates queued: "
+                        f"{skipped_recent} posted recently, "
+                        f"{skipped_not_midway} not at midway, "
+                        f"{skipped_no_timestamps} missing timestamps"
+                    )
                 
                 # Sleep for 1 hour before next check
                 await asyncio.sleep(3600)
