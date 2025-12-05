@@ -114,8 +114,8 @@ agent: Optional[CommitmentAgent] = None
 def signal_handler(sig, frame):
     """Handle shutdown signals"""
     logger.info("Received shutdown signal")
-    if agent:
-        asyncio.create_task(agent.stop())
+    # Signal handler runs in main thread, but we need to stop the event loop
+    # The finally block in main() will handle cleanup
     sys.exit(0)
 
 

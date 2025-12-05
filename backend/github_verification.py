@@ -320,23 +320,15 @@ async def verify_github_commits(
                         continue
                     
                     # Parse the ISO 8601 timestamp and compare as datetime objects
-                        try:
-                            # GitHub timestamps are in UTC, convert to Eastern for comparison
-                            event_time_utc = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
-                            if event_time_utc.tzinfo is None:
-                                event_time_utc = event_time_utc.replace(tzinfo=timezone.utc)
-                            # Convert to Eastern Time for comparison with challenge day windows
-                            from utils.timezone import utc_to_eastern
-                            event_time = utc_to_eastern(event_time_utc)
-                    except (ValueError, AttributeError):
-                        if not (start_str <= created_at_str <= end_str):
-                            push_events_out_of_range.append({
-                                "time": created_at_str,
-                                "repo": event.get("repo", {}).get("name", "unknown")
-                            })
-                            continue
-                        event_time = None
-                    else:
+                    try:
+                        # GitHub timestamps are in UTC, convert to Eastern for comparison
+                        event_time_utc = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
+                        if event_time_utc.tzinfo is None:
+                            event_time_utc = event_time_utc.replace(tzinfo=timezone.utc)
+                        # Convert to Eastern Time for comparison with challenge day windows
+                        from utils.timezone import utc_to_eastern
+                        event_time = utc_to_eastern(event_time_utc)
+                        
                         if not (start_of_day <= event_time < end_of_day):
                             push_events_out_of_range.append({
                                 "time": created_at_str,
@@ -344,6 +336,15 @@ async def verify_github_commits(
                                 "event_time": event_time.isoformat()
                             })
                             continue
+                    except (ValueError, AttributeError):
+                        # Fallback to string comparison if datetime parsing fails
+                        if not (start_str <= created_at_str <= end_str):
+                            push_events_out_of_range.append({
+                                "time": created_at_str,
+                                "repo": event.get("repo", {}).get("name", "unknown")
+                            })
+                            continue
+                        event_time = None
                     
                     payload = event.get("payload") or {}
                     commits = payload.get("commits") or []
