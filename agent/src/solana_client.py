@@ -45,30 +45,50 @@ class SolanaClient:
             self.client = AsyncClient(self.rpc_url, commitment=Confirmed)
             
             # Load agent wallet from environment configuration
-            if settings.AGENT_KEYPAIR_PATH:
-                expanded = os.path.expanduser(settings.AGENT_KEYPAIR_PATH)
-                with open(expanded, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                if not isinstance(data, list):
-                    raise ValueError("Keypair file must contain a JSON array of integers")
-                self._keypair = Keypair.from_bytes(bytes(data))
-                logger.info(f"Loaded agent keypair from file: {expanded}")
-            elif settings.AGENT_PRIVATE_KEY:
+            # Prioritize AGENT_PRIVATE_KEY (for deployment) over file path (for local development)
+            if settings.AGENT_PRIVATE_KEY:
                 try:
                     data = json.loads(settings.AGENT_PRIVATE_KEY)
+                    if not isinstance(data, list):
+                        raise ValueError("AGENT_PRIVATE_KEY must be a JSON array of integers")
+                    self._keypair = Keypair.from_bytes(bytes(data))
+                    logger.info("Loaded agent keypair from AGENT_PRIVATE_KEY")
                 except json.JSONDecodeError as exc:
                     raise ValueError(
                         "AGENT_PRIVATE_KEY must be a JSON array string of 64 integers"
                     ) from exc
-                if not isinstance(data, list):
-                    raise ValueError("AGENT_PRIVATE_KEY must be a JSON array of integers")
-                self._keypair = Keypair.from_bytes(bytes(data))
-                logger.info("Loaded agent keypair from AGENT_PRIVATE_KEY")
-            else:
-                raise ValueError(
-                    "Agent wallet not configured. "
-                    "Set AGENT_KEYPAIR_PATH or AGENT_PRIVATE_KEY in the environment."
-                )
+                except Exception as e:
+                    logger.warning(f"Failed to load keypair from AGENT_PRIVATE_KEY: {e}. Trying AGENT_KEYPAIR_PATH...")
+                    # Fall through to try file path
+                    self._keypair = None
+            
+            # If keypair not loaded from AGENT_PRIVATE_KEY, try file path
+            if self._keypair is None:
+                if settings.AGENT_KEYPAIR_PATH:
+                    expanded = os.path.expanduser(settings.AGENT_KEYPAIR_PATH)
+                    if os.path.exists(expanded):
+                        try:
+                            with open(expanded, "r", encoding="utf-8") as f:
+                                data = json.load(f)
+                            if not isinstance(data, list):
+                                raise ValueError("Keypair file must contain a JSON array of integers")
+                            self._keypair = Keypair.from_bytes(bytes(data))
+                            logger.info(f"Loaded agent keypair from file: {expanded}")
+                        except Exception as e:
+                            raise ValueError(
+                                f"Failed to load keypair from file {expanded}: {e}. "
+                                "Set AGENT_PRIVATE_KEY in the environment instead."
+                            ) from e
+                    else:
+                        raise ValueError(
+                            f"Keypair file not found at {expanded}. "
+                            "Set AGENT_PRIVATE_KEY in the environment instead."
+                        )
+                else:
+                    raise ValueError(
+                        "Agent wallet not configured. "
+                        "Set AGENT_PRIVATE_KEY (recommended for deployment) or AGENT_KEYPAIR_PATH (for local development) in the environment."
+                    )
 
             self.wallet = Wallet(self._keypair)
             

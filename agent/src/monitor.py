@@ -18,6 +18,10 @@ from verify import Verifier
 from distribute import Distributor
 from database import execute_query
 from config import settings
+from timezone import (
+    get_eastern_now, get_eastern_timestamp, calculate_current_day,
+    timestamp_to_eastern, get_challenge_day_window, utc_to_eastern, EASTERN_TZ
+)
 
 logger = logging.getLogger(__name__)
 
@@ -38,28 +42,16 @@ class Monitor:
     def _calculate_current_day(self, start_timestamp: int) -> Optional[int]:
         """
         Calculate the current day number based on pool start timestamp.
-        Uses 24-hour periods from the exact start time (not calendar days).
+        Uses 24-hour periods from the exact start time in Eastern Time.
         
         Args:
             start_timestamp: Unix timestamp when pool started
         
         Returns:
-            Current day number (1-indexed), or None if pool hasn't started yet
+            Current day number (1-indexed, minimum 1), or None if pool hasn't started yet
         """
         try:
-            current_time = int(time.time())
-            if current_time < start_timestamp:
-                return None  # Pool hasn't started yet
-            
-            # Calculate days elapsed using 24-hour periods (86400 seconds = 24 hours)
-            # Day 1 = start_timestamp to start_timestamp + 86400
-            # Day 2 = start_timestamp + 86400 to start_timestamp + 172800
-            # etc.
-            seconds_elapsed = current_time - start_timestamp
-            days_elapsed = seconds_elapsed // 86400  # 86400 seconds per day
-            current_day = days_elapsed + 1
-            
-            return current_day
+            return calculate_current_day(start_timestamp)
         except Exception as e:
             logger.error(f"Error calculating current day: {e}", exc_info=True)
             return None
@@ -278,18 +270,17 @@ Respond with only "yes" or "no"."""
                 min_lines_per_commit
             )
 
-            # Calculate the UTC day window for this challenge day
+            # Calculate the Eastern Time day window for this challenge day
             # Day 1 = 24 hours from start_timestamp, Day 2 = next 24 hours, etc.
             # This ensures each challenge day is exactly 24 hours from the pool start time
-            start_datetime = datetime.fromtimestamp(start_timestamp, tz=timezone.utc)
-            challenge_day_start = start_datetime + timedelta(days=day - 1)  # day-1 because day is 1-indexed
-            challenge_day_end = challenge_day_start + timedelta(days=1)
+            challenge_day_start, challenge_day_end = get_challenge_day_window(start_timestamp, day)
+            start_datetime = timestamp_to_eastern(start_timestamp)
             
             start_of_day = challenge_day_start
             end_of_day = challenge_day_end
             
             # Check if we're checking a future day (shouldn't happen, but safety check)
-            current_time = datetime.now(timezone.utc)
+            current_time = get_eastern_now()
             if current_time < challenge_day_start:
                 logger.warning(
                     f"Attempting to verify Day {day} before it has started! "
@@ -306,7 +297,7 @@ Respond with only "yes" or "no"."""
             time_remaining = (challenge_day_end - current_time).total_seconds() / 3600 if not day_has_ended else 0
             
             logger.info(
-                "Checking commits for challenge day %s: %s to %s (UTC) "
+                "Checking commits for challenge day %s: %s to %s (Eastern Time) "
                 "(24-hour window from pool start: %s, current time: %s, "
                 "day_ended=%s, time_remaining=%.1fh)",
                 day,
@@ -360,9 +351,12 @@ Respond with only "yes" or "no"."""
                         
                         # Parse the ISO 8601 timestamp and compare as datetime objects
                         try:
-                            event_time = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
-                            if event_time.tzinfo is None:
-                                event_time = event_time.replace(tzinfo=timezone.utc)
+                            # GitHub timestamps are in UTC, convert to Eastern for comparison
+                            event_time_utc = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
+                            if event_time_utc.tzinfo is None:
+                                event_time_utc = event_time_utc.replace(tzinfo=timezone.utc)
+                            # Convert to Eastern Time for comparison with challenge day windows
+                            event_time = utc_to_eastern(event_time_utc)
                         except (ValueError, AttributeError):
                             if not (start_str <= created_at_str <= end_str):
                                 push_events_out_of_range.append({
@@ -654,10 +648,8 @@ Respond with only "yes" or "no"."""
                 logger.warning(f"Pool {pool_id} missing start_timestamp")
                 return False
             
-            # Calculate day boundaries
-            start_datetime = datetime.fromtimestamp(start_timestamp, tz=timezone.utc)
-            challenge_day_start = start_datetime + timedelta(days=day - 1)
-            challenge_day_end = challenge_day_start + timedelta(days=1)
+            # Calculate day boundaries in Eastern Time
+            challenge_day_start, challenge_day_end = get_challenge_day_window(start_timestamp, day)
             
             results = await execute_query(
                 table="checkins",
@@ -690,16 +682,22 @@ Respond with only "yes" or "no"."""
                 # Parse timestamp (could be string or datetime)
                 if isinstance(checkin_timestamp, str):
                     try:
-                        checkin_time = datetime.fromisoformat(checkin_timestamp.replace('Z', '+00:00'))
-                        if checkin_time.tzinfo is None:
-                            checkin_time = checkin_time.replace(tzinfo=timezone.utc)
+                        # Parse timestamp and convert to Eastern Time
+                        checkin_time_utc = datetime.fromisoformat(checkin_timestamp.replace('Z', '+00:00'))
+                        if checkin_time_utc.tzinfo is None:
+                            checkin_time_utc = checkin_time_utc.replace(tzinfo=timezone.utc)
+                        checkin_time = utc_to_eastern(checkin_time_utc)
                     except (ValueError, AttributeError):
                         logger.warning(f"Could not parse check-in timestamp: {checkin_timestamp}")
                         checkin_time = None
                 elif isinstance(checkin_timestamp, datetime):
                     checkin_time = checkin_timestamp
                     if checkin_time.tzinfo is None:
-                        checkin_time = checkin_time.replace(tzinfo=timezone.utc)
+                        # Assume UTC if no timezone, then convert to Eastern
+                        checkin_time = utc_to_eastern(checkin_time.replace(tzinfo=timezone.utc))
+                    elif checkin_time.tzinfo != EASTERN_TZ:
+                        # Convert to Eastern if not already Eastern
+                        checkin_time = utc_to_eastern(checkin_time.astimezone(timezone.utc))
                 else:
                     checkin_time = None
                 
@@ -776,18 +774,12 @@ Respond with only "yes" or "no"."""
                 logger.warning("Pool %s hasn't started yet", pool.get("pool_id"))
                 return False
             
-            # Calculate which UTC calendar day corresponds to this challenge day
-            # Day 1 = the day the pool started
-            start_datetime = datetime.fromtimestamp(start_timestamp, tz=timezone.utc)
-            challenge_day_start_utc = datetime(
-                start_datetime.year, start_datetime.month, start_datetime.day, tzinfo=timezone.utc
-            ) + timedelta(days=current_day - 1)  # current_day - 1 because day is 1-indexed
-            
-            start_of_day = challenge_day_start_utc
-            end_of_day = challenge_day_start_utc + timedelta(days=1)
+            # Calculate day boundaries in Eastern Time
+            # Day 1 = first 24 hours from pool start
+            start_of_day, end_of_day = get_challenge_day_window(start_timestamp, current_day)
             
             logger.info(
-                "Checking commits for challenge day %s: %s to %s (UTC)",
+                "Checking commits for challenge day %s: %s to %s (Eastern Time)",
                 current_day,
                 start_of_day.isoformat(),
                 end_of_day.isoformat()
@@ -887,10 +879,8 @@ Respond with only "yes" or "no"."""
                 logger.warning(f"Pool {pool_id} missing start_timestamp")
                 return False
             
-            # Calculate day boundaries
-            start_datetime = datetime.fromtimestamp(start_timestamp, tz=timezone.utc)
-            challenge_day_start = start_datetime + timedelta(days=day - 1)
-            challenge_day_end = challenge_day_start + timedelta(days=1)
+            # Calculate day boundaries in Eastern Time
+            challenge_day_start, challenge_day_end = get_challenge_day_window(start_timestamp, day)
             
             # Query database for check-in
             results = await execute_query(
@@ -920,16 +910,22 @@ Respond with only "yes" or "no"."""
                 # Parse timestamp (could be string or datetime)
                 if isinstance(checkin_timestamp, str):
                     try:
-                        checkin_time = datetime.fromisoformat(checkin_timestamp.replace('Z', '+00:00'))
-                        if checkin_time.tzinfo is None:
-                            checkin_time = checkin_time.replace(tzinfo=timezone.utc)
+                        # Parse timestamp and convert to Eastern Time
+                        checkin_time_utc = datetime.fromisoformat(checkin_timestamp.replace('Z', '+00:00'))
+                        if checkin_time_utc.tzinfo is None:
+                            checkin_time_utc = checkin_time_utc.replace(tzinfo=timezone.utc)
+                        checkin_time = utc_to_eastern(checkin_time_utc)
                     except (ValueError, AttributeError):
                         logger.warning(f"Could not parse check-in timestamp: {checkin_timestamp}")
                         checkin_time = None
                 elif isinstance(checkin_timestamp, datetime):
                     checkin_time = checkin_timestamp
                     if checkin_time.tzinfo is None:
-                        checkin_time = checkin_time.replace(tzinfo=timezone.utc)
+                        # Assume UTC if no timezone, then convert to Eastern
+                        checkin_time = utc_to_eastern(checkin_time.replace(tzinfo=timezone.utc))
+                    elif checkin_time.tzinfo != EASTERN_TZ:
+                        # Convert to Eastern if not already Eastern
+                        checkin_time = utc_to_eastern(checkin_time.astimezone(timezone.utc))
                 else:
                     checkin_time = None
                 
@@ -1309,10 +1305,12 @@ Respond with only "yes" or "no"."""
                             
                             # First check if pool has started
                             if current_time < start_timestamp:
+                                start_dt = timestamp_to_eastern(start_timestamp)
+                                current_dt = timestamp_to_eastern(current_time)
                                 logger.debug(
                                     f"Pool {pool_id} hasn't started yet. "
-                                    f"Start: {datetime.fromtimestamp(start_timestamp, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}, "
-                                    f"Current: {datetime.fromtimestamp(current_time, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}"
+                                    f"Start: {start_dt.strftime('%Y-%m-%d %H:%M:%S %Z')}, "
+                                    f"Current: {current_dt.strftime('%Y-%m-%d %H:%M:%S %Z')}"
                                 )
                                 continue
                             
@@ -1337,11 +1335,9 @@ Respond with only "yes" or "no"."""
                                 logger.info(f"Pool {pool_id} hasn't started yet (scheduled: {scheduled_start}, start: {start_timestamp})")
                                 continue
                             
-                            # Calculate day boundaries and grace period
-                            start_datetime = datetime.fromtimestamp(start_timestamp, tz=timezone.utc)
-                            challenge_day_start = start_datetime + timedelta(days=current_day - 1)
-                            challenge_day_end = challenge_day_start + timedelta(days=1)
-                            current_datetime = datetime.now(timezone.utc)
+                            # Calculate day boundaries and grace period in Eastern Time
+                            challenge_day_start, challenge_day_end = get_challenge_day_window(start_timestamp, current_day)
+                            current_datetime = get_eastern_now()
                             
                             # Grace period after day ends (for verification processing only)
                             # Users must submit BEFORE day ends - grace period is NOT for new submissions
@@ -1537,7 +1533,7 @@ Respond with only "yes" or "no"."""
                                     if not existing_verifications:
                                         # Store new verification (only if day ended or user passed)
                                         proof_data = {
-                                            "verified_at": datetime.now(timezone.utc).isoformat(),
+                                            "verified_at": get_eastern_now().isoformat(),
                                             "habit_type": habit_type
                                         }
                                         # Store checked commit SHAs for GitHub commits to avoid re-checking

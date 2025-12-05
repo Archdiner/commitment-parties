@@ -18,6 +18,20 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+@router.options("/join-pool")
+async def options_join_pool():
+    """Handle CORS preflight requests for join-pool action"""
+    from fastapi.responses import Response
+    return Response(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        }
+    )
+
+
 @router.get(
     "/join-pool",
     summary="Describe join-pool Solana Action",
@@ -68,7 +82,7 @@ async def describe_join_pool(
         
         # Final fallback
         if not base_url:
-            base_url = "https://api.commitment-parties.xyz"
+            base_url = "https://commitment-backend.onrender.com"
         
         # Ensure it starts with http/https
         if not base_url.startswith("http"):
@@ -79,11 +93,12 @@ async def describe_join_pool(
 
         # Solana Actions JSON schema for Twitter/X Blinks
         # Reference: https://docs.solanamobile.com/reference/actions
+        # Spec requires: icon, title, description, label, disabled (optional), links.actions
         action = {
-            "type": "action",
+            "icon": None,  # Optional: can add icon URL later
             "title": title,
             "description": description,
-            "icon": None,  # Optional: can add icon URL later
+            "label": f"Join Challenge ({stake_amount:.2f} SOL)",  # Button text at root level
             "links": {
                 "actions": [
                     {
@@ -165,7 +180,18 @@ async def build_join_pool_tx(request: Dict[str, Any]) -> Dict[str, Any]:
             "transaction": tx_b64,
             "message": f"Join {pool_name} with {stake_amount:.2f} SOL",
         }
-        return response
+        
+        # Return with proper headers for Solana Actions
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            content=response,
+            headers={
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type, Authorization",
+            }
+        )
     except HTTPException:
         raise
     except Exception as e:

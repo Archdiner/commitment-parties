@@ -14,6 +14,9 @@ from typing import Dict, Any, Optional, Tuple
 from datetime import datetime, timezone, timedelta
 from openai import AsyncOpenAI
 from config import settings
+from utils.timezone import (
+    get_eastern_now, timestamp_to_eastern, get_challenge_day_window, utc_to_eastern
+)
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +107,7 @@ async def verify_screen_time_screenshot(
             }
         
         # Get today's date in a format the AI can recognize
-        today = datetime.now(timezone.utc)
+        today = get_eastern_now()
         today_str = today.strftime("%Y-%m-%d")
         today_readable = today.strftime("%B %d, %Y")
         
@@ -210,7 +213,7 @@ If screen time is not visible or unclear, set screen_time_below_limit to false."
             "screen_time_below_limit": screen_time_below_limit,
             "max_hours_allowed": max_hours,
             "reason": reason,
-            "verified_at": datetime.now(timezone.utc).isoformat(),
+            "verified_at": get_eastern_now().isoformat(),
             "today_date": today_readable,
             "today_date_iso": today_str
         }
@@ -278,10 +281,8 @@ async def verify_screen_time_checkin(
             logger.warning(f"Pool {pool_id} missing start_timestamp")
             return False, {"error": "Pool missing start timestamp"}
         
-        # Calculate day boundaries
-        start_datetime = datetime.fromtimestamp(start_timestamp, tz=timezone.utc)
-        challenge_day_start = start_datetime + timedelta(days=day - 1)
-        challenge_day_end = challenge_day_start + timedelta(days=1)
+        # Calculate day boundaries in Eastern Time
+        challenge_day_start, challenge_day_end = get_challenge_day_window(start_timestamp, day)
         
         # Get check-ins for this day
         checkins = await execute_query(
@@ -316,9 +317,11 @@ async def verify_screen_time_checkin(
             # Parse timestamp (could be string or datetime)
             if isinstance(checkin_timestamp, str):
                 try:
-                    checkin_time = datetime.fromisoformat(checkin_timestamp.replace('Z', '+00:00'))
-                    if checkin_time.tzinfo is None:
-                        checkin_time = checkin_time.replace(tzinfo=timezone.utc)
+                    # Parse timestamp and convert to Eastern Time
+                    checkin_time_utc = datetime.fromisoformat(checkin_timestamp.replace('Z', '+00:00'))
+                    if checkin_time_utc.tzinfo is None:
+                        checkin_time_utc = checkin_time_utc.replace(tzinfo=timezone.utc)
+                    checkin_time = utc_to_eastern(checkin_time_utc)
                 except (ValueError, AttributeError):
                     logger.warning(f"Could not parse check-in timestamp: {checkin_timestamp}")
                     checkin_time = None

@@ -79,6 +79,34 @@ async def root():
     }
 
 
+@app.get("/actions.json")
+async def actions_json():
+    """
+    Solana Actions configuration file.
+    
+    Maps URL patterns to API endpoints for Blink integration.
+    Required for Twitter/X Blinks to properly unfurl and recognize actions.
+    """
+    import os
+    
+    # Get base URL from environment or use default
+    base_url = os.getenv("BACKEND_URL", "https://commitment-backend.onrender.com")
+    base_url = base_url.rstrip('/')
+    
+    return {
+        "rules": [
+            {
+                "pathPattern": "/solana/actions/join-pool",
+                "apiPath": f"{base_url}/solana/actions/join-pool"
+            },
+            {
+                "pathPattern": "/solana/actions/*",
+                "apiPath": f"{base_url}/solana/actions/*"
+            }
+        ]
+    }
+
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
     """Global exception handler"""

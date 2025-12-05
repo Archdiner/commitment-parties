@@ -13,6 +13,9 @@ from datetime import datetime, timezone, timedelta
 from database import execute_query
 from config import settings
 from openai import AsyncOpenAI
+from utils.timezone import (
+    get_eastern_now, timestamp_to_eastern, get_challenge_day_window
+)
 
 logger = logging.getLogger(__name__)
 
@@ -238,18 +241,17 @@ async def verify_github_commits(
             min_lines_per_commit
         )
 
-        # Calculate the UTC day window for this challenge day
+        # Calculate the Eastern Time day window for this challenge day
         # Day 1 = 24 hours from start_timestamp, Day 2 = next 24 hours, etc.
         # This ensures each challenge day is exactly 24 hours from the pool start time
-        start_datetime = datetime.fromtimestamp(start_timestamp, tz=timezone.utc)
-        challenge_day_start = start_datetime + timedelta(days=day - 1)  # day-1 because day is 1-indexed
-        challenge_day_end = challenge_day_start + timedelta(days=1)
+        challenge_day_start, challenge_day_end = get_challenge_day_window(start_timestamp, day)
+        start_datetime = timestamp_to_eastern(start_timestamp)
         
         start_of_day = challenge_day_start
         end_of_day = challenge_day_end
         
         # Check if we're checking a future day (shouldn't happen, but safety check)
-        current_time = datetime.now(timezone.utc)
+        current_time = get_eastern_now()
         if current_time < challenge_day_start:
             logger.warning(
                 f"Attempting to verify Day {day} before it has started! "
@@ -266,7 +268,7 @@ async def verify_github_commits(
         time_remaining = (challenge_day_end - current_time).total_seconds() / 3600 if not day_has_ended else 0
         
         logger.info(
-            "Checking commits for challenge day %s: %s to %s (UTC) "
+            "Checking commits for challenge day %s: %s to %s (Eastern Time) "
             "(24-hour window from pool start: %s, current time: %s, "
             "day_ended=%s, time_remaining=%.1fh)",
             day,
@@ -318,10 +320,14 @@ async def verify_github_commits(
                         continue
                     
                     # Parse the ISO 8601 timestamp and compare as datetime objects
-                    try:
-                        event_time = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
-                        if event_time.tzinfo is None:
-                            event_time = event_time.replace(tzinfo=timezone.utc)
+                        try:
+                            # GitHub timestamps are in UTC, convert to Eastern for comparison
+                            event_time_utc = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
+                            if event_time_utc.tzinfo is None:
+                                event_time_utc = event_time_utc.replace(tzinfo=timezone.utc)
+                            # Convert to Eastern Time for comparison with challenge day windows
+                            from utils.timezone import utc_to_eastern
+                            event_time = utc_to_eastern(event_time_utc)
                     except (ValueError, AttributeError):
                         if not (start_str <= created_at_str <= end_str):
                             push_events_out_of_range.append({

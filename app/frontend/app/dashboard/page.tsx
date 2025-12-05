@@ -125,20 +125,35 @@ export default function Dashboard() {
       setHistoryData(history);
       
       // Map API data to UI format (only active challenges)
-      const mapped = active.map(p => ({
-        id: p.pool_id,
-        title: p.name,
-        type: p.goal_type.includes('Lifestyle') ? 'LIFESTYLE' : 'CRYPTO',
-        status: p.status === 'active' ? 'ACTIVE' : p.status,
-        description: p.description,
-        duration: `${p.duration_days} Days`,
-        stake: p.stake_amount,
-        poolValue: p.stake_amount * 10, // Mock total value
-        potentialWin: p.stake_amount * 1.1, // Mock ROI
-        streak: p.days_verified,
-        totalDays: p.duration_days,
-        progress: p.progress,
-        joinedAt: p.joined_at,
+      // We'll fetch current_day from the verification status API
+      const mapped = await Promise.all(active.map(async (p) => {
+        let currentDay = 1; // Default to day 1
+        try {
+          // Fetch current day from verification status
+          const status = await getParticipantVerifications(p.pool_id, address);
+          currentDay = status.current_day || 1;
+          // Ensure current_day is at least 1 (never 0)
+          if (currentDay < 1) currentDay = 1;
+        } catch (e) {
+          console.warn('Failed to fetch current day, defaulting to 1:', e);
+        }
+        
+        return {
+          id: p.pool_id,
+          title: p.name,
+          type: p.goal_type.includes('Lifestyle') ? 'LIFESTYLE' : 'CRYPTO',
+          status: p.status === 'active' ? 'ACTIVE' : p.status,
+          description: p.description,
+          duration: `${p.duration_days} Days`,
+          stake: p.stake_amount,
+          poolValue: p.stake_amount * 10, // Mock total value
+          potentialWin: p.stake_amount * 1.1, // Mock ROI
+          streak: p.days_verified, // Days successfully verified
+          currentDay: currentDay, // Current challenge day (1-indexed)
+          totalDays: p.duration_days,
+          progress: p.progress,
+          joinedAt: p.joined_at,
+        };
       }));
       
       setActiveChallenges(mapped);
@@ -170,10 +185,26 @@ export default function Dashboard() {
     if (selectedChallengeId && walletAddress) {
       loadParticipantStats(selectedChallengeId);
       checkVerificationStatus(selectedChallengeId, walletAddress);
+      // Update current day for the selected challenge
+      updateCurrentDay(selectedChallengeId);
     }
     // Reset checkedIn when challenge changes
     setCheckedIn(false);
   }, [selectedChallengeId, walletAddress]);
+
+  const updateCurrentDay = async (poolId: number) => {
+    if (!walletAddress) return;
+    try {
+      const status = await getParticipantVerifications(poolId, walletAddress);
+      const currentDay = status.current_day || 1;
+      // Update the activeChallenge with current day
+      setActiveChallenges(prev => prev.map(c => 
+        c.id === poolId ? { ...c, currentDay: Math.max(1, currentDay) } : c
+      ));
+    } catch (e) {
+      console.error('Failed to update current day:', e);
+    }
+  };
 
   const checkVerificationStatus = async (poolId: number, wallet: string) => {
     try {
@@ -514,7 +545,7 @@ export default function Dashboard() {
            <div className="flex flex-col items-center md:items-start">
               <SectionLabel>Active Protocol</SectionLabel>
               <h1 className="text-4xl font-light mb-12 text-center md:text-left">
-                Day {activeChallenge.streak} <span className="text-gray-600">/ {activeChallenge.totalDays}</span>
+                Day {activeChallenge.currentDay || activeChallenge.streak || 1} <span className="text-gray-600">/ {activeChallenge.totalDays}</span>
               </h1>
               
               <div className="relative w-72 h-72 md:w-96 md:h-96 border border-white/10 rounded-full flex items-center justify-center p-8">

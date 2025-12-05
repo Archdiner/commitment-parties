@@ -47,9 +47,9 @@ class Settings:
     
     # Frontend / Actions URLs
     # Base URL for the web app pool pages (used in tweets for "view details" links)
-    APP_BASE_URL: str = os.getenv("APP_BASE_URL", "https://app.commitment-parties.xyz")
+    APP_BASE_URL: str = os.getenv("APP_BASE_URL", "https://commitment-parties.vercel.app")
     # Base URL for Solana Action endpoints (used as Blink targets in tweets)
-    ACTION_BASE_URL: str = os.getenv("ACTION_BASE_URL", "https://api.commitment-parties.xyz/solana/actions")
+    ACTION_BASE_URL: str = os.getenv("ACTION_BASE_URL", "https://commitment-backend.onrender.com/solana/actions")
     
     # OpenAI (optional - for AI-powered tweet generation)
     OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY", None)

@@ -86,11 +86,11 @@ class SocialManager:
         # Event-level rate limiting (per pool, per event type)
         self.last_event_post_time: Dict[Tuple[int, SocialEventType], float] = {}
         # URL bases
-        self.app_base_url = getattr(settings, "APP_BASE_URL", "https://app.commitment-parties.xyz")
+        self.app_base_url = getattr(settings, "APP_BASE_URL", "https://commitment-parties.vercel.app")
         self.action_base_url = getattr(
             settings,
             "ACTION_BASE_URL",
-            "https://api.commitment-parties.xyz/solana/actions",
+            "https://commitment-backend.onrender.com/solana/actions",
         )
         
         # Tweet queue for non-blocking posts
@@ -219,7 +219,7 @@ class SocialManager:
         Returns:
             Blink/Action URL
         """
-        # Example: https://api.commitment-parties.xyz/solana/actions/join-pool?pool_id=123
+        # Example: https://commitment-backend.onrender.com/solana/actions/join-pool?pool_id=123
         return f"{self.action_base_url}/join-pool?pool_id={pool_id}"
 
     def create_app_link(self, pool_id: int) -> str:

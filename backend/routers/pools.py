@@ -17,6 +17,10 @@ from io import BytesIO
 from models import PoolCreate, PoolResponse, ErrorResponse, PoolConfirmRequest, JoinPoolConfirmRequest
 from database import execute_query
 from config import settings
+from utils.timezone import (
+    get_eastern_now, get_eastern_timestamp, calculate_current_day,
+    timestamp_to_eastern, get_challenge_day_window
+)
 from solana.rpc.async_api import AsyncClient
 from solana.rpc.commitment import Confirmed
 from solders.pubkey import Pubkey
@@ -317,9 +321,8 @@ async def confirm_pool_creation(pool_data: PoolConfirmRequest) -> PoolResponse:
             pool_dict["yield_earned"] = 0.0
             
             # Calculate scheduled_start_time based on recruitment_period_hours
-            import time
             recruitment_hours = pool_dict.get("recruitment_period_hours", 24)  # Default to 24 hours
-            current_time = int(time.time())
+            current_time = get_eastern_timestamp()  # Use Eastern Time
             
             if recruitment_hours > 0:
                 # Scheduled start: current time + recruitment period
@@ -357,9 +360,8 @@ async def confirm_pool_creation(pool_data: PoolConfirmRequest) -> PoolResponse:
             pool_dict["min_participants"] = 1
         
         # Calculate scheduled_start_time based on recruitment_period_hours
-        import time
         recruitment_hours = pool_dict.get("recruitment_period_hours", 24)  # Default to 24 hours
-        current_time = int(time.time())
+        current_time = get_eastern_timestamp()  # Use Eastern Time
         
         if recruitment_hours > 0:
             # Scheduled start: current time + recruitment period
@@ -451,14 +453,11 @@ async def get_participant_verifications(
         )
         
         pool = pools[0] if pools else {}
-        current_time = int(time.time())
+        current_time = get_eastern_timestamp()  # Use Eastern Time
         start_timestamp = pool.get("start_timestamp", 0)
-        current_day = None
-        if start_timestamp and current_time >= start_timestamp:
-            days_elapsed = (current_time - start_timestamp) // 86400
-            current_day = days_elapsed + 1
+        current_day = calculate_current_day(start_timestamp, current_time)
 
-        # Calculate next verification window end (approximate daily windows)
+        # Calculate next verification window end (approximate daily windows) in Eastern Time
         grace_value = pool.get("grace_period_minutes", 5)
         # Respect explicit 0; only default when value is missing/None
         if grace_value is None:
@@ -591,20 +590,24 @@ async def trigger_github_verification(pool_id: int, wallet: str) -> dict:
         
         participant = participants[0]
         
-        # Calculate current day
+        # Calculate current day using Eastern Time
         start_timestamp = pool.get("start_timestamp") or pool.get("scheduled_start_time")
         if not start_timestamp:
             raise HTTPException(status_code=400, detail="Pool start timestamp not found")
         
-        current_time = int(time.time())
+        current_time = get_eastern_timestamp()  # Use Eastern Time
         if current_time < start_timestamp:
             raise HTTPException(
                 status_code=400,
                 detail="Pool has not started yet"
             )
         
-        days_elapsed = (current_time - start_timestamp) // 86400
-        current_day = days_elapsed + 1
+        current_day = calculate_current_day(start_timestamp, current_time)
+        if current_day is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Pool has not started yet"
+            )
         
         # Check if user is already verified for today
         existing_verifications = await execute_query(
@@ -662,7 +665,7 @@ async def trigger_github_verification(pool_id: int, wallet: str) -> dict:
             if passed is True:
                 # User has sufficient commits - verify them
                 proof_data = {
-                    "verified_at": datetime.now(timezone.utc).isoformat(),
+                    "verified_at": get_eastern_now().isoformat(),
                     "habit_type": "github_commits",
                     "checked_commit_shas": checked_commit_shas,
                     "daily_complete": True,  # Flag as complete for today
@@ -827,20 +830,24 @@ async def verify_screen_time(
         
         participant = participants[0]
         
-        # Calculate current day
+        # Calculate current day using Eastern Time
         start_timestamp = pool.get("start_timestamp") or pool.get("scheduled_start_time")
         if not start_timestamp:
             raise HTTPException(status_code=400, detail="Pool start timestamp not found")
         
-        current_time = int(time.time())
+        current_time = get_eastern_timestamp()  # Use Eastern Time
         if current_time < start_timestamp:
             raise HTTPException(
                 status_code=400,
                 detail="Pool has not started yet"
             )
         
-        days_elapsed = (current_time - start_timestamp) // 86400
-        current_day = days_elapsed + 1
+        current_day = calculate_current_day(start_timestamp, current_time)
+        if current_day is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Pool has not started yet"
+            )
         
         # Check if user is already verified for today
         existing_verifications = await execute_query(
@@ -908,7 +915,7 @@ async def verify_screen_time(
                 "screen_time_below_limit": screen_time_below_limit,
                 "max_hours_allowed": max_hours,
                 "reason": reason,
-                "verified_at": datetime.now(timezone.utc).isoformat()
+                "verified_at": get_eastern_now().isoformat()
             }
         }
         
@@ -1103,7 +1110,7 @@ async def confirm_pool_join(
         pool = results[0]
         
         # Check if pool has started (join restrictions)
-        current_time = int(time.time())
+        current_time = get_eastern_timestamp()  # Use Eastern Time
         scheduled_start = pool.get("scheduled_start_time")
         start_timestamp = pool.get("start_timestamp", 0)
         

@@ -10,6 +10,9 @@ import logging
 
 from models import CheckInCreate, CheckInResponse, ErrorResponse
 from database import execute_query
+from utils.timezone import (
+    get_eastern_now, get_eastern_timestamp, get_challenge_day_window
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,9 +29,6 @@ router = APIRouter()
 async def submit_checkin(checkin_data: CheckInCreate) -> CheckInResponse:
     """Submit a daily check-in. Must be submitted before the challenge day ends."""
     try:
-        import time
-        from datetime import datetime, timezone, timedelta
-        
         # Get pool information to validate timing
         pools = await execute_query(
             table="pools",
@@ -46,18 +46,16 @@ async def submit_checkin(checkin_data: CheckInCreate) -> CheckInResponse:
         if not start_timestamp:
             raise HTTPException(status_code=400, detail="Pool start timestamp not found")
         
-        # Calculate the end of the challenge day for the submitted day
-        start_datetime = datetime.fromtimestamp(start_timestamp, tz=timezone.utc)
-        challenge_day_start = start_datetime + timedelta(days=checkin_data.day - 1)
-        challenge_day_end = challenge_day_start + timedelta(days=1)
+        # Calculate the end of the challenge day for the submitted day (using Eastern Time)
+        challenge_day_start, challenge_day_end = get_challenge_day_window(start_timestamp, checkin_data.day)
         
         # Check if the day has ended (no grace period for submissions)
-        current_time = datetime.now(timezone.utc)
+        current_time = get_eastern_now()
         if current_time >= challenge_day_end:
             raise HTTPException(
                 status_code=400,
                 detail=f"Day {checkin_data.day} has ended. Check-ins must be submitted before the day ends. "
-                       f"Day ended at {challenge_day_end.isoformat()} (UTC)."
+                       f"Day ended at {challenge_day_end.isoformat()} (Eastern Time)."
             )
         
         # Convert to dict for database insertion
