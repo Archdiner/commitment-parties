@@ -106,15 +106,29 @@ async def verify_screen_time_screenshot(
                 "reason": str(e)
             }
         
-        # Get today's date in a format the AI can recognize
+        # Get today's date in multiple formats the AI can recognize
         today = get_eastern_now()
         today_str = today.strftime("%Y-%m-%d")
         today_readable = today.strftime("%B %d, %Y")
+        today_short = today.strftime("%b %d, %Y")  # Jan 15, 2024
+        today_numeric = today.strftime("%m/%d/%Y")  # 01/15/2024
+        today_numeric_short = today.strftime("%m/%d/%y")  # 01/15/24
+        today_day_month = today.strftime("%B %d")  # January 15
+        today_day_month_short = today.strftime("%b %d")  # Jan 15
         
         # Create prompt for verification
         prompt = f"""Analyze this mobile screen time screenshot. You need to verify two things:
 
-1. DATE VERIFICATION: Check if the date visible in the screenshot matches today's date: {today_readable} ({today_str}). The date must be clearly visible and match exactly.
+1. DATE VERIFICATION: Check if the date visible in the screenshot matches today's date. Today's date is {today_readable} ({today_str}).
+   
+   ACCEPTABLE DATE FORMATS (any of these count as matching):
+   - The word "Today" or "Today's" (this is valid and means today)
+   - Full date: {today_readable} or {today_short}
+   - Numeric formats: {today_numeric} or {today_numeric_short}
+   - Month and day: {today_day_month} or {today_day_month_short}
+   - Any format that clearly represents {today_str}
+   
+   IMPORTANT: If the screenshot shows "Today" or any variation indicating it's today's data, that counts as a match. The date does NOT need to match the exact format, just represent the same day.
 
 2. SCREEN TIME VERIFICATION: Check if the total screen time shown is LESS than {max_hours} hours. Look for the total screen time number (usually displayed prominently).
 
@@ -126,7 +140,8 @@ Respond with ONLY a JSON object in this exact format:
   "reason": "brief explanation"
 }}
 
-If the date is not visible or unclear, set date_matches to false.
+If the date shows "Today" or clearly represents today's date in any format, set date_matches to true.
+If the date is not visible or clearly shows a different date, set date_matches to false.
 If screen time is not visible or unclear, set screen_time_below_limit to false."""
         
         logger.info(

@@ -692,7 +692,7 @@ export default function Dashboard() {
                             : isGitHubChallenge
                             ? "Click to immediately check your GitHub commits for today. Our agent will verify your code."
                             : isScreenTimeChallenge
-                            ? "Click to upload a screenshot of your mobile screen time data. Make sure the date is visible and matches today. Our AI will verify your screen time is below the limit."
+                            ? "Click to upload a screenshot of your mobile screen time data. Make sure the date is visible (showing 'Today' or today's date). Our AI will verify your screen time is below the limit."
                             : "Click here to submit your daily proof of progress. Our AI agent will verify it! Upload a photo, screenshot, or other proof that you completed your goal today."
                         } />
                       </div>
@@ -711,7 +711,7 @@ export default function Dashboard() {
                           : isGitHubChallenge
                           ? "We'll check your GitHub commits for today's code"
                           : isScreenTimeChallenge
-                          ? "Upload a screenshot of your mobile screen time with today's date visible"
+                          ? "Upload a screenshot of your mobile screen time (showing 'Today' or today's date)"
                           : "Upload proof that you completed your goal today (photo, screenshot, etc.)"}
                       </p>
                       )}
@@ -789,7 +789,7 @@ export default function Dashboard() {
               Please upload a screenshot of your mobile screen time data. Make sure:
             </p>
             <ul className="text-sm text-gray-400 mb-6 space-y-2 list-disc list-inside">
-              <li>The date is clearly visible and matches today</li>
+              <li>The date is clearly visible (showing "Today" or today's date is acceptable)</li>
               <li>The total screen time is visible</li>
               <li>The screenshot is clear and readable</li>
             </ul>
