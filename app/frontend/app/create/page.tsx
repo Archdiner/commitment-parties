@@ -306,18 +306,55 @@ export default function CreatePool() {
           winner_percent: winnerPercent,
         };
 
-        const createResp = await fetch(`${apiUrl}/solana/actions/create-pool`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(createBody),
-        });
+        // Use fetch with timeout and retry for Render cold starts
+        let createResp: Response;
+        let retries = 0;
+        const maxRetries = 2;
+        
+        while (retries <= maxRetries) {
+          try {
+            const controller = new AbortController();
+            const timeout = retries === 0 ? 30000 : 45000; // 30s first, 45s retries
+            const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-        if (!createResp.ok) {
-          const errData = await createResp.json().catch(() => ({}));
-          throw new Error(errData.detail || 'Failed to build create-pool transaction');
+            createResp = await fetch(`${apiUrl}/solana/actions/create-pool`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(createBody),
+              signal: controller.signal,
+            });
+
+            clearTimeout(timeoutId);
+            break; // Success, exit retry loop
+          } catch (err: any) {
+            if (err.name === 'AbortError') {
+              if (retries < maxRetries) {
+                retries++;
+                console.warn(`Request timeout (attempt ${retries}/${maxRetries + 1}), retrying... Backend may be waking up.`);
+                await new Promise(resolve => setTimeout(resolve, 2000 * retries)); // Exponential backoff
+                continue;
+              } else {
+                throw new Error('Backend is taking too long to respond. It may be waking up from sleep. Please try again in a moment.');
+              }
+            }
+            // For other errors, check if it's a network error and retry
+            if (retries < maxRetries && (err.message?.includes('fetch') || err.message?.includes('network'))) {
+              retries++;
+              console.warn(`Network error (attempt ${retries}/${maxRetries + 1}), retrying...`, err.message);
+              await new Promise(resolve => setTimeout(resolve, 2000 * retries));
+              continue;
+            }
+            throw err; // Re-throw if not retryable
+          }
         }
 
-        const { transaction: txB64 } = await createResp.json();
+        if (!createResp!.ok) {
+          const errData = await createResp!.json().catch(() => ({}));
+          const errorMsg = errData.detail || errData.error || `HTTP ${createResp!.status}: ${createResp!.statusText}`;
+          throw new Error(errorMsg || 'Failed to build create-pool transaction');
+        }
+
+        const { transaction: txB64 } = await createResp!.json();
 
         const tx = Transaction.from(Buffer.from(txB64, 'base64'));
 
