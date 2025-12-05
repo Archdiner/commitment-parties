@@ -19,6 +19,9 @@ from solana.rpc.async_api import AsyncClient
 from solana.rpc.commitment import Confirmed
 from solders.pubkey import Pubkey
 
+# Initialize logger first before any try/except blocks that use it
+logger = logging.getLogger(__name__)
+
 # Add agent src to path for verification logic
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'agent', 'src'))
 try:
@@ -37,8 +40,6 @@ try:
 except ImportError:
     SOLDERS_AVAILABLE = False
     logger.warning("solders not available, participant_pubkey will be placeholder")
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
