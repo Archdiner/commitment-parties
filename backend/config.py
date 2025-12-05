@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     GITHUB_CLIENT_SECRET: str = os.getenv("GITHUB_CLIENT_SECRET", "")
     GITHUB_REDIRECT_URI: str = os.getenv("GITHUB_REDIRECT_URI", "http://localhost:3000/verify-github/callback")
     
+    # OpenAI (for vision API - screen time verification)
+    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+    
     # Environment
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
     

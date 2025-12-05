@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ChevronDown, Check, Smartphone, ArrowRight, Users, TrendingDown } from 'lucide-react';
 import { InfoIcon } from '@/components/ui/Tooltip';
-import { getUserParticipations, UserParticipation, getPoolStats, getParticipantVerifications, triggerGitHubVerification } from '@/lib/api';
+import { getUserParticipations, UserParticipation, getPoolStats, getParticipantVerifications, triggerGitHubVerification, verifyScreenTime } from '@/lib/api';
 import { getPersistedWalletAddress } from '@/lib/wallet';
 import { SectionLabel } from '@/components/ui/SectionLabel';
 import { Stat } from '@/components/ui/Stat';
@@ -19,6 +19,10 @@ export default function Dashboard() {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [checkedIn, setCheckedIn] = useState(false);
   const [verifying, setVerifying] = useState(false);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [verificationMessage, setVerificationMessage] = useState<string | null>(null);
   const [participantStats, setParticipantStats] = useState<{ started: number; remaining: number } | null>(null);
   const [timeLeft, setTimeLeft] = useState<string | null>(null);
   const [currentBlock, setCurrentBlock] = useState<number | null>(null);
@@ -220,23 +224,32 @@ export default function Dashboard() {
     // Check if it's a GitHub challenge
     if (goalType === 'lifestyle_habit' && habitType === 'github_commits') {
       setVerifying(true);
+      setVerificationMessage(null);
       try {
         const result = await triggerGitHubVerification(selectedChallengeId, walletAddress);
         if (result.verified) {
           setCheckedIn(true);
+          setVerificationMessage(result.message || 'Successfully verified GitHub commits for today');
           // Refresh participation data to update progress
           if (walletAddress) {
             await fetchData(walletAddress);
           }
         } else {
-          alert(result.message || 'Verification failed. Please ensure you have commits for today.');
+          setVerificationMessage(result.message || 'Verification failed. Please ensure you have commits for today.');
         }
       } catch (error: any) {
         console.error('Error triggering GitHub verification:', error);
-        alert(error.message || 'Failed to verify GitHub commits. Please try again.');
+        setVerificationMessage(error.message || 'Failed to verify GitHub commits. Please try again.');
       } finally {
         setVerifying(false);
       }
+      return;
+    }
+    
+    // Check if it's a screen time challenge
+    if (goalType === 'lifestyle_habit' && habitType === 'screen_time') {
+      setShowUploadModal(true);
+      setUploadError(null);
       return;
     }
     
@@ -247,6 +260,52 @@ export default function Dashboard() {
       setVerifying(false); 
       setCheckedIn(true); 
     }, 1500);
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!walletAddress || !selectedChallengeId || !event.target.files || event.target.files.length === 0) {
+      return;
+    }
+
+    const file = event.target.files[0];
+    
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      setUploadError('Please upload an image file (PNG, JPEG, etc.)');
+      return;
+    }
+
+    // Validate file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      setUploadError('File size must be less than 10MB');
+      return;
+    }
+
+    setUploadingFile(true);
+    setUploadError(null);
+
+    try {
+      const result = await verifyScreenTime(selectedChallengeId, walletAddress, file);
+      
+      if (result.verified) {
+        setCheckedIn(true);
+        setShowUploadModal(false);
+        // Refresh participation data to update progress
+        if (walletAddress) {
+          await fetchData(walletAddress);
+        }
+        alert(result.message || 'Verification successful!');
+      } else {
+        setUploadError(result.message || 'Verification failed. Please check your screenshot and try again.');
+      }
+    } catch (error: any) {
+      console.error('Error verifying screen time:', error);
+      setUploadError(error.message || 'Failed to verify screen time. Please try again.');
+    } finally {
+      setUploadingFile(false);
+      // Reset file input
+      event.target.value = '';
+    }
   };
 
   if (!walletAddress) {
@@ -323,6 +382,9 @@ export default function Dashboard() {
   const isGitHubChallenge = currentParticipation && 
     currentParticipation.goal_type === 'lifestyle_habit' && 
     currentParticipation.goal_metadata?.habit_type === 'github_commits';
+  const isScreenTimeChallenge = currentParticipation && 
+    currentParticipation.goal_type === 'lifestyle_habit' && 
+    currentParticipation.goal_metadata?.habit_type === 'screen_time';
 
   return (
     <div className="min-h-screen bg-[#050505] text-white pt-32 px-6 pb-20">
@@ -380,6 +442,7 @@ export default function Dashboard() {
                                 onClick={() => {
                                     setSelectedChallengeId(challenge.id);
                                     setCheckedIn(false);
+                                    setVerificationMessage(null);
                                     setIsDropdownOpen(false);
                                     loadParticipantStats(challenge.id);
                                 }}
@@ -531,6 +594,11 @@ export default function Dashboard() {
                                  <span>Check GitHub Commits</span>
                                  <Smartphone strokeWidth={1} className="w-5 h-5 group-hover:-translate-y-1 transition-transform" />
                               </>
+                           ) : isScreenTimeChallenge ? (
+                              <>
+                                 <span>Upload Screen Time</span>
+                                 <Smartphone strokeWidth={1} className="w-5 h-5 group-hover:-translate-y-1 transition-transform" />
+                              </>
                            ) : (
                               <>
                                  <span>Submit Daily Proof</span>
@@ -543,21 +611,42 @@ export default function Dashboard() {
                             ? "Crypto challenges are automatically verified on-chain. No manual verification needed."
                             : isGitHubChallenge
                             ? "Click to immediately check your GitHub commits for today. Our agent will verify your code."
+                            : isScreenTimeChallenge
+                            ? "Click to upload a screenshot of your mobile screen time data. Make sure the date is visible and matches today. Our AI will verify your screen time is below the limit."
                             : "Click here to submit your daily proof of progress. Our AI agent will verify it! Upload a photo, screenshot, or other proof that you completed your goal today."
                         } />
                       </div>
+                      {verificationMessage ? (
+                        <p className={`text-[9px] mt-2 text-center ${
+                          checkedIn 
+                            ? 'text-emerald-400' 
+                            : 'text-red-400'
+                        }`}>
+                          {verificationMessage}
+                        </p>
+                      ) : (
                       <p className="text-[9px] text-gray-600 mt-2 text-center">
                         {isCryptoChallenge
                           ? "Crypto challenges are verified automatically on-chain"
                           : isGitHubChallenge
                           ? "We'll check your GitHub commits for today's code"
+                          : isScreenTimeChallenge
+                          ? "Upload a screenshot of your mobile screen time with today's date visible"
                           : "Upload proof that you completed your goal today (photo, screenshot, etc.)"}
                       </p>
+                      )}
                     </div>
                  ) : (
-                    <div className="w-full h-20 bg-white text-black flex items-center justify-center gap-3 uppercase tracking-widest text-xs font-medium">
-                       <Check strokeWidth={1.5} className="w-5 h-5" />
-                       Verified
+                    <div>
+                      {verificationMessage && (
+                        <p className="text-[9px] mt-2 mb-2 text-center text-emerald-400">
+                          {verificationMessage}
+                        </p>
+                      )}
+                      <div className="w-full h-20 bg-white text-black flex items-center justify-center gap-3 uppercase tracking-widest text-xs font-medium">
+                         <Check strokeWidth={1.5} className="w-5 h-5" />
+                         Verified
+                      </div>
                     </div>
                  )}
                  <div className="flex justify-between mt-4 text-[9px] text-gray-600 font-mono">
@@ -587,6 +676,68 @@ export default function Dashboard() {
            </div>
         </div>
       </div>
+
+      {/* Screen Time Upload Modal */}
+      {showUploadModal && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-6">
+          <div className="bg-[#0A0A0A] border border-white/10 rounded-2xl p-8 max-w-md w-full">
+            <h2 className="text-2xl font-light mb-4">Upload Screen Time Screenshot</h2>
+            <p className="text-sm text-gray-400 mb-6">
+              Please upload a screenshot of your mobile screen time data. Make sure:
+            </p>
+            <ul className="text-sm text-gray-400 mb-6 space-y-2 list-disc list-inside">
+              <li>The date is clearly visible and matches today</li>
+              <li>The total screen time is visible</li>
+              <li>The screenshot is clear and readable</li>
+            </ul>
+            
+            <div className="mb-6">
+              <label className="block mb-2 text-sm text-gray-300">
+                Select Screenshot
+              </label>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleFileUpload}
+                disabled={uploadingFile}
+                className="block w-full text-sm text-gray-400
+                  file:mr-4 file:py-2 file:px-4
+                  file:rounded-full file:border-0
+                  file:text-sm file:font-semibold
+                  file:bg-emerald-500/20 file:text-emerald-400
+                  hover:file:bg-emerald-500/30
+                  file:cursor-pointer
+                  disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+            </div>
+
+            {uploadError && (
+              <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+                <p className="text-sm text-red-400">{uploadError}</p>
+              </div>
+            )}
+
+            {uploadingFile && (
+              <div className="mb-4 text-center">
+                <div className="animate-pulse text-emerald-500 text-sm">Verifying screenshot...</div>
+              </div>
+            )}
+
+            <div className="flex gap-4">
+              <button
+                onClick={() => {
+                  setShowUploadModal(false);
+                  setUploadError(null);
+                }}
+                disabled={uploadingFile}
+                className="flex-1 px-4 py-2 border border-white/10 rounded-lg text-sm text-gray-400 hover:border-white/20 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

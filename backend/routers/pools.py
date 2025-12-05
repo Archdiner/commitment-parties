@@ -4,13 +4,15 @@ Pool management endpoints.
 Handles CRUD operations for commitment pools.
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Form
 from typing import Optional, List
 import logging
 import time
 from datetime import datetime, timezone, timedelta
 import sys
 import os
+import base64
+from io import BytesIO
 
 from models import PoolCreate, PoolResponse, ErrorResponse, PoolConfirmRequest, JoinPoolConfirmRequest
 from database import execute_query
@@ -744,6 +746,346 @@ async def trigger_github_verification(pool_id: int, wallet: str) -> dict:
         raise HTTPException(
             status_code=500,
             detail=f"Failed to trigger verification: {str(e)}"
+        )
+
+
+@router.post(
+    "/{pool_id}/participants/{wallet}/verify-screen-time",
+    summary="Verify screen time challenge with screenshot",
+    description="Upload a screenshot of mobile screen time data. AI will verify the date matches today and screen time is below the limit.",
+)
+async def verify_screen_time(
+    pool_id: int,
+    wallet: str,
+    file: UploadFile = File(...)
+) -> dict:
+    """
+    Verify screen time challenge by analyzing uploaded screenshot.
+    
+    This endpoint:
+    1. Validates the pool is a screen_time challenge
+    2. Uses OpenAI vision API to analyze the screenshot
+    3. Checks if date matches today
+    4. Checks if screen time is below max_hours
+    5. Creates verification record if valid
+    """
+    try:
+        # Get pool information
+        pools = await execute_query(
+            table="pools",
+            operation="select",
+            filters={"pool_id": pool_id},
+            limit=1
+        )
+        
+        if not pools:
+            raise HTTPException(status_code=404, detail="Pool not found")
+        
+        pool = pools[0]
+        goal_metadata = pool.get("goal_metadata") or {}
+        habit_type = goal_metadata.get("habit_type")
+        max_hours = goal_metadata.get("max_hours")
+        
+        # Verify this is a screen_time challenge
+        if habit_type != "screen_time":
+            raise HTTPException(
+                status_code=400,
+                detail="This endpoint is only for screen time challenges"
+            )
+        
+        if not max_hours or not isinstance(max_hours, (int, float)) or max_hours < 0 or max_hours > 12:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid max_hours in goal_metadata. Must be between 0 and 12."
+            )
+        
+        # Get participant
+        participants = await execute_query(
+            table="participants",
+            operation="select",
+            filters={
+                "pool_id": pool_id,
+                "wallet_address": wallet
+            },
+            limit=1
+        )
+        
+        if not participants:
+            raise HTTPException(status_code=404, detail="Participant not found in pool")
+        
+        participant = participants[0]
+        
+        # Calculate current day
+        start_timestamp = pool.get("start_timestamp") or pool.get("scheduled_start_time")
+        if not start_timestamp:
+            raise HTTPException(status_code=400, detail="Pool start timestamp not found")
+        
+        current_time = int(time.time())
+        if current_time < start_timestamp:
+            raise HTTPException(
+                status_code=400,
+                detail="Pool has not started yet"
+            )
+        
+        days_elapsed = (current_time - start_timestamp) // 86400
+        current_day = days_elapsed + 1
+        
+        # Check if user is already verified for today
+        existing_verifications = await execute_query(
+            table="verifications",
+            operation="select",
+            filters={
+                "pool_id": pool_id,
+                "participant_wallet": wallet,
+                "day": current_day
+            },
+            limit=1
+        )
+        
+        if existing_verifications and existing_verifications[0].get("passed"):
+            return {
+                "verified": True,
+                "message": "Already verified for today",
+                "day": current_day
+            }
+        
+        # Read and encode image file
+        try:
+            image_data = await file.read()
+            # Validate it's an image
+            if not file.content_type or not file.content_type.startswith('image/'):
+                raise HTTPException(
+                    status_code=400,
+                    detail="File must be an image (PNG, JPEG, etc.)"
+                )
+            
+            # Encode to base64 for OpenAI API
+            image_base64 = base64.b64encode(image_data).decode('utf-8')
+            image_data_url = f"data:{file.content_type};base64,{image_base64}"
+        except Exception as e:
+            logger.error(f"Error reading image file: {e}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Failed to read image file: {str(e)}"
+            )
+        
+        # Use OpenAI vision API to verify
+        try:
+            from openai import OpenAI
+            
+            if not settings.OPENAI_API_KEY:
+                raise HTTPException(
+                    status_code=503,
+                    detail="OpenAI API key not configured"
+                )
+            
+            client = OpenAI(api_key=settings.OPENAI_API_KEY)
+            
+            # Get today's date in a format the AI can recognize
+            today = datetime.now(timezone.utc)
+            today_str = today.strftime("%Y-%m-%d")
+            today_readable = today.strftime("%B %d, %Y")
+            
+            # Create prompt for verification
+            prompt = f"""Analyze this mobile screen time screenshot. You need to verify two things:
+
+1. DATE VERIFICATION: Check if the date visible in the screenshot matches today's date: {today_readable} ({today_str}). The date must be clearly visible and match exactly.
+
+2. SCREEN TIME VERIFICATION: Check if the total screen time shown is LESS than {max_hours} hours. Look for the total screen time number (usually displayed prominently).
+
+Respond with ONLY a JSON object in this exact format:
+{{
+  "date_matches": true/false,
+  "screen_time_hours": <number>,
+  "screen_time_below_limit": true/false,
+  "reason": "brief explanation"
+}}
+
+If the date is not visible or unclear, set date_matches to false.
+If screen time is not visible or unclear, set screen_time_below_limit to false."""
+            
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": prompt
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": image_data_url
+                                }
+                            }
+                        ]
+                    }
+                ],
+                max_tokens=200,
+                temperature=0.1
+            )
+            
+            # Parse response
+            response_text = response.choices[0].message.content.strip()
+            
+            # Try to extract JSON from response (might be wrapped in markdown)
+            import json
+            import re
+            
+            # Remove markdown code blocks if present
+            response_text = re.sub(r'```json\s*', '', response_text)
+            response_text = re.sub(r'```\s*', '', response_text)
+            response_text = response_text.strip()
+            
+            try:
+                verification_result = json.loads(response_text)
+            except json.JSONDecodeError:
+                # Try to extract JSON object from text
+                json_match = re.search(r'\{[^}]+\}', response_text)
+                if json_match:
+                    verification_result = json.loads(json_match.group())
+                else:
+                    raise ValueError("Could not parse AI response as JSON")
+            
+            date_matches = verification_result.get("date_matches", False)
+            screen_time_hours = verification_result.get("screen_time_hours", 0)
+            screen_time_below_limit = verification_result.get("screen_time_below_limit", False)
+            reason = verification_result.get("reason", "")
+            
+            # Determine if verification passed
+            passed = date_matches and screen_time_below_limit
+            
+            # Create verification record
+            verification_data = {
+                "pool_id": pool_id,
+                "participant_wallet": wallet,
+                "day": current_day,
+                "passed": passed,
+                "verification_type": "screen_time",
+                "proof_data": {
+                    "date_matches": date_matches,
+                    "screen_time_hours": screen_time_hours,
+                    "screen_time_below_limit": screen_time_below_limit,
+                    "max_hours_allowed": max_hours,
+                    "reason": reason,
+                    "verified_at": datetime.now(timezone.utc).isoformat()
+                }
+            }
+            
+            # Insert verification (upsert - update if exists)
+            try:
+                await execute_query(
+                    table="verifications",
+                    operation="insert",
+                    data=verification_data
+                )
+            except Exception:
+                # If insert fails (duplicate), try update
+                await execute_query(
+                    table="verifications",
+                    operation="update",
+                    filters={
+                        "pool_id": pool_id,
+                        "participant_wallet": wallet,
+                        "day": current_day
+                    },
+                    data=verification_data
+                )
+            
+            # Also create a check-in record for compatibility with existing lifestyle verification
+            checkin_data = {
+                "pool_id": pool_id,
+                "participant_wallet": wallet,
+                "day": current_day,
+                "success": passed,
+                "screenshot_url": None  # We don't store the image, just verify it
+            }
+            
+            try:
+                await execute_query(
+                    table="checkins",
+                    operation="insert",
+                    data=checkin_data
+                )
+            except Exception:
+                # Update if exists
+                await execute_query(
+                    table="checkins",
+                    operation="update",
+                    filters={
+                        "pool_id": pool_id,
+                        "participant_wallet": wallet,
+                        "day": current_day
+                    },
+                    data=checkin_data
+                )
+            
+            if passed:
+                # Update participant days_verified
+                days_verified = participant.get("days_verified", 0)
+                if current_day > days_verified:
+                    await execute_query(
+                        table="participants",
+                        operation="update",
+                        filters={
+                            "pool_id": pool_id,
+                            "wallet_address": wallet
+                        },
+                        data={"days_verified": current_day}
+                    )
+                
+                logger.info(
+                    f"Screen time verification successful: pool={pool_id}, "
+                    f"wallet={wallet}, day={current_day}, screen_time={screen_time_hours}h"
+                )
+                
+                return {
+                    "verified": True,
+                    "message": f"Verification successful! Screen time: {screen_time_hours:.1f}h (limit: {max_hours}h)",
+                    "day": current_day,
+                    "screen_time_hours": screen_time_hours
+                }
+            else:
+                error_msg = "Verification failed: "
+                if not date_matches:
+                    error_msg += "Date does not match today. "
+                if not screen_time_below_limit:
+                    error_msg += f"Screen time ({screen_time_hours:.1f}h) exceeds limit ({max_hours}h)."
+                
+                logger.info(
+                    f"Screen time verification failed: pool={pool_id}, "
+                    f"wallet={wallet}, day={current_day}, reason={reason}"
+                )
+                
+                return {
+                    "verified": False,
+                    "message": error_msg.strip(),
+                    "day": current_day,
+                    "screen_time_hours": screen_time_hours,
+                    "reason": reason
+                }
+        
+        except ImportError:
+            raise HTTPException(
+                status_code=503,
+                detail="OpenAI library not available"
+            )
+        except Exception as e:
+            logger.error(f"Error in OpenAI vision verification: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail=f"AI verification failed: {str(e)}"
+            )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error verifying screen time: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to verify screen time: {str(e)}"
         )
 
 

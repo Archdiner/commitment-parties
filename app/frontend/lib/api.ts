@@ -730,3 +730,31 @@ export async function triggerGitHubVerification(
     }
   );
 }
+
+/**
+ * Verify screen time challenge with screenshot upload
+ */
+export async function verifyScreenTime(
+  poolId: number,
+  wallet: string,
+  file: File
+): Promise<{ verified: boolean; message: string; day?: number; screen_time_hours?: number; reason?: string }> {
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await fetch(
+    `${API_URL}/api/pools/${poolId}/participants/${wallet}/verify-screen-time`,
+    {
+      method: 'POST',
+      body: formData,
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to verify screen time' }));
+    throw new Error(error.detail || error.message || 'Failed to verify screen time');
+  }
+
+  return response.json();
+}

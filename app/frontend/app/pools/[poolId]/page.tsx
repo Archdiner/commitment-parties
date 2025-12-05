@@ -182,6 +182,7 @@ export default function PoolDetailPage() {
   const habitType = goalMetadata.habit_type;
   const isGitHubCommits = habitType === 'github_commits';
   const tokenMint: string | undefined = goalMetadata.token_mint;
+  const tokenInfo = tokenMint ? getTokenByMint(tokenMint) : undefined;
   const hodlMinBalanceRaw: number | undefined = goalMetadata.min_balance;
   // Use token decimals for proper conversion (USDC has 6, SOL has 9, etc.)
   const tokenDecimals = tokenInfo?.decimals ?? 9;
