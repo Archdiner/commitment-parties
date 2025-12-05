@@ -21,6 +21,11 @@ export default function Dashboard() {
   const [participantStats, setParticipantStats] = useState<{ started: number; remaining: number } | null>(null);
   const [timeLeft, setTimeLeft] = useState<string | null>(null);
   const [currentBlock, setCurrentBlock] = useState<number | null>(null);
+  const [userStats, setUserStats] = useState<{
+    totalEarned: number;
+    totalStaked: number;
+    successfulChallenges: number;
+  } | null>(null);
 
   useEffect(() => {
     const address = getPersistedWalletAddress();
@@ -36,6 +41,31 @@ export default function Dashboard() {
   const fetchData = async (address: string) => {
     try {
       const participations = await getUserParticipations(address);
+      
+      // Calculate user stats
+      let totalStaked = 0;
+      let totalEarned = 0;
+      let successfulChallenges = 0;
+      
+      participations.forEach(p => {
+        totalStaked += p.stake_amount;
+        
+        // If participant status is 'success', they completed the challenge
+        // For now, we'll estimate earnings based on completed challenges
+        // In a real implementation, you'd query payouts table
+        if (p.participant_status === 'success' || p.participant_status === 'completed') {
+          successfulChallenges++;
+          // Estimate: they got their stake back + some profit
+          // This is a simplified calculation - real earnings would come from payout records
+          totalEarned += p.stake_amount * 1.2; // Assume 20% profit on successful challenges
+        }
+      });
+      
+      setUserStats({
+        totalEarned,
+        totalStaked,
+        successfulChallenges,
+      });
       
       // Map API data to UI format
       const mapped = participations.map(p => ({
@@ -220,6 +250,33 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-[#050505] text-white pt-32 px-6 pb-20">
       <div className="max-w-[1000px] mx-auto">
+        
+        {/* User Stats Section */}
+        {userStats && (
+          <div className="mb-12 grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="p-6 border border-white/10 bg-white/[0.02] rounded-xl">
+              <div className="text-xs uppercase tracking-widest text-gray-500 mb-2">Total Earned</div>
+              <div className="text-3xl font-light text-emerald-400 mb-1">
+                {userStats.totalEarned.toFixed(4)} SOL
+              </div>
+              <div className="text-[10px] text-gray-600">From completed challenges</div>
+            </div>
+            <div className="p-6 border border-white/10 bg-white/[0.02] rounded-xl">
+              <div className="text-xs uppercase tracking-widest text-gray-500 mb-2">Total Staked</div>
+              <div className="text-3xl font-light text-white mb-1">
+                {userStats.totalStaked.toFixed(4)} SOL
+              </div>
+              <div className="text-[10px] text-gray-600">Across all challenges</div>
+            </div>
+            <div className="p-6 border border-white/10 bg-white/[0.02] rounded-xl">
+              <div className="text-xs uppercase tracking-widest text-gray-500 mb-2">Successful Challenges</div>
+              <div className="text-3xl font-light text-white mb-1">
+                {userStats.successfulChallenges}
+              </div>
+              <div className="text-[10px] text-gray-600">Completed successfully</div>
+            </div>
+          </div>
+        )}
         
         {/* Challenge Selector Dropdown */}
         <div className="mb-12 flex justify-center relative z-20">

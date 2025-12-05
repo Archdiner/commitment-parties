@@ -49,11 +49,6 @@ export const Footer = () => {
                   Dashboard
                 </Link>
               </li>
-              <li>
-                <Link href="/leaderboard" className="text-sm text-gray-400 hover:text-emerald-400 transition-colors">
-                  Leaderboard
-                </Link>
-              </li>
             </ul>
           </div>
 

@@ -50,6 +50,54 @@ export default function CreatePool() {
   const [showTokenDropdown, setShowTokenDropdown] = useState(false);
   const [customTokenMint, setCustomTokenMint] = useState('');
 
+  // Calculate potential profit
+  const calculatePotentialProfit = (): number => {
+    const stakeAmount = parseFloat(formData.stake) || 0;
+    const maxParticipants = parseInt(formData.maxParticipants) || 0;
+    
+    if (stakeAmount <= 0 || maxParticipants <= 0) {
+      return 0;
+    }
+
+    // Get duration in days
+    const durationDays = useCustomDuration 
+      ? parseInt(formData.customDuration) || 0
+      : parseInt(formData.duration.split(' ')[0]) || 0;
+    
+    if (durationDays <= 0) {
+      return 0;
+    }
+
+    // Calculate total staked
+    const totalStaked = stakeAmount * maxParticipants;
+
+    // Calculate yield (7% APY, compounded daily)
+    // Formula: yield = principal * (1 + (APY / 365))^days - principal
+    const APY = 0.07; // 7% APY
+    const dailyRate = APY / 365;
+    const yieldEarned = totalStaked * (Math.pow(1 + dailyRate, durationDays) - 1);
+
+    // Solo challenge (1 participant)
+    if (maxParticipants === 1) {
+      // Solo: profit is just the yield earned
+      return yieldEarned;
+    }
+
+    // Multi-player challenge: assume 50% win rate (reasonable estimate)
+    const winners = Math.max(1, Math.floor(maxParticipants * 0.5));
+    const losers = Math.max(0, maxParticipants - winners);
+
+    // In competitive mode: winners split losers' stakes + yield
+    const loserStakes = losers * stakeAmount;
+    const totalPrizePool = loserStakes + yieldEarned;
+    const bonusPerWinner = winners > 0 ? totalPrizePool / winners : 0;
+
+    // Potential profit is the bonus (amount above original stake)
+    return bonusPerWinner;
+  };
+
+  const potentialProfit = calculatePotentialProfit();
+
   useEffect(() => {
     // Initial load from persisted storage
     const address = getPersistedWalletAddress();
@@ -675,6 +723,25 @@ export default function CreatePool() {
                     placeholder="100" 
                   />
                </div>
+               {potentialProfit > 0 && (
+                 <div className="p-4 border border-emerald-500/30 bg-emerald-500/5 rounded-lg">
+                   <div className="flex items-center justify-between">
+                     <div className="flex-1">
+                       <div className="text-xs uppercase tracking-widest text-gray-400 mb-1">
+                         Potential Profit (if you win)
+                       </div>
+                       <div className="text-2xl font-light text-emerald-400">
+                         +{potentialProfit.toFixed(4)} SOL
+                       </div>
+                       <div className="text-[10px] text-gray-500 mt-1">
+                         {parseInt(formData.maxParticipants) === 1 
+                           ? "Solo challenge: profit comes from yield earned on your stake."
+                           : "Based on 50% win rate assumption. You'd get your stake back + this profit."}
+                       </div>
+                     </div>
+                   </div>
+                 </div>
+               )}
             </div>
 
             {/* Section 2B - Challenge Specific Parameters */}

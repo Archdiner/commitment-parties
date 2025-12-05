@@ -128,7 +128,6 @@ export const Navbar = () => {
   const navLinks = [
     { name: 'Home', href: '/' },
     { name: 'Challenges', href: '/pools' },
-    { name: 'Leaderboard', href: '/leaderboard' },
     { name: 'Dashboard', href: '/dashboard' },
   ];
 
