@@ -29,9 +29,14 @@ export default function PrivacyPolicyPage() {
             <h2 className="text-2xl font-light">Introduction</h2>
           </div>
           <p className="text-gray-400 leading-relaxed">
-            Commitment Agent ("we," "our," or "us") is committed to protecting your privacy. This Privacy Policy 
+            CommitMint ("we," "our," or "us") is committed to protecting your privacy. This Privacy Policy 
             explains how we collect, use, disclose, and safeguard your information when you use our platform. 
-            By using Commitment Agent, you agree to the collection and use of information in accordance with this policy.
+            By using CommitMint, you agree to the collection and use of information in accordance with this policy.
+          </p>
+          <p className="text-gray-400 leading-relaxed">
+            We believe in complete transparency. That's why we tell you exactly what we collect and what we do with it. 
+            We are committed to transparency and believe users should know exactly how their data is being used. 
+            We don't hide anything—everything is clearly explained in this policy.
           </p>
         </div>
 
@@ -56,14 +61,6 @@ export default function PrivacyPolicyPage() {
               <p className="text-gray-400 leading-relaxed">
                 All transactions and challenge data are stored on the Solana blockchain, which is public by nature. 
                 This includes your wallet address, stake amounts, challenge participation, and verification status.
-              </p>
-            </div>
-
-            <div className="p-6 border border-white/10 bg-white/[0.01] rounded-xl">
-              <h3 className="text-lg font-medium mb-3 text-emerald-400">Usage Data</h3>
-              <p className="text-gray-400 leading-relaxed">
-                We may collect information about how you access and use our platform, including IP addresses, 
-                browser type, device information, and usage patterns. This helps us improve our services.
               </p>
             </div>
 
@@ -95,10 +92,6 @@ export default function PrivacyPolicyPage() {
             <li className="flex items-start gap-3">
               <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full mt-2 flex-shrink-0" />
               <span>To display your participation and performance on leaderboards</span>
-            </li>
-            <li className="flex items-start gap-3">
-              <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full mt-2 flex-shrink-0" />
-              <span>To improve and optimize our platform and services</span>
             </li>
             <li className="flex items-start gap-3">
               <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full mt-2 flex-shrink-0" />
@@ -144,10 +137,6 @@ export default function PrivacyPolicyPage() {
               <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full mt-2 flex-shrink-0" />
               <span><strong className="text-white">Legal Requirements:</strong> We may disclose information if required by law or to protect our rights</span>
             </li>
-            <li className="flex items-start gap-3">
-              <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full mt-2 flex-shrink-0" />
-              <span><strong className="text-white">PLACEHOLDER:</strong> Information about data sharing with partners, analytics services, or other third parties</span>
-            </li>
           </ul>
         </div>
 
@@ -162,7 +151,7 @@ export default function PrivacyPolicyPage() {
           <div className="p-6 border border-amber-500/30 bg-amber-500/5 rounded-xl mt-4">
             <p className="text-sm text-amber-300 leading-relaxed">
               <strong className="text-amber-400">Important:</strong> Never share your wallet seed phrase or private keys with anyone. 
-              Commitment Agent will never ask for your private keys or seed phrase.
+              CommitMint will never ask for your private keys or seed phrase.
             </p>
           </div>
         </div>
@@ -186,37 +175,9 @@ export default function PrivacyPolicyPage() {
               <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full mt-2 flex-shrink-0" />
               <span><strong className="text-white">Deletion:</strong> Request deletion of your information (subject to blockchain immutability)</span>
             </li>
-            <li className="flex items-start gap-3">
-              <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full mt-2 flex-shrink-0" />
-              <span><strong className="text-white">PLACEHOLDER:</strong> Additional rights based on GDPR, CCPA, or other applicable regulations</span>
-            </li>
           </ul>
           <p className="text-gray-400 leading-relaxed mt-4">
             Note: Due to the immutable nature of blockchain technology, on-chain data cannot be deleted or modified.
-          </p>
-        </div>
-
-        {/* Cookies */}
-        <div className="mb-12 space-y-6">
-          <h2 className="text-2xl font-light mb-6">Cookies and Tracking</h2>
-          <p className="text-gray-400 leading-relaxed">
-            We use cookies and similar tracking technologies to improve your experience on our platform. 
-            You can control cookies through your browser settings, though this may affect platform functionality.
-          </p>
-          <div className="p-6 border border-white/10 bg-white/[0.01] rounded-xl mt-4">
-            <p className="text-sm text-gray-400 leading-relaxed">
-              <strong className="text-white">PLACEHOLDER:</strong> Detailed information about specific cookies used, 
-              analytics services, and how to opt out.
-            </p>
-          </div>
-        </div>
-
-        {/* Children's Privacy */}
-        <div className="mb-12 space-y-6">
-          <h2 className="text-2xl font-light mb-6">Children's Privacy</h2>
-          <p className="text-gray-400 leading-relaxed">
-            Our platform is not intended for users under the age of 18. We do not knowingly collect personal 
-            information from children. If you believe we have collected information from a child, please contact us immediately.
           </p>
         </div>
 
@@ -237,7 +198,7 @@ export default function PrivacyPolicyPage() {
             If you have any questions about this Privacy Policy, please contact us:
           </p>
           <ul className="space-y-2 text-gray-400">
-            <li>Email: <a href="mailto:support@commitmentagent.com" className="text-emerald-400 hover:text-emerald-300">support@commitmentagent.com</a></li>
+            <li>Email: <a href="mailto:Accountability-Agent@googlegroups.com" className="text-emerald-400 hover:text-emerald-300">Accountability-Agent@googlegroups.com</a></li>
             <li>Website: <a href="/contact" className="text-emerald-400 hover:text-emerald-300">Contact Page</a></li>
           </ul>
         </div>

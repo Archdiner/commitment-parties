@@ -60,8 +60,8 @@ export const Navbar = () => {
         <Link href="/" className="cursor-pointer flex items-center gap-3 group">
           <div className="w-3 h-3 bg-emerald-500 transform rotate-45 group-hover:rotate-90 transition-transform duration-500" />
           <div className="flex flex-col">
-            <span className="font-medium tracking-[0.1em] text-xs text-white">COMMITMENT_AGENT</span>
-            <span className="text-[8px] text-gray-500 tracking-wider">AI ACCOUNTABILITY</span>
+            <span className="font-medium tracking-[0.1em] text-base text-white">COMMITMINT</span>
+            <span className="text-xs text-gray-500 tracking-wider">AI ACCOUNTABILITY</span>
           </div>
         </Link>
 
@@ -70,7 +70,7 @@ export const Navbar = () => {
                <Link 
                   key={link.name}
                   href={link.href}
-                  className={`text-[10px] uppercase tracking-widest transition-all hover:text-emerald-400 ${
+                  className={`text-sm uppercase tracking-widest transition-all hover:text-emerald-400 ${
                     pathname === link.href ? 'text-white' : 'text-gray-500'
                   }`}
                >
@@ -80,12 +80,12 @@ export const Navbar = () => {
         </div>
 
         <div className="flex items-center gap-4">
-          <Link href="/create" className="hidden md:flex items-center gap-2 text-[10px] uppercase tracking-widest text-emerald-500 hover:text-white transition-colors">
-            <Plus className="w-3 h-3" /> Create Challenge
+          <Link href="/create" className="hidden md:flex items-center gap-2 text-sm uppercase tracking-widest text-emerald-500 hover:text-white transition-colors">
+            <Plus className="w-4 h-4" /> Create Challenge
           </Link>
           <button 
             onClick={handleConnect}
-            className={`font-mono text-[10px] border px-4 py-2 uppercase tracking-wide transition-all ${
+            className={`font-mono text-sm border px-4 py-2 uppercase tracking-wide transition-all ${
               isConnected 
                 ? 'border-emerald-500/50 text-emerald-400 bg-emerald-500/5' 
                 : 'border-white/20 text-white hover:bg-white hover:text-black'

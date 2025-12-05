@@ -447,21 +447,23 @@ export default function CreatePool() {
             error?.message?.includes('blocked') || error?.message?.includes('Failed to fetch')) {
           errorMessage = "CORS Error: Backend is not configured to allow requests from this domain. Please update CORS_ORIGINS in Render to include: https://commitment-parties.vercel.app";
         }
+        // Check wallet-specific error codes first (before generic message check)
+        else if (error?.code === 4001) {
+          errorMessage = "Transaction was rejected by user.";
+        } else if (error?.code === -32002) {
+          errorMessage = "Transaction already pending. Please check your wallet.";
+        }
         // Extract detailed error information
         else if (error?.data?.detail) {
           errorMessage = error.data.detail;
         } else if (error?.data?.error) {
           errorMessage = error.data.error;
-        } else if (error?.message) {
-          errorMessage = error.message;
         } else if (error?.detail) {
           errorMessage = error.detail;
         } else if (error?.name === 'ApiError') {
           errorMessage = error.message || "Backend API error. Make sure the backend server is running.";
-        } else if (error?.code === 4001) {
-          errorMessage = "Transaction was rejected by user.";
-        } else if (error?.code === -32002) {
-          errorMessage = "Transaction already pending. Please check your wallet.";
+        } else if (error?.message) {
+          errorMessage = error.message;
         }
         
         // Show full error details in console

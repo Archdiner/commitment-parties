@@ -12,8 +12,8 @@ interface FAQItem {
 const faqCategories = {
   'Getting Started': [
     {
-      question: 'What is Commitment Agent?',
-      answer: 'Commitment Agent is an AI-powered accountability platform built on Solana. You stake SOL (Solana\'s cryptocurrency) on your goals, and our system automatically verifies your progress. Complete your challenge and win money, or fail and lose your stake.'
+      question: 'What is CommitMint?',
+      answer: 'CommitMint is an AI-powered accountability platform built on Solana. You stake SOL (Solana\'s cryptocurrency) on your goals, and our system automatically verifies your progress. Complete your challenge and win money, or fail and lose your stake.'
     },
     {
       question: 'Do I need to know about cryptocurrency to use this?',
@@ -28,7 +28,7 @@ const faqCategories = {
       answer: 'SOL is Solana\'s digital currency (like dollars, but digital). You can buy SOL on exchanges like Coinbase, Binance, or directly in your Phantom wallet. You\'ll need some SOL to stake on challenges and pay for transaction fees (which are very low, usually less than a cent).'
     },
     {
-      question: 'Is Commitment Agent free to use?',
+      question: 'Is CommitMint free to use?',
       answer: 'Yes, the platform is free to use. However, you\'ll need SOL to stake on challenges and pay for blockchain transaction fees (typically less than $0.01 per transaction). Creating a challenge also costs a small fee (about 0.05 SOL) to cover the on-chain transaction.'
     }
   ],
@@ -60,16 +60,12 @@ const faqCategories = {
       answer: 'Yes. Your funds are secured by smart contracts on the Solana blockchain. Once you stake SOL, it\'s locked in the contract until the challenge ends - no one, including us, can access it. The code is open source and auditable.'
     },
     {
-      question: 'Can Commitment Agent steal my money?',
+      question: 'Can CommitMint steal my money?',
       answer: 'No. We cannot access your staked funds. They\'re locked in smart contracts that execute automatically based on the challenge rules. Even if our company disappeared, the smart contracts would continue to function and your funds would be safe.'
     },
     {
       question: 'What if the AI verification makes a mistake?',
       answer: 'Our AI verification system is designed to be fair and accurate. If you believe there\'s been an error, contact our support team immediately. We review disputed verifications on a case-by-case basis. However, the system is generally very reliable.'
-    },
-    {
-      question: 'Are smart contracts audited?',
-      answer: 'PLACEHOLDER: Information about smart contract audits, security measures, and third-party reviews will be detailed here.'
     },
     {
       question: 'What happens if the website goes down?',
@@ -166,7 +162,7 @@ export default function FAQPage() {
             <span className="text-emerald-500 font-serif italic font-light">Questions</span>
           </h1>
           <p className="text-lg text-gray-400 leading-relaxed max-w-2xl mx-auto">
-            Everything you need to know about Commitment Agent. Can't find what you're looking for? 
+            Everything you need to know about CommitMint. Can't find what you're looking for? 
             <a href="/contact" className="text-emerald-400 hover:text-emerald-300 ml-1">Contact us</a>.
           </p>
         </div>
