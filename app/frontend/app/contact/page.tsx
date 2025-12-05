@@ -99,12 +99,12 @@ export default function ContactPage() {
                 <div>
                   <h3 className="text-sm font-medium text-gray-300 mb-1">Social Media</h3>
                   <a 
-                    href="https://x.com/CommitmentAgent" 
+                    href="https://x.com/CommitMint" 
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-sm text-emerald-400 hover:text-emerald-300 transition-colors"
                   >
-                    @CommitmentAgent on X
+                    @CommitMint on X
                   </a>
                   <p className="text-xs text-gray-500 mt-2">Follow us for updates and announcements</p>
                 </div>

@@ -18,7 +18,7 @@ export default function AboutPage() {
             of <span className="text-emerald-500 font-serif italic font-light">Accountability</span>
           </h1>
           <p className="text-lg text-gray-400 leading-relaxed max-w-2xl mx-auto">
-            Learn more about our mission, values, and the team behind Commitment Agent. 
+            Learn more about our mission, values, and the team behind CommitMint. 
             Discover how we're revolutionizing goal achievement through blockchain technology and AI.
           </p>
         </div>
@@ -32,7 +32,7 @@ export default function AboutPage() {
           <p className="text-gray-400 leading-relaxed text-lg">
             We believe that financial commitment is the most powerful motivator for achieving goals. 
             Traditional goal-setting often fails because there's no real consequence for giving up. 
-            Commitment Agent changes that by locking your money in a smart contract until you prove 
+            CommitMint changes that by locking your money in a smart contract until you prove 
             you've completed your commitment.
           </p>
           <p className="text-gray-400 leading-relaxed text-lg">
@@ -84,7 +84,7 @@ export default function AboutPage() {
           </div>
           <div className="space-y-4">
             <p className="text-gray-400 leading-relaxed">
-              Commitment Agent is built on <strong className="text-white">Solana</strong>, 
+              CommitMint is built on <strong className="text-white">Solana</strong>, 
               one of the fastest and most cost-effective blockchains. This means:
             </p>
             <ul className="space-y-3 text-gray-400">
