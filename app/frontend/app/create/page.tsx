@@ -424,8 +424,13 @@ export default function CreatePool() {
         console.error('Pool creation error:', error);
         let errorMessage = "Failed to create pool.";
         
+        // Check for CORS errors specifically
+        if (error?.message?.includes('CORS') || error?.message?.includes('cors') || 
+            error?.message?.includes('blocked') || error?.message?.includes('Failed to fetch')) {
+          errorMessage = "CORS Error: Backend is not configured to allow requests from this domain. Please update CORS_ORIGINS in Render to include: https://commitment-parties.vercel.app";
+        }
         // Extract detailed error information
-        if (error?.data?.detail) {
+        else if (error?.data?.detail) {
           errorMessage = error.data.detail;
         } else if (error?.data?.error) {
           errorMessage = error.data.error;
@@ -446,7 +451,8 @@ export default function CreatePool() {
           error,
           status: error?.status,
           data: error?.data,
-          message: error?.message
+          message: error?.message,
+          apiUrl: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
         });
         
         alert(`Error: ${errorMessage}\n\nStatus: ${error?.status || 'Unknown'}\n\nCheck the browser console for more details.`);
