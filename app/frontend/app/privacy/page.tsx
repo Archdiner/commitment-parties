@@ -29,9 +29,9 @@ export default function PrivacyPolicyPage() {
             <h2 className="text-2xl font-light">Introduction</h2>
           </div>
           <p className="text-gray-400 leading-relaxed">
-            Commitment Agent ("we," "our," or "us") is committed to protecting your privacy. This Privacy Policy 
+            CommitMint ("we," "our," or "us") is committed to protecting your privacy. This Privacy Policy 
             explains how we collect, use, disclose, and safeguard your information when you use our platform. 
-            By using Commitment Agent, you agree to the collection and use of information in accordance with this policy.
+            By using CommitMint, you agree to the collection and use of information in accordance with this policy.
           </p>
           <p className="text-gray-400 leading-relaxed">
             We believe in complete transparency. That's why we tell you exactly what we collect and what we do with it. 
@@ -151,7 +151,7 @@ export default function PrivacyPolicyPage() {
           <div className="p-6 border border-amber-500/30 bg-amber-500/5 rounded-xl mt-4">
             <p className="text-sm text-amber-300 leading-relaxed">
               <strong className="text-amber-400">Important:</strong> Never share your wallet seed phrase or private keys with anyone. 
-              Commitment Agent will never ask for your private keys or seed phrase.
+              CommitMint will never ask for your private keys or seed phrase.
             </p>
           </div>
         </div>

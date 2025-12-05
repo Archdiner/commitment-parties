@@ -18,7 +18,7 @@ export default function HowToPage() {
             <span className="text-emerald-500 font-serif italic font-light">Step by Step</span>
           </h1>
           <p className="text-lg text-gray-400 leading-relaxed max-w-2xl mx-auto">
-            New to Commitment Agent? Follow this guide to get started with your first challenge.
+            New to CommitMint? Follow this guide to get started with your first challenge.
           </p>
         </div>
 
@@ -46,7 +46,7 @@ export default function HowToPage() {
             <div className="p-6 border border-amber-500/30 bg-amber-500/5 rounded-xl mt-4">
               <p className="text-sm text-amber-300 leading-relaxed">
                 <strong className="text-amber-400">Important:</strong> Never share your seed phrase or private keys with anyone. 
-                Commitment Agent will never ask for this information.
+                CommitMint will never ask for this information.
               </p>
             </div>
           </div>
@@ -65,7 +65,7 @@ export default function HowToPage() {
           </div>
           <div className="space-y-4 pl-16">
             <p className="text-gray-400 leading-relaxed text-lg">
-              Once you have Phantom installed, connect it to Commitment Agent.
+              Once you have Phantom installed, connect it to CommitMint.
             </p>
             <ol className="space-y-3 text-gray-400 list-decimal list-inside">
               <li>Click "Connect Wallet" in the top-right corner of the website</li>

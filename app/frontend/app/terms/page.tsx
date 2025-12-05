@@ -29,7 +29,7 @@ export default function TermsOfServicePage() {
             <h2 className="text-2xl font-light">Agreement to Terms</h2>
           </div>
           <p className="text-gray-400 leading-relaxed">
-            By accessing or using Commitment Agent ("the Platform"), you agree to be bound by these Terms of Service 
+            By accessing or using CommitMint ("the Platform"), you agree to be bound by these Terms of Service 
             and all applicable laws and regulations. If you do not agree with any of these terms, you are prohibited 
             from using or accessing this platform.
           </p>
@@ -43,7 +43,7 @@ export default function TermsOfServicePage() {
           </div>
           <div className="space-y-4">
             <p className="text-gray-400 leading-relaxed">
-              You must be at least 18 years old to use Commitment Agent. By using the Platform, you represent and warrant that:
+              You must be at least 18 years old to use CommitMint. By using the Platform, you represent and warrant that:
             </p>
             <ul className="space-y-3 text-gray-400">
               <li className="flex items-start gap-3">
@@ -70,7 +70,7 @@ export default function TermsOfServicePage() {
         <div className="mb-12 space-y-6">
           <h2 className="text-2xl font-light mb-6">Platform Description</h2>
           <p className="text-gray-400 leading-relaxed">
-            Commitment Agent is an AI-powered accountability platform built on the Solana blockchain. Users can 
+            CommitMint is an AI-powered accountability platform built on the Solana blockchain. Users can 
             create or join challenges, stake SOL (Solana's cryptocurrency), and have their progress automatically 
             verified. Successful participants split the prize pool; unsuccessful participants forfeit their stake.
           </p>
@@ -84,7 +84,7 @@ export default function TermsOfServicePage() {
               <h3 className="text-lg font-medium mb-3 text-emerald-400">Wallet Security</h3>
               <p className="text-gray-400 leading-relaxed">
                 You are solely responsible for maintaining the security of your wallet and private keys. 
-                Commitment Agent cannot recover lost wallets or stolen funds. Never share your seed phrase or 
+                CommitMint cannot recover lost wallets or stolen funds. Never share your seed phrase or 
                 private keys with anyone.
               </p>
             </div>
@@ -138,7 +138,7 @@ export default function TermsOfServicePage() {
             <div className="p-6 border border-white/10 bg-white/[0.01] rounded-xl">
               <h3 className="text-lg font-medium mb-3 text-emerald-400">Tax Obligations</h3>
               <p className="text-gray-400 leading-relaxed">
-                You are solely responsible for any tax obligations arising from your use of Commitment Agent. 
+                You are solely responsible for any tax obligations arising from your use of CommitMint. 
                 We do not provide tax advice. Consult a tax professional regarding cryptocurrency transactions.
               </p>
             </div>
@@ -207,7 +207,7 @@ export default function TermsOfServicePage() {
           <h2 className="text-2xl font-light mb-6">Limitation of Liability</h2>
           <div className="p-6 border border-amber-500/30 bg-amber-500/5 rounded-xl">
             <p className="text-gray-400 leading-relaxed">
-              TO THE MAXIMUM EXTENT PERMITTED BY LAW, COMMITMENT AGENT AND ITS AFFILIATES SHALL NOT BE LIABLE 
+              TO THE MAXIMUM EXTENT PERMITTED BY LAW, COMMITMINT AND ITS AFFILIATES SHALL NOT BE LIABLE 
               FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, OR ANY LOSS OF PROFITS 
               OR REVENUES, WHETHER INCURRED DIRECTLY OR INDIRECTLY, OR ANY LOSS OF DATA, USE, GOODWILL, OR OTHER 
               INTANGIBLE LOSSES RESULTING FROM YOUR USE OF THE PLATFORM.
