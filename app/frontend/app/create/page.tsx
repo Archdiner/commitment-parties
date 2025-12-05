@@ -7,8 +7,8 @@ import { ChevronRight, Zap, ChevronDown } from 'lucide-react';
 import { ButtonPrimary } from '@/components/ui/ButtonPrimary';
 import { SectionLabel } from '@/components/ui/SectionLabel';
 import { InfoIcon } from '@/components/ui/Tooltip';
-import { confirmPoolCreation } from '@/lib/api';
-import { getPersistedWalletAddress } from '@/lib/wallet';
+import { confirmPoolCreation, getGitHubUsername } from '@/lib/api';
+import { getPersistedWalletAddress, getPersistedGitHubUsername } from '@/lib/wallet';
 import { derivePoolPDA, getConnection, solToLamports } from '@/lib/solana';
 import { Transaction } from '@solana/web3.js';
 import { POPULAR_TOKENS, getTokenByMint, type TokenInfo } from '@/lib/tokens';
@@ -17,6 +17,8 @@ export default function CreatePool() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
+  const [isGitHubConnected, setIsGitHubConnected] = useState(false);
+  const [checkingGitHub, setCheckingGitHub] = useState(true);
   
   // Form State
   const [formData, setFormData] = useState({
@@ -38,8 +40,9 @@ export default function CreatePool() {
     dcaTradesPerDay: '1',     // number of trades per day
     // Social-specific fields
     githubCommitsPerDay: '1',
-    githubRepo: '',
+    githubMinLinesPerCommit: '10', // Minimum lines changed per commit to prevent gamification
     screenTimeHours: '2',
+    // Removed: githubRepo - we now track commits from any repository
   });
   const [useCustomDuration, setUseCustomDuration] = useState(false);
   const [validationErrors, setValidationErrors] = useState<Record<string, boolean>>({});
@@ -52,12 +55,37 @@ export default function CreatePool() {
     const address = getPersistedWalletAddress();
     setWalletAddress(address);
 
+    // Check GitHub connection
+    const checkGitHub = async () => {
+      if (address) {
+        try {
+          const result = await getGitHubUsername(address);
+          setIsGitHubConnected(!!result.verified_github_username);
+        } catch (err) {
+          console.error('Error checking GitHub connection:', err);
+        }
+      }
+      // Also check localStorage
+      const savedGithub = getPersistedGitHubUsername();
+      if (savedGithub) {
+        setIsGitHubConnected(true);
+      }
+      setCheckingGitHub(false);
+    };
+    checkGitHub();
+
     // Also listen for storage changes so connecting in Navbar while this
     // page is open will update the local state.
     if (typeof window !== 'undefined') {
       const handleStorage = () => {
         const updated = getPersistedWalletAddress();
         setWalletAddress(updated);
+        // Re-check GitHub when wallet changes
+        if (updated) {
+          checkGitHub();
+        } else {
+          setIsGitHubConnected(false);
+        }
       };
       window.addEventListener('storage', handleStorage);
       return () => window.removeEventListener('storage', handleStorage);
@@ -248,10 +276,16 @@ export default function CreatePool() {
               setLoading(false);
               return;
             }
+            const minLines = parseInt(formData.githubMinLinesPerCommit || '10', 10);
+            if (isNaN(minLines) || minLines < 1 || minLines > 1000) {
+              alert('Minimum lines per commit must be between 1 and 1000.');
+              setLoading(false);
+              return;
+            }
             goalMetadata = {
               habit_type: 'github_commits',
               min_commits_per_day: commitsPerDay,
-              repo: formData.githubRepo.trim() || undefined,
+              min_lines_per_commit: minLines,
             };
             goalParamsForOnchain = { habit_name: 'GitHub Commits' };
           } else {
@@ -910,20 +944,25 @@ export default function CreatePool() {
                           />
                         </div>
                         <div>
-                          <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">
-                            Repository (optional)
+                          <label className="flex items-center gap-2 text-xs uppercase tracking-widest text-gray-500 mb-2">
+                            Min Lines Per Commit
+                            <InfoIcon content="Minimum lines changed (additions + deletions) per commit to prevent gamification with empty or trivial commits." />
                           </label>
                           <input
-                            type="text"
-                            value={formData.githubRepo}
-                            onChange={(e) => setFormData({ ...formData, githubRepo: e.target.value })}
+                            type="number"
+                            min={1}
+                            max={1000}
+                            value={formData.githubMinLinesPerCommit}
+                            onChange={(e) =>
+                              setFormData({ ...formData, githubMinLinesPerCommit: e.target.value })
+                            }
                             className="w-full bg-transparent border-b border-white/20 py-2 text-sm text-white placeholder-gray-700 focus:outline-none focus:border-emerald-500 transition-colors"
-                            placeholder="owner/repo (leave empty for any repo)"
+                            placeholder="e.g. 10"
                           />
                         </div>
                       </div>
                       <p className="text-[10px] text-gray-600">
-                        GitHub username is verified separately and used automatically by the agent.
+                        Commits are tracked from any repository. Only commits with at least the minimum lines changed will count.
                       </p>
                     </div>
                   ) : (
@@ -1085,11 +1124,24 @@ export default function CreatePool() {
                    </div>
                  </div>
                )}
+               {walletAddress && !checkingGitHub && !isGitHubConnected && (
+                 <div className="mb-6 p-4 border border-amber-500/30 bg-amber-500/5 rounded-lg">
+                   <div className="flex items-start gap-3 text-xs text-amber-400">
+                     <InfoIcon content="You need to connect your GitHub account to create coding challenges. This ensures only real developers can create challenges and prevents abuse." />
+                     <div>
+                       <p className="font-medium mb-1">Connect Your GitHub Account</p>
+                       <p className="text-amber-300/80 leading-relaxed">
+                         Click "Connect GitHub" in the top-right corner next to your wallet address to connect your GitHub account.
+                       </p>
+                     </div>
+                   </div>
+                 </div>
+               )}
                <div className="flex items-center justify-center gap-2 mb-4">
                  <ButtonPrimary 
                    className="w-full" 
                    onClick={handleDeploy}
-                   disabled={loading || !walletAddress}
+                   disabled={loading || !walletAddress || !isGitHubConnected || checkingGitHub}
                  >
                    {loading ? <span className="animate-pulse">Creating Challenge...</span> : "Create Challenge"}
                  </ButtonPrimary>

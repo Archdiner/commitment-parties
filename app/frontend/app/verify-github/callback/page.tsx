@@ -3,7 +3,7 @@
 import React, { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { getGitHubUsername } from '@/lib/api';
-import { getPersistedWalletAddress } from '@/lib/wallet';
+import { getPersistedWalletAddress, persistGitHubUsername } from '@/lib/wallet';
 import { CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -54,11 +54,17 @@ function CallbackContent() {
           setMessage(data.message);
           setGithubUsername(data.github_username || null);
 
-          // Refresh verification status
+          // Refresh verification status and persist GitHub username
           const wallet = getPersistedWalletAddress();
           if (wallet) {
             const check = await getGitHubUsername(wallet);
-            setGithubUsername(check.verified_github_username);
+            const username = check.verified_github_username;
+            setGithubUsername(username);
+            if (username) {
+              persistGitHubUsername(username);
+              // Trigger storage event so Navbar can update
+              window.dispatchEvent(new Event('storage'));
+            }
           }
 
           // Redirect to dashboard after 2 seconds

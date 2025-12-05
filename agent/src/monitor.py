@@ -128,8 +128,8 @@ class Monitor:
                 return False
 
             github_username = users[0].get("verified_github_username")
-            repo = (goal_metadata.get("repo") or "").strip()
             min_commits_per_day = int(goal_metadata.get("min_commits_per_day", 1))
+            min_lines_per_commit = int(goal_metadata.get("min_lines_per_commit", 0))  # Default 0 = no minimum
             start_timestamp = pool.get("start_timestamp")
 
             if not start_timestamp:
@@ -137,11 +137,14 @@ class Monitor:
                 return False
 
             logger.info(
-                "Verifying GitHub commits for pool=%s, wallet=%s, verified_github=%s, day=%s",
+                "Verifying GitHub commits for pool=%s, wallet=%s, verified_github=%s, day=%s, "
+                "min_commits=%s, min_lines=%s",
                 pool.get("pool_id"),
                 participant_wallet,
                 github_username,
-                day
+                day,
+                min_commits_per_day,
+                min_lines_per_commit
             )
 
             # Calculate the UTC day window for this challenge day
@@ -184,57 +187,15 @@ class Monitor:
                 time_remaining
             )
 
-            # If a specific repo is configured, count commits in that repo only
-            if repo:
-                owner, _, repo_name = repo.partition("/")
-                if not owner or not repo_name:
-                    logger.warning(
-                        "Invalid GitHub repo format for pool %s: %s",
-                        pool.get("pool_id"),
-                        repo,
-                    )
-                    return False
-
-                url = f"https://api.github.com/repos/{owner}/{repo_name}/commits"
-                params = {
-                    "author": github_username,
-                    "since": start_of_day.isoformat(),
-                    "until": end_of_day.isoformat(),
-                }
-
-                async with httpx.AsyncClient(timeout=10) as client:
-                    response = await client.get(
-                        url,
-                        params=params,
-                        headers={
-                            "Accept": "application/vnd.github+json",
-                        },
-                    )
-
-                if response.status_code != 200:
-                    logger.warning(
-                        "GitHub API error for pool %s, user=%s, repo=%s: "
-                        "status=%s, body=%s",
-                        pool.get("pool_id"),
-                        github_username,
-                        repo,
-                        response.status_code,
-                        response.text,
-                    )
-                    return False
-
-                commits = response.json() or []
-                commit_count = len(commits)
-            else:
-                # No repo specified: use user events API and count PushEvent commits
-                events_url = f"https://api.github.com/users/{github_username}/events"
-                async with httpx.AsyncClient(timeout=10) as client:
-                    response = await client.get(
-                        events_url,
-                        headers={
-                            "Accept": "application/vnd.github+json",
-                        },
-                    )
+            # Always use user events API to track commits from any repository
+            events_url = f"https://api.github.com/users/{github_username}/events"
+            async with httpx.AsyncClient(timeout=30) as client:  # Increased timeout for commit detail fetching
+                response = await client.get(
+                    events_url,
+                    headers={
+                        "Accept": "application/vnd.github+json",
+                    },
+                )
 
                 if response.status_code != 200:
                     logger.warning(
@@ -255,6 +216,9 @@ class Monitor:
                 push_events_in_range = []
                 push_events_out_of_range = []
                 
+                # Collect all commits from PushEvents in the time range
+                candidate_commits = []  # List of (repo, sha, message) tuples
+                
                 for event in events:
                     try:
                         if event.get("type") != "PushEvent":
@@ -264,14 +228,11 @@ class Monitor:
                             continue
                         
                         # Parse the ISO 8601 timestamp and compare as datetime objects
-                        # GitHub returns timestamps like "2025-12-02T17:30:00Z"
                         try:
                             event_time = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
                             if event_time.tzinfo is None:
-                                # If no timezone, assume UTC
                                 event_time = event_time.replace(tzinfo=timezone.utc)
                         except (ValueError, AttributeError):
-                            # Fallback to string comparison if parsing fails
                             if not (start_str <= created_at_str <= end_str):
                                 push_events_out_of_range.append({
                                     "time": created_at_str,
@@ -280,7 +241,6 @@ class Monitor:
                                 continue
                             event_time = None
                         else:
-                            # Use datetime comparison for accuracy
                             if not (start_of_day <= event_time < end_of_day):
                                 push_events_out_of_range.append({
                                     "time": created_at_str,
@@ -291,29 +251,108 @@ class Monitor:
                         
                         payload = event.get("payload") or {}
                         commits = payload.get("commits") or []
-                        commits_in_event = 0
-                        # Light anti-gamification: count only commits with non-trivial messages
+                        repo_name = event.get("repo", {}).get("name", "unknown")
+                        
+                        # Collect commits with non-trivial messages
                         for commit in commits:
                             msg = (commit.get("message") or "").strip()
-                            if len(msg) >= 5:
-                                commit_count += 1
-                                commits_in_event += 1
+                            sha = commit.get("sha", "")
+                            if len(msg) >= 5 and sha:
+                                candidate_commits.append({
+                                    "repo": repo_name,
+                                    "sha": sha,
+                                    "message": msg,
+                                    "url": commit.get("url", "")
+                                })
                         
-                        if commits_in_event > 0:
+                        if commits:
                             push_events_in_range.append({
                                 "time": created_at_str,
-                                "repo": event.get("repo", {}).get("name", "unknown"),
-                                "commits": commits_in_event
+                                "repo": repo_name,
+                                "commits": len(commits)
                             })
                     except Exception as parse_err:
                         logger.debug("Error parsing GitHub event: %s", parse_err)
+                
+                # If minimum lines threshold is set, fetch commit details to check line counts
+                if min_lines_per_commit > 0 and candidate_commits:
+                    logger.info(
+                        f"Checking {len(candidate_commits)} candidate commits for minimum {min_lines_per_commit} lines threshold"
+                    )
+                    
+                    # Fetch commit stats for each candidate commit
+                    # Note: We need to use the commit URL from the PushEvent, but we can also construct it
+                    valid_commits = []
+                    for commit_info in candidate_commits:
+                        try:
+                            # Construct commit API URL: https://api.github.com/repos/{owner}/{repo}/commits/{sha}
+                            # commit_info["url"] should be the commit URL, but we need the API endpoint
+                            repo_full_name = commit_info["repo"]
+                            sha = commit_info["sha"]
+                            
+                            # Convert from "owner/repo" format
+                            commit_api_url = f"https://api.github.com/repos/{repo_full_name}/commits/{sha}"
+                            
+                            async with httpx.AsyncClient(timeout=10) as commit_client:
+                                commit_response = await commit_client.get(
+                                    commit_api_url,
+                                    headers={
+                                        "Accept": "application/vnd.github+json",
+                                    },
+                                )
+                            
+                            if commit_response.status_code == 200:
+                                commit_data = commit_response.json()
+                                stats = commit_data.get("stats", {})
+                                total_lines = stats.get("total", 0)  # Total lines changed (additions + deletions)
+                                
+                                if total_lines >= min_lines_per_commit:
+                                    valid_commits.append({
+                                        "repo": repo_full_name,
+                                        "sha": sha[:7],
+                                        "lines": total_lines,
+                                        "message": commit_info["message"][:60]
+                                    })
+                                    commit_count += 1
+                                else:
+                                    logger.debug(
+                                        f"Commit {sha[:7]} in {repo_full_name} has {total_lines} lines "
+                                        f"(minimum required: {min_lines_per_commit}), skipping"
+                                    )
+                            else:
+                                # If we can't fetch commit details, fall back to counting it
+                                # (API might be rate-limited or commit might be in private repo)
+                                logger.debug(
+                                    f"Could not fetch commit details for {sha[:7]} in {repo_full_name}: "
+                                    f"status {commit_response.status_code}. Counting commit anyway."
+                                )
+                                valid_commits.append({
+                                    "repo": repo_full_name,
+                                    "sha": sha[:7],
+                                    "lines": "unknown",
+                                    "message": commit_info["message"][:60]
+                                })
+                                commit_count += 1
+                        except Exception as commit_err:
+                            logger.debug(f"Error fetching commit details for {commit_info.get('sha', 'unknown')}: {commit_err}")
+                            # On error, count the commit anyway to avoid false negatives
+                            commit_count += 1
+                    
+                    if valid_commits:
+                        logger.info(
+                            f"Valid commits (>= {min_lines_per_commit} lines): {valid_commits[:5]}"
+                        )
+                else:
+                    # No minimum lines threshold - count all commits with non-trivial messages
+                    commit_count = len(candidate_commits)
                 
                 # Log detailed information for debugging
                 logger.info(
                     f"GitHub events analysis: total_events={len(events)}, "
                     f"push_events_in_range={len(push_events_in_range)}, "
                     f"push_events_out_of_range={len(push_events_out_of_range)}, "
-                    f"commits_counted={commit_count}"
+                    f"candidate_commits={len(candidate_commits)}, "
+                    f"valid_commits_counted={commit_count}"
                 )
                 
                 if push_events_in_range:
@@ -333,14 +372,14 @@ class Monitor:
                 # Day is over - final verdict
                 passed = has_commits
                 logger.info(
-                    "GitHub verification (FINAL - day ended): pool=%s, wallet=%s, user=%s, repo=%s, "
-                    "commits_found=%s, min_required=%s, passed=%s",
+                    "GitHub verification (FINAL - day ended): pool=%s, wallet=%s, user=%s, "
+                    "commits_found=%s, min_required=%s, min_lines=%s, passed=%s",
                     pool.get("pool_id"),
                     participant.get("wallet_address"),
                     github_username,
-                    repo or "*any*",
                     commit_count,
                     min_commits_per_day,
+                    min_lines_per_commit,
                     passed,
                 )
             else:
@@ -348,14 +387,14 @@ class Monitor:
                 # Don't mark as failed yet (user still has time)
                 passed = has_commits if has_commits else None  # None = pending, not failed yet
                 logger.info(
-                    "GitHub verification (IN PROGRESS - day active): pool=%s, wallet=%s, user=%s, repo=%s, "
-                    "commits_found=%s, min_required=%s, status=%s (%.1fh remaining)",
+                    "GitHub verification (IN PROGRESS - day active): pool=%s, wallet=%s, user=%s, "
+                    "commits_found=%s, min_required=%s, min_lines=%s, status=%s (%.1fh remaining)",
                     pool.get("pool_id"),
                     participant.get("wallet_address"),
                     github_username,
-                    repo or "*any*",
                     commit_count,
                     min_commits_per_day,
+                    min_lines_per_commit,
                     "PASSED" if passed else "PENDING",
                     time_remaining
                 )
