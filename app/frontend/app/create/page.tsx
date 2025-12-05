@@ -634,7 +634,7 @@ export default function CreatePool() {
                       onChange={(e) => setFormData({ ...formData, descriptionText: e.target.value })}
                       rows={4}
                       maxLength={500}
-                      className="w-full bg-transparent border-b border-white/20 py-3 px-3 text-sm text-white placeholder-gray-800 focus:outline-none focus:border-emerald-500 transition-colors resize-none"
+                      className="w-full bg-transparent border-b border-white/20 py-3 px-3 text-xl text-white placeholder-gray-800 focus:outline-none focus:border-emerald-500 transition-colors resize-none"
                       placeholder="e.g. 30 days of 6am gym check-ins with a mirror selfie as proof. GPS verification required. Must check in between 5:45am and 6:15am UTC daily."
                     />
                     <p className="text-[10px] text-gray-600 mt-1">

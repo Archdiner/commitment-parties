@@ -1,36 +1,130 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Frontend
 
-## Getting Started
+Next.js 14 frontend application for Commitment Parties.
 
-First, run the development server:
+## Overview
+
+User-facing web application for creating, joining, and managing commitment pools. Features wallet integration, pool browsing, and check-in interfaces.
+
+## Setup
+
+### Prerequisites
+
+- Node.js 18+ and npm
+- Environment variables configured
+
+### Installation
+
+```bash
+cd app/frontend
+npm install
+```
+
+### Configuration
+
+Copy the example environment file:
+
+```bash
+cp docs/env-templates/frontend.env.example .env.local
+```
+
+Required environment variables:
+
+```bash
+NEXT_PUBLIC_SOLANA_RPC=https://api.devnet.solana.com
+NEXT_PUBLIC_PROGRAM_ID=your_program_id_here
+NEXT_PUBLIC_CLUSTER=devnet
+NEXT_PUBLIC_API_URL=https://your-backend-url
+```
+
+## Development
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Frontend available at `http://localhost:3000`
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Build
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run build
+npm start
+```
 
-## Learn More
+## Deployment
 
-To learn more about Next.js, take a look at the following resources:
+### Vercel (Recommended)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. Connect GitHub repository to Vercel
+2. Set root directory to `app/frontend`
+3. Framework: Next.js (auto-detected)
+4. Configure environment variables
+5. Deploy
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Vercel will automatically:
+- Detect Next.js framework
+- Run `npm run build`
+- Deploy on every git push
 
-## Deploy on Vercel
+### Other Platforms
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+The app can be deployed to any platform that supports Next.js:
+- Netlify
+- Railway
+- Render
+- AWS Amplify
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Features
+
+- **Wallet Connection**: Phantom, Solflare, and other Solana wallets
+- **Pool Browsing**: Discover and filter active pools
+- **Pool Creation**: Create new commitment pools with custom goals
+- **Join Pools**: Connect wallet and stake SOL to join
+- **Check-ins**: Submit daily check-ins for lifestyle challenges
+- **Progress Tracking**: View your progress and leaderboards
+- **Twitter Blinks**: Share pools on Twitter with one-click join
+
+## Project Structure
+
+```
+app/frontend/
+├── app/                    # Next.js app directory
+│   ├── page.tsx            # Home page
+│   ├── create/             # Pool creation
+│   ├── pools/              # Pool browsing and details
+│   └── dashboard/          # User dashboard
+├── components/             # React components
+│   ├── Navbar.tsx
+│   ├── Footer.tsx
+│   └── ui/                 # UI components
+└── lib/                    # Utilities
+    ├── solana.ts           # Solana client
+    ├── wallet.ts           # Wallet adapter
+    └── api.ts              # Backend API client
+```
+
+## Tech Stack
+
+- **Framework**: Next.js 14 (App Router)
+- **Language**: TypeScript
+- **Styling**: Tailwind CSS
+- **Blockchain**: @solana/web3.js, @solana/wallet-adapter
+- **UI Components**: Custom components with Tailwind
+
+## Troubleshooting
+
+### Wallet connection issues
+- Ensure wallet extension is installed
+- Check network matches (devnet/mainnet)
+- Verify RPC endpoint is accessible
+
+### API connection errors
+- Check `NEXT_PUBLIC_API_URL` is correct
+- Verify backend is running and accessible
+- Check CORS settings in backend
+
+### Build errors
+- Clear `.next` directory: `rm -rf .next`
+- Reinstall dependencies: `rm -rf node_modules && npm install`
+- Check Node.js version matches requirements

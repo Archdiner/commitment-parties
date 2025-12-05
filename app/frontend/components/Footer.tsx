@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { Github, Twitter } from 'lucide-react';
+import { Github } from 'lucide-react';
 
 export const Footer = () => {
   const currentYear = new Date().getFullYear();
@@ -57,11 +57,6 @@ export const Footer = () => {
             <h3 className="text-xs uppercase tracking-widest text-gray-500 mb-4">Resources</h3>
             <ul className="space-y-3">
               <li>
-                <Link href="/about" className="text-sm text-gray-400 hover:text-emerald-400 transition-colors">
-                  About Us
-                </Link>
-              </li>
-              <li>
                 <Link href="/faq" className="text-sm text-gray-400 hover:text-emerald-400 transition-colors">
                   FAQ
                 </Link>
@@ -90,15 +85,6 @@ export const Footer = () => {
               </li>
             </ul>
             <div className="flex items-center gap-4 mt-6">
-              <a 
-                href="https://x.com/CommitMint" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="text-gray-400 hover:text-emerald-400 transition-colors"
-                aria-label="Twitter"
-              >
-                <Twitter className="w-5 h-5" />
-              </a>
               <a 
                 href="https://github.com/Archdiner/commitment-parties" 
                 target="_blank" 

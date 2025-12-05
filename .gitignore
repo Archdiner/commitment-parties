@@ -94,13 +94,6 @@ coverage/
 scripts/delete_all_pools.py
 scripts/verify_deletion.py
 
-# Documentation (temporary/working docs)
-docs/CHALLENGE_TIMING_DESIGN.md
-docs/GITHUB_VERIFICATION_FIX.md
-docs/RECRUITMENT_PERIOD_ANALYSIS.md
-docs/RECRUITMENT_PERIOD_IMPLEMENTATION.md
-docs/SYSTEM_VERIFICATION.md
-
 # Database
 *.db
 *.sqlite
@@ -112,8 +105,4 @@ logs/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-
-# Test files (temporary)
-agent/test_e2e_flow.py
-agent/TEST_E2E_FLOW.md
 
