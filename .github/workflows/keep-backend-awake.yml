@@ -1,0 +1,29 @@
+name: Keep Backend Awake
+
+on:
+  schedule:
+    # Run every 5 minutes to prevent Render from spinning down
+    - cron: '*/5 * * * *'
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  ping-backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Ping Backend Health Endpoint
+        run: |
+          echo "Pinging backend to keep it awake..."
+          curl -f --max-time 30 https://commitment-backend.onrender.com/health || exit 1
+          echo "Backend is awake!"
+        
+      - name: Verify Response
+        run: |
+          response=$(curl -s https://commitment-backend.onrender.com/health)
+          echo "Response: $response"
+          if echo "$response" | grep -q '"status":"ok"'; then
+            echo "✅ Backend is healthy"
+          else
+            echo "⚠️ Backend response unexpected"
+            exit 1
+          fi

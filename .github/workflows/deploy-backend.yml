@@ -1,0 +1,69 @@
+name: Deploy Backend
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+      - '.github/workflows/deploy-backend.yml'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'backend/requirements.txt'
+      
+      - name: Install dependencies
+        working-directory: ./backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Run tests (optional)
+        working-directory: ./backend
+        run: |
+          # Add your test command here if you have tests
+          # pytest tests/ || true
+          echo "Tests would run here"
+      
+      - name: Deploy to Railway
+        if: env.RAILWAY_TOKEN != ''
+        uses: bervProject/railway-deploy@v1.0.3
+        with:
+          railway_token: ${{ secrets.RAILWAY_TOKEN }}
+          service: ${{ secrets.RAILWAY_SERVICE_ID }}
+          detach: false
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      
+      - name: Deploy to Render (via API)
+        if: env.RENDER_API_KEY != '' && env.RAILWAY_TOKEN == ''
+        run: |
+          curl -X POST "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE_ID }}/deploys" \
+            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+            -H "Content-Type: application/json"
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      
+      - name: Deploy to Fly.io (if configured)
+        if: env.FLY_API_TOKEN != '' && env.RAILWAY_TOKEN == '' && env.RENDER_API_KEY == ''
+        working-directory: ./backend
+        run: |
+          curl -L https://fly.io/install.sh | sh
+          export FLYCTL_INSTALL="/home/runner/.fly"
+          export PATH="$FLYCTL_INSTALL/bin:$PATH"
+          flyctl deploy --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+

@@ -103,6 +103,90 @@ class ApiError extends Error {
   }
 }
 
+/**
+ * Fetch with timeout and retry logic for Render cold starts
+ */
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit,
+  timeout: number = 30000 // 30 seconds default
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') {
+      throw new Error(`Request timeout after ${timeout}ms. Backend may be waking up from sleep.`);
+    }
+    throw err;
+  }
+}
+
+/**
+ * Fetch with retry logic for Render cold starts
+ */
+async function fetchWithRetry<T>(
+  url: string,
+  options: RequestInit,
+  maxRetries: number = 2,
+  retryDelay: number = 2000
+): Promise<T> {
+  let lastError: any;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      // Increase timeout for retries (backend might be waking up)
+      const timeout = attempt === 0 ? 30000 : 45000; // 30s first try, 45s retries
+      
+      const response = await fetchWithTimeout(url, options, timeout);
+      
+      if (!response.ok) {
+        let errorData;
+        try {
+          errorData = await response.json();
+        } catch {
+          errorData = { detail: response.statusText };
+        }
+        
+        const errorMessage = errorData.detail || errorData.error || errorData.message || 'API request failed';
+        throw new ApiError(errorMessage, response.status, errorData);
+      }
+      
+      // Handle empty responses
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        return {} as T;
+      }
+      
+      return await response.json();
+    } catch (err: any) {
+      lastError = err;
+      
+      // Don't retry on client errors (4xx) or if it's the last attempt
+      if (err instanceof ApiError && (err.status >= 400 && err.status < 500) || attempt === maxRetries) {
+        throw err;
+      }
+      
+      // Wait before retrying (exponential backoff)
+      if (attempt < maxRetries) {
+        const delay = retryDelay * Math.pow(2, attempt);
+        console.warn(`API request failed (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${delay}ms...`, err.message);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+
+  throw lastError;
+}
+
 async function fetchApi<T>(
   endpoint: string,
   options: RequestInit = {}
@@ -121,7 +205,7 @@ async function fetchApi<T>(
   };
   
   try {
-    const response = await fetch(url, {
+    const response = await fetchWithRetry<T>(url, {
         ...options,
         headers: {
         ...defaultHeaders,
@@ -129,44 +213,21 @@ async function fetchApi<T>(
         },
     });
     
-    if (!response.ok) {
-        let errorData;
-        try {
-        errorData = await response.json();
-        } catch {
-        errorData = { detail: response.statusText };
-        }
-        
-        // Log the full error for debugging
-        const errorMessage = errorData.detail || errorData.error || errorData.message || 'API request failed';
-        console.error('=== API ERROR ===');
-        console.error('URL:', url);
-        console.error('Status:', response.status, response.statusText);
-        console.error('Error Data:', JSON.stringify(errorData, null, 2));
-        console.error('Error Message:', errorMessage);
-        console.error('==================');
-        
-        throw new ApiError(
-        errorMessage,
-        response.status,
-        errorData
-        );
-    }
-    
-    // Handle empty responses
-    const contentType = response.headers.get('content-type');
-    if (!contentType || !contentType.includes('application/json')) {
-        return {} as T;
-    }
-    
-    return response.json();
+    return response;
   } catch (err) {
       console.error("API request failed:", err);
       if (err instanceof ApiError) {
         throw err;
       }
+      
+      // Log the full error for debugging
+      console.error('=== API ERROR ===');
+      console.error('URL:', url);
+      console.error('Error:', err);
+      console.error('==================');
+      
       throw new ApiError(
-        'Network error contacting backend API',
+        err?.message || 'Network error contacting backend API. Backend may be waking up from sleep - please try again.',
         0,
         err
       );
