@@ -8,6 +8,7 @@ AI-powered agent that posts engaging updates about challenges.
 import logging
 import asyncio
 import time
+import warnings
 from typing import Optional, Dict, Any, List, Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -18,13 +19,19 @@ from enum import Enum
 from dataclasses import dataclass
 from collections import deque
 
+# Initialize logger first so we can log import errors
+logger = logging.getLogger(__name__)
+
+# Suppress SyntaxWarnings from tweepy (they're harmless but noisy)
+warnings.filterwarnings("ignore", category=SyntaxWarning, module="tweepy")
+
 try:
     import tweepy
     TWITTER_AVAILABLE = True
-except ImportError:
+    logger.info(f"tweepy imported successfully (version: {getattr(tweepy, '__version__', 'unknown')})")
+except Exception as e:
     TWITTER_AVAILABLE = False
-    logger = logging.getLogger(__name__)
-    logger.warning("tweepy not installed. Twitter features will be disabled.")
+    logger.warning(f"tweepy not available. Twitter features will be disabled. Error: {type(e).__name__}: {e}", exc_info=True)
 
 try:
     from openai import OpenAI
@@ -34,11 +41,6 @@ except ImportError:
 
 from config import settings
 from database import execute_query
-
-if TWITTER_AVAILABLE:
-    logger = logging.getLogger(__name__)
-else:
-    logger = logging.getLogger(__name__)
 
 
 class SocialEventType(str, Enum):
