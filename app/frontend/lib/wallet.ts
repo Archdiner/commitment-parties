@@ -2,7 +2,7 @@
  * Simple helpers for persisting wallet connection across pages.
  */
 
-export const WALLET_STORAGE_KEY = 'commitment_agent_wallet_address';
+export const WALLET_STORAGE_KEY = 'commitmint_wallet_address';
 
 export function persistWalletAddress(address: string) {
   if (typeof window === 'undefined') return;
