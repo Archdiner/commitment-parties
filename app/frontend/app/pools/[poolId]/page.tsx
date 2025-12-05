@@ -183,8 +183,10 @@ export default function PoolDetailPage() {
   const isGitHubCommits = habitType === 'github_commits';
   const tokenMint: string | undefined = goalMetadata.token_mint;
   const hodlMinBalanceRaw: number | undefined = goalMetadata.min_balance;
+  // Use token decimals for proper conversion (USDC has 6, SOL has 9, etc.)
+  const tokenDecimals = tokenInfo?.decimals ?? 9;
   const hodlMinBalanceTokens =
-    typeof hodlMinBalanceRaw === 'number' ? hodlMinBalanceRaw / 1_000_000_000 : undefined;
+    typeof hodlMinBalanceRaw === 'number' ? hodlMinBalanceRaw / (10 ** tokenDecimals) : undefined;
   const dcaTradesPerDay: number | undefined = goalMetadata.min_trades_per_day;
   const minCommitsPerDay: number | undefined = goalMetadata.min_commits_per_day;
   const minLinesPerCommit: number | undefined = goalMetadata.min_lines_per_commit;
@@ -211,9 +213,11 @@ export default function PoolDetailPage() {
                 <InfoIcon content="Each challenge has a unique ID on the Solana blockchain. This helps track and verify the challenge." />
               </div>
               <h1 className="text-3xl md:text-4xl font-light mb-3">{pool.name}</h1>
-              <p className="text-sm text-gray-400 leading-relaxed">
-                {pool.description || 'No description provided.'}
-              </p>
+              {pool.description && (
+                <p className="text-sm text-gray-400 leading-relaxed mb-4">
+                  {pool.description}
+                </p>
+              )}
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-3 gap-6 pt-4 border-t border-white/10">

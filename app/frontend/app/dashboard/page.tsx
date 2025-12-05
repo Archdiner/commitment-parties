@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ChevronDown, Check, Smartphone, ArrowRight, Users, TrendingDown } from 'lucide-react';
 import { InfoIcon } from '@/components/ui/Tooltip';
-import { getUserParticipations, UserParticipation, getPoolStats, getParticipantVerifications } from '@/lib/api';
+import { getUserParticipations, UserParticipation, getPoolStats, getParticipantVerifications, triggerGitHubVerification } from '@/lib/api';
 import { getPersistedWalletAddress } from '@/lib/wallet';
 import { SectionLabel } from '@/components/ui/SectionLabel';
 import { Stat } from '@/components/ui/Stat';
@@ -14,6 +14,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [activeChallenges, setActiveChallenges] = useState<any[]>([]);
+  const [participationsData, setParticipationsData] = useState<UserParticipation[]>([]);
   const [selectedChallengeId, setSelectedChallengeId] = useState<number | null>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [checkedIn, setCheckedIn] = useState(false);
@@ -67,6 +68,9 @@ export default function Dashboard() {
         successfulChallenges,
       });
       
+      // Store full participation data for challenge type checking
+      setParticipationsData(participations);
+      
       // Map API data to UI format
       const mapped = participations.map(p => ({
         id: p.pool_id,
@@ -108,12 +112,34 @@ export default function Dashboard() {
     }
   };
 
-  // Reload stats when challenge changes
+  // Reload stats and check verification status when challenge changes
   useEffect(() => {
-    if (selectedChallengeId) {
+    if (selectedChallengeId && walletAddress) {
       loadParticipantStats(selectedChallengeId);
+      checkVerificationStatus(selectedChallengeId, walletAddress);
     }
-  }, [selectedChallengeId]);
+    // Reset checkedIn when challenge changes
+    setCheckedIn(false);
+  }, [selectedChallengeId, walletAddress]);
+
+  const checkVerificationStatus = async (poolId: number, wallet: string) => {
+    try {
+      const status = await getParticipantVerifications(poolId, wallet);
+      // Check if user is verified for today
+      // We'll check if there's a verification for the current day
+      const today = new Date();
+      const hasTodayVerification = status.verifications.some(v => {
+        // This is a simplified check - in production, you'd compare with actual challenge day
+        return v.passed === true;
+      });
+      // For now, we'll check if days_verified increased (simplified)
+      // In a real implementation, you'd check the specific day
+      setCheckedIn(false); // Reset and let user trigger check
+    } catch (e) {
+      console.error('Failed to check verification status:', e);
+      setCheckedIn(false);
+    }
+  };
 
   // Load Solana block (devnet) for display
   useEffect(() => {
@@ -174,9 +200,49 @@ export default function Dashboard() {
     };
   }, [walletAddress, selectedChallengeId]);
 
-  const handleCheckIn = () => {
+  const handleCheckIn = async () => {
+    if (!walletAddress || !selectedChallengeId) return;
+    
+    // Find the current participation data
+    const participation = participationsData.find(p => p.pool_id === selectedChallengeId);
+    if (!participation) return;
+    
+    const goalType = participation.goal_type;
+    const goalMetadata = participation.goal_metadata || {};
+    const habitType = goalMetadata.habit_type;
+    
+    // Check if it's a crypto challenge
+    if (goalType === 'hodl_token' || goalType.includes('crypto') || goalType.includes('Crypto')) {
+      // Crypto challenges don't allow manual verification
+      return;
+    }
+    
+    // Check if it's a GitHub challenge
+    if (goalType === 'lifestyle_habit' && habitType === 'github_commits') {
+      setVerifying(true);
+      try {
+        const result = await triggerGitHubVerification(selectedChallengeId, walletAddress);
+        if (result.verified) {
+          setCheckedIn(true);
+          // Refresh participation data to update progress
+          if (walletAddress) {
+            await fetchData(walletAddress);
+          }
+        } else {
+          alert(result.message || 'Verification failed. Please ensure you have commits for today.');
+        }
+      } catch (error: any) {
+        console.error('Error triggering GitHub verification:', error);
+        alert(error.message || 'Failed to verify GitHub commits. Please try again.');
+      } finally {
+        setVerifying(false);
+      }
+      return;
+    }
+    
+    // For other lifestyle challenges, use the existing check-in flow
     setVerifying(true);
-    // Mock check-in logic
+    // Mock check-in logic for non-GitHub lifestyle challenges
     setTimeout(() => { 
       setVerifying(false); 
       setCheckedIn(true); 
@@ -246,6 +312,17 @@ export default function Dashboard() {
 
   const activeChallenge = activeChallenges.find(c => c.id === selectedChallengeId) || activeChallenges[0];
   const progress = activeChallenge.progress ?? Math.floor((activeChallenge.streak / activeChallenge.totalDays) * 100);
+  
+  // Determine challenge type for current challenge
+  const currentParticipation = participationsData.find(p => p.pool_id === selectedChallengeId);
+  const isCryptoChallenge = currentParticipation && (
+    currentParticipation.goal_type === 'hodl_token' || 
+    currentParticipation.goal_type.includes('crypto') || 
+    currentParticipation.goal_type.includes('Crypto')
+  );
+  const isGitHubChallenge = currentParticipation && 
+    currentParticipation.goal_type === 'lifestyle_habit' && 
+    currentParticipation.goal_metadata?.habit_type === 'github_commits';
 
   return (
     <div className="min-h-screen bg-[#050505] text-white pt-32 px-6 pb-20">
@@ -436,11 +513,24 @@ export default function Dashboard() {
                       <div className="flex items-center justify-center gap-2 mb-2">
                         <button 
                            onClick={handleCheckIn}
-                           disabled={verifying}
-                           className="flex-1 h-20 border border-white/20 hover:border-emerald-500 hover:bg-emerald-500/5 text-white uppercase tracking-widest text-xs font-medium transition-all flex items-center justify-center gap-4 group"
+                           disabled={verifying || isCryptoChallenge}
+                           className={`flex-1 h-20 border uppercase tracking-widest text-xs font-medium transition-all flex items-center justify-center gap-4 group ${
+                             isCryptoChallenge
+                               ? 'border-white/10 bg-white/[0.02] text-gray-500 cursor-not-allowed'
+                               : 'border-white/20 hover:border-emerald-500 hover:bg-emerald-500/5 text-white'
+                           }`}
                         >
                            {verifying ? (
                               <span className="animate-pulse">Verifying...</span>
+                           ) : isCryptoChallenge ? (
+                              <>
+                                 <span>Crypto Challenge - Auto-Verified</span>
+                              </>
+                           ) : isGitHubChallenge ? (
+                              <>
+                                 <span>Check GitHub Commits</span>
+                                 <Smartphone strokeWidth={1} className="w-5 h-5 group-hover:-translate-y-1 transition-transform" />
+                              </>
                            ) : (
                               <>
                                  <span>Submit Daily Proof</span>
@@ -448,10 +538,20 @@ export default function Dashboard() {
                               </>
                            )}
                         </button>
-                        <InfoIcon content="Click here to submit your daily proof of progress. Our AI agent will verify it! Upload a photo, screenshot, or other proof that you completed your goal today." />
+                        <InfoIcon content={
+                          isCryptoChallenge
+                            ? "Crypto challenges are automatically verified on-chain. No manual verification needed."
+                            : isGitHubChallenge
+                            ? "Click to immediately check your GitHub commits for today. Our agent will verify your code."
+                            : "Click here to submit your daily proof of progress. Our AI agent will verify it! Upload a photo, screenshot, or other proof that you completed your goal today."
+                        } />
                       </div>
                       <p className="text-[9px] text-gray-600 mt-2 text-center">
-                        Upload proof that you completed your goal today (photo, screenshot, etc.)
+                        {isCryptoChallenge
+                          ? "Crypto challenges are verified automatically on-chain"
+                          : isGitHubChallenge
+                          ? "We'll check your GitHub commits for today's code"
+                          : "Upload proof that you completed your goal today (photo, screenshot, etc.)"}
                       </p>
                     </div>
                  ) : (

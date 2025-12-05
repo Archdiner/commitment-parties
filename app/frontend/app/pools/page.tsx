@@ -2,13 +2,14 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowRight, Search, Filter, Info } from 'lucide-react';
-import { getPools } from '@/lib/api';
+import { ArrowRight, Search, Filter, Info, GitCommit } from 'lucide-react';
+import { getPools, PoolResponse } from '@/lib/api';
 import { Badge } from '@/components/ui/Badge';
 import { ButtonPrimary } from '@/components/ui/ButtonPrimary';
+import { getTokenByMint } from '@/lib/tokens';
 
 export default function PoolsPage() {
-  const [pools, setPools] = useState<any[]>([]);
+  const [pools, setPools] = useState<PoolResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('ALL');
 
@@ -16,20 +17,7 @@ export default function PoolsPage() {
     async function loadPools() {
       try {
         const data = await getPools();
-        const mapped = data.map(p => ({
-          id: p.pool_id,
-          title: p.name,
-          type: p.goal_type.includes('Lifestyle') ? 'LIFESTYLE' : 'CRYPTO',
-          status: p.status === 'active' ? 'ACTIVE' : (p.status === 'pending' ? 'RECRUITING' : p.status.toUpperCase()),
-          description: p.description,
-          duration: `${p.duration_days} Days`,
-          participants: p.participant_count,
-          maxParticipants: p.max_participants,
-          stake: p.stake_amount,
-          poolValue: p.total_staked || (p.stake_amount * p.participant_count),
-          roi: "15%", // Placeholder
-        }));
-        setPools(mapped);
+        setPools(data);
       } catch (err) {
         console.error(err);
       } finally {
@@ -41,7 +29,8 @@ export default function PoolsPage() {
 
   const filteredPools = pools.filter(p => {
     if (filter === 'ALL') return true;
-    return p.type === filter;
+    const poolType = p.goal_type.includes('Lifestyle') || p.goal_type === 'lifestyle_habit' ? 'LIFESTYLE' : 'CRYPTO';
+    return poolType === filter;
   });
 
   return (
@@ -93,46 +82,137 @@ export default function PoolsPage() {
             </div>
         ) : (
             <div className="grid grid-cols-1 gap-4">
-            {filteredPools.map((challenge) => (
-            <Link 
-                href={`/pools/${challenge.id}`}
-                key={challenge.id} 
-                className="group relative p-6 border border-white/5 bg-white/[0.01] hover:bg-white/[0.03] hover:border-emerald-500/20 transition-all cursor-pointer flex flex-col md:flex-row gap-6 md:items-center"
-            >
-                <div className="flex-1">
+            {filteredPools.map((pool) => {
+              const poolType = pool.goal_type.includes('Lifestyle') || pool.goal_type === 'lifestyle_habit' ? 'LIFESTYLE' : 'CRYPTO';
+              const status = pool.status === 'active' ? 'ACTIVE' : (pool.status === 'pending' ? 'RECRUITING' : pool.status.toUpperCase());
+              const goalMetadata = (pool.goal_metadata || {}) as any;
+              
+              // Determine challenge type
+              const isHodl = pool.goal_type === 'hodl_token';
+              const isDCA = pool.goal_type === 'DailyDCA' || pool.goal_type === 'dca';
+              const habitType = goalMetadata.habit_type;
+              const isGitHubCommits = habitType === 'github_commits';
+              
+              // Extract challenge-specific data
+              const tokenMint: string | undefined = goalMetadata.token_mint;
+              const tokenInfo = tokenMint ? getTokenByMint(tokenMint) : undefined;
+              const hodlMinBalanceRaw: number | undefined = goalMetadata.min_balance;
+              // Use token decimals for proper conversion (USDC has 6, SOL has 9, etc.)
+              const tokenDecimals = tokenInfo?.decimals ?? 9;
+              const hodlMinBalanceTokens = typeof hodlMinBalanceRaw === 'number' ? hodlMinBalanceRaw / (10 ** tokenDecimals) : undefined;
+              const dcaTradesPerDay: number | undefined = goalMetadata.min_trades_per_day;
+              const minCommitsPerDay: number | undefined = goalMetadata.min_commits_per_day;
+              const minLinesPerCommit: number | undefined = goalMetadata.min_lines_per_commit;
+
+              return (
+                <Link 
+                  href={`/pools/${pool.pool_id}`}
+                  key={pool.pool_id} 
+                  className="group relative p-6 border border-white/5 bg-white/[0.01] hover:bg-white/[0.03] hover:border-emerald-500/20 transition-all cursor-pointer flex flex-col md:flex-row gap-6 md:items-center"
+                >
+                  <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
-                    <Badge color={challenge.type === 'CRYPTO' ? 'blue' : 'orange'}>{challenge.type}</Badge>
-                    <Badge color="emerald">{challenge.status}</Badge>
+                      <Badge color={poolType === 'CRYPTO' ? 'blue' : 'orange'}>{poolType}</Badge>
+                      <Badge color="emerald">{status}</Badge>
                     </div>
-                    <h3 className="text-xl font-light mb-1 group-hover:text-emerald-400 transition-colors">{challenge.title}</h3>
-                    <p className="text-sm text-gray-500 font-light">{challenge.description}</p>
-                </div>
+                    <h3 className="text-xl font-light mb-1 group-hover:text-emerald-400 transition-colors">{pool.name}</h3>
+                    {pool.description && (
+                      <p className="text-sm text-gray-500 font-light mb-3">{pool.description}</p>
+                    )}
+                    
+                    {/* Challenge-specific information */}
+                    <div className="flex flex-wrap items-center gap-4 mt-3">
+                      {isHodl && hodlMinBalanceTokens !== undefined && (
+                        <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/30 rounded-lg">
+                          {tokenInfo ? (
+                            <>
+                              {tokenInfo.iconUrl ? (
+                                <img 
+                                  src={tokenInfo.iconUrl} 
+                                  alt={tokenInfo.symbol}
+                                  className="w-5 h-5 rounded-full"
+                                  onError={(e) => {
+                                    (e.target as HTMLImageElement).style.display = 'none';
+                                  }}
+                                />
+                              ) : (
+                                <div className="w-5 h-5 rounded-full bg-emerald-500/20 flex items-center justify-center text-xs font-mono">
+                                  {tokenInfo.symbol[0]}
+                                </div>
+                              )}
+                              <span className="text-xs font-mono text-emerald-300">
+                                {hodlMinBalanceTokens.toLocaleString(undefined, { maximumFractionDigits: 4 })} {tokenInfo.symbol}
+                              </span>
+                            </>
+                          ) : (
+                            <span className="text-xs font-mono text-emerald-300">
+                              {hodlMinBalanceTokens.toLocaleString(undefined, { maximumFractionDigits: 4 })} tokens
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      
+                      {isDCA && (
+                        <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+                          {tokenInfo && tokenInfo.iconUrl ? (
+                            <img 
+                              src={tokenInfo.iconUrl} 
+                              alt={tokenInfo.symbol}
+                              className="w-5 h-5 rounded-full"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).style.display = 'none';
+                              }}
+                            />
+                          ) : tokenInfo ? (
+                            <div className="w-5 h-5 rounded-full bg-blue-500/20 flex items-center justify-center text-xs font-mono">
+                              {tokenInfo.symbol[0]}
+                            </div>
+                          ) : null}
+                          <span className="text-xs font-mono text-blue-300">
+                            {dcaTradesPerDay || 1} trade{dcaTradesPerDay !== 1 ? 's' : ''}/day
+                            {tokenInfo && ` • ${tokenInfo.symbol}`}
+                          </span>
+                        </div>
+                      )}
+                      
+                      {isGitHubCommits && (
+                        <div className="flex items-center gap-2 px-3 py-1.5 bg-purple-500/10 border border-purple-500/30 rounded-lg">
+                          <GitCommit className="w-4 h-4 text-purple-300" />
+                          <span className="text-xs font-mono text-purple-300">
+                            {minCommitsPerDay || 1} commit{minCommitsPerDay !== 1 ? 's' : ''}/day
+                            {minLinesPerCommit && minLinesPerCommit > 0 && ` • ${minLinesPerCommit}+ lines`}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
 
-                <div className="grid grid-cols-3 gap-8 border-l border-white/5 pl-8 md:w-1/3">
+                  <div className="grid grid-cols-3 gap-8 border-l border-white/5 pl-8 md:w-1/3">
                     <div>
-                    <div className="text-[9px] uppercase tracking-wider text-gray-500 mb-1">Stake</div>
-                    <div className="font-mono text-sm mb-1">{challenge.stake} SOL</div>
-                    <div className="text-[9px] text-gray-600">To join</div>
+                      <div className="text-[9px] uppercase tracking-wider text-gray-500 mb-1">Stake</div>
+                      <div className="font-mono text-sm mb-1">{pool.stake_amount} SOL</div>
+                      <div className="text-[9px] text-gray-600">To join</div>
                     </div>
                     <div>
-                    <div className="text-[9px] uppercase tracking-wider text-gray-500 mb-1">Duration</div>
-                    <div className="font-mono text-sm mb-1">{challenge.duration}</div>
-                    <div className="text-[9px] text-gray-600">Challenge length</div>
+                      <div className="text-[9px] uppercase tracking-wider text-gray-500 mb-1">Duration</div>
+                      <div className="font-mono text-sm mb-1">{pool.duration_days} Days</div>
+                      <div className="text-[9px] text-gray-600">Challenge length</div>
                     </div>
                     <div>
-                    <div className="text-[9px] uppercase tracking-wider text-gray-500 mb-1">Capacity</div>
-                    <div className="font-mono text-sm mb-1">{challenge.participants}/{challenge.maxParticipants}</div>
-                    <div className="text-[9px] text-gray-600">Joined / Max</div>
+                      <div className="text-[9px] uppercase tracking-wider text-gray-500 mb-1">Capacity</div>
+                      <div className="font-mono text-sm mb-1">{pool.participant_count}/{pool.max_participants}</div>
+                      <div className="text-[9px] text-gray-600">Joined / Max</div>
                     </div>
-                </div>
+                  </div>
 
-                <div className="md:pl-4">
+                  <div className="md:pl-4">
                     <div className="w-8 h-8 rounded-full border border-white/10 flex items-center justify-center group-hover:bg-white group-hover:text-black transition-all">
-                    <ArrowRight strokeWidth={1} className="w-4 h-4" />
+                      <ArrowRight strokeWidth={1} className="w-4 h-4" />
                     </div>
-                </div>
-            </Link>
-            ))}
+                  </div>
+                </Link>
+              );
+            })}
             </div>
         )}
       </div>

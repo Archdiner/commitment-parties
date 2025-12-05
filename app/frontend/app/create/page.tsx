@@ -166,21 +166,60 @@ export default function CreatePool() {
     // Validate duration
     if (useCustomDuration) {
       const customDays = parseInt(formData.customDuration);
-      if (isNaN(customDays) || customDays <= 0) {
+      if (isNaN(customDays) || customDays < 1 || customDays > 30) {
         errors.customDuration = true;
       }
     }
     
-    // Validate stake
+    // Validate stake (0.05 to 10 SOL)
     const stakeAmount = parseFloat(formData.stake);
-    if (isNaN(stakeAmount) || stakeAmount <= 0) {
+    if (isNaN(stakeAmount) || stakeAmount < 0.05 || stakeAmount > 10) {
       errors.stake = true;
     }
     
-    // Validate max participants
+    // Validate max participants (1 to 100)
     const maxParticipants = parseInt(formData.maxParticipants);
-    if (isNaN(maxParticipants) || maxParticipants <= 0) {
+    if (isNaN(maxParticipants) || maxParticipants < 1 || maxParticipants > 100) {
       errors.maxParticipants = true;
+    }
+    
+    // Validate min participants if required
+    if (formData.requireMinParticipants) {
+      const minParticipants = parseInt(formData.minParticipants);
+      if (isNaN(minParticipants) || minParticipants < 1 || minParticipants > maxParticipants) {
+        errors.minParticipants = true;
+      }
+    }
+    
+    // Validate challenge-specific fields
+    if (formData.category === 'Crypto') {
+      if (formData.cryptoMode === 'HODL') {
+        const hodlAmount = parseFloat(formData.hodlAmount || '0');
+        if (isNaN(hodlAmount) || hodlAmount <= 0) {
+          errors.hodlAmount = true;
+        }
+      } else if (formData.cryptoMode === 'DCA') {
+        const tradesPerDay = parseInt(formData.dcaTradesPerDay || '0', 10);
+        if (isNaN(tradesPerDay) || tradesPerDay < 1 || tradesPerDay > 50) {
+          errors.dcaTradesPerDay = true;
+        }
+      }
+    } else if (formData.category === 'Lifestyle') {
+      if (formData.socialMode === 'GitHub') {
+        const commitsPerDay = parseInt(formData.githubCommitsPerDay || '0', 10);
+        if (isNaN(commitsPerDay) || commitsPerDay < 1 || commitsPerDay > 50) {
+          errors.githubCommitsPerDay = true;
+        }
+        const minLines = parseInt(formData.githubMinLinesPerCommit || '0', 10);
+        if (isNaN(minLines) || minLines < 1 || minLines > 1000) {
+          errors.githubMinLinesPerCommit = true;
+        }
+      } else if (formData.socialMode === 'Screen-time') {
+        const screenTime = parseFloat(formData.screenTimeHours || '0');
+        if (isNaN(screenTime) || screenTime < 0.5 || screenTime > 24) {
+          errors.screenTimeHours = true;
+        }
+      }
     }
     
     setValidationErrors(errors);
@@ -286,7 +325,9 @@ export default function CreatePool() {
               setLoading(false);
               return;
             }
-            const decimals = 9; // Assume 9 decimals for now (SOL and most SPL tokens)
+            // Get token decimals from token info, default to 9 (SOL) if not found
+            const tokenInfo = getTokenByMint(tokenMint);
+            const decimals = tokenInfo?.decimals ?? 9;
             const minBalance = Math.floor(hodlAmountTokens * 10 ** decimals);
 
             goalType = 'hodl_token';
@@ -584,14 +625,21 @@ export default function CreatePool() {
                <SectionLabel>Core Parameters</SectionLabel>
                <div className="space-y-4">
                   <div>
-                    <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">Describe Your Challenge</label>
+                    <label className="flex items-center gap-2 text-xs uppercase tracking-widest text-gray-500 mb-2">
+                      Challenge Description
+                      <InfoIcon content="A detailed description of your challenge. This helps others understand what they're committing to. This will be displayed prominently on the challenge page." />
+                    </label>
                     <textarea
                       value={formData.descriptionText}
                       onChange={(e) => setFormData({ ...formData, descriptionText: e.target.value })}
-                      rows={3}
+                      rows={4}
+                      maxLength={500}
                       className="w-full bg-transparent border-b border-white/20 py-3 px-3 text-sm text-white placeholder-gray-800 focus:outline-none focus:border-emerald-500 transition-colors resize-none"
-                      placeholder="e.g. 30 days of 6am gym check-ins with a mirror selfie as proof."
+                      placeholder="e.g. 30 days of 6am gym check-ins with a mirror selfie as proof. GPS verification required. Must check in between 5:45am and 6:15am UTC daily."
                     />
+                    <p className="text-[10px] text-gray-600 mt-1">
+                      {formData.descriptionText.length}/500 characters. A good description helps attract participants.
+                    </p>
                   </div>
                   <div>
                     <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">Challenge Name</label>
@@ -645,11 +693,27 @@ export default function CreatePool() {
                       <div className="flex gap-2">
                         <input 
                           type="number" 
+                          min="1"
+                          max="30"
+                          step="1"
                           value={formData.customDuration}
                           onChange={(e) => {
-                            setFormData({...formData, customDuration: e.target.value});
-                            if (validationErrors.customDuration) {
-                              setValidationErrors({...validationErrors, customDuration: false});
+                            const value = e.target.value;
+                            const numValue = parseInt(value, 10);
+                            // Prevent negative values and enforce range
+                            if (value === '' || (!isNaN(numValue) && numValue >= 1 && numValue <= 30)) {
+                              setFormData({...formData, customDuration: value});
+                              if (validationErrors.customDuration) {
+                                setValidationErrors({...validationErrors, customDuration: false});
+                              }
+                            }
+                          }}
+                          onBlur={() => {
+                            const days = parseInt(formData.customDuration, 10);
+                            if (isNaN(days) || days < 1) {
+                              setFormData({...formData, customDuration: '1'});
+                            } else if (days > 30) {
+                              setFormData({...formData, customDuration: '30'});
                             }
                           }}
                           className={`flex-1 bg-transparent border-b py-3 text-xl text-white placeholder-gray-800 focus:outline-none transition-colors ${
@@ -658,8 +722,10 @@ export default function CreatePool() {
                               : 'border-white/20 focus:border-emerald-500'
                           }`}
                           placeholder="Enter days" 
-                          min="1"
                         />
+                        {validationErrors.customDuration && (
+                          <p className="text-[10px] text-red-400 mt-1 absolute">Duration must be between 1 and 30 days</p>
+                        )}
                         <button
                           type="button"
                           onClick={() => {
@@ -686,11 +752,26 @@ export default function CreatePool() {
                   </label>
                   <input 
                     type="number" 
+                    min="0.05"
+                    max="10"
+                    step="0.01"
                     value={formData.stake}
                     onChange={(e) => {
-                      setFormData({...formData, stake: e.target.value});
-                      if (validationErrors.stake) {
-                        setValidationErrors({...validationErrors, stake: false});
+                      const value = e.target.value;
+                      // Prevent negative values
+                      if (value === '' || (parseFloat(value) >= 0 && parseFloat(value) <= 10)) {
+                        setFormData({...formData, stake: value});
+                        if (validationErrors.stake) {
+                          setValidationErrors({...validationErrors, stake: false});
+                        }
+                      }
+                    }}
+                    onBlur={() => {
+                      const stakeAmount = parseFloat(formData.stake);
+                      if (isNaN(stakeAmount) || stakeAmount < 0.05) {
+                        setFormData({...formData, stake: '0.05'});
+                      } else if (stakeAmount > 10) {
+                        setFormData({...formData, stake: '10'});
                       }
                     }}
                     className={`w-full bg-transparent border-b py-3 text-xl text-white placeholder-gray-800 focus:outline-none transition-colors ${
@@ -700,6 +781,9 @@ export default function CreatePool() {
                     }`}
                     placeholder="0.5" 
                   />
+                  {validationErrors.stake && (
+                    <p className="text-[10px] text-red-400 mt-1">Stake must be between 0.05 and 10 SOL</p>
+                  )}
                </div>
                <div>
                   <label className="flex items-center gap-2 text-xs uppercase tracking-widest text-gray-500 mb-2">
@@ -708,11 +792,27 @@ export default function CreatePool() {
                   </label>
                   <input 
                     type="number" 
+                    min="1"
+                    max="100"
+                    step="1"
                     value={formData.maxParticipants}
                     onChange={(e) => {
-                      setFormData({...formData, maxParticipants: e.target.value});
-                      if (validationErrors.maxParticipants) {
-                        setValidationErrors({...validationErrors, maxParticipants: false});
+                      const value = e.target.value;
+                      // Prevent negative values and enforce max
+                      const numValue = parseInt(value, 10);
+                      if (value === '' || (!isNaN(numValue) && numValue >= 1 && numValue <= 100)) {
+                        setFormData({...formData, maxParticipants: value});
+                        if (validationErrors.maxParticipants) {
+                          setValidationErrors({...validationErrors, maxParticipants: false});
+                        }
+                      }
+                    }}
+                    onBlur={() => {
+                      const maxParts = parseInt(formData.maxParticipants, 10);
+                      if (isNaN(maxParts) || maxParts < 1) {
+                        setFormData({...formData, maxParticipants: '1'});
+                      } else if (maxParts > 100) {
+                        setFormData({...formData, maxParticipants: '100'});
                       }
                     }}
                     className={`w-full bg-transparent border-b py-3 text-xl text-white placeholder-gray-800 focus:outline-none transition-colors ${
@@ -722,6 +822,9 @@ export default function CreatePool() {
                     }`}
                     placeholder="100" 
                   />
+                  {validationErrors.maxParticipants && (
+                    <p className="text-[10px] text-red-400 mt-1">Max participants must be between 1 and 100</p>
+                  )}
                </div>
                {potentialProfit > 0 && (
                  <div className="p-4 border border-emerald-500/30 bg-emerald-500/5 rounded-lg">
@@ -933,13 +1036,36 @@ export default function CreatePool() {
                         </label>
                         <input
                           type="number"
-                          min={0.000000001}
+                          min="0.000000001"
                           step="0.000000001"
                           value={formData.hodlAmount}
-                          onChange={(e) => setFormData({ ...formData, hodlAmount: e.target.value })}
-                          className="w-full bg-transparent border-b border-white/20 py-2 text-sm text-white placeholder-gray-700 focus:outline-none focus:border-emerald-500 transition-colors"
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            const numValue = parseFloat(value);
+                            // Prevent negative values
+                            if (value === '' || (!isNaN(numValue) && numValue > 0)) {
+                              setFormData({ ...formData, hodlAmount: value });
+                              if (validationErrors.hodlAmount) {
+                                setValidationErrors({...validationErrors, hodlAmount: false});
+                              }
+                            }
+                          }}
+                          onBlur={() => {
+                            const hodlAmount = parseFloat(formData.hodlAmount);
+                            if (isNaN(hodlAmount) || hodlAmount <= 0) {
+                              setFormData({ ...formData, hodlAmount: '1' });
+                            }
+                          }}
+                          className={`w-full bg-transparent border-b py-2 text-sm text-white placeholder-gray-700 focus:outline-none transition-colors ${
+                            validationErrors.hodlAmount 
+                              ? 'border-red-500 focus:border-red-500' 
+                              : 'border-white/20 focus:border-emerald-500'
+                          }`}
                           placeholder="e.g. 1.0"
                         />
+                        {validationErrors.hodlAmount && (
+                          <p className="text-[10px] text-red-400 mt-1">Minimum balance must be greater than 0</p>
+                        )}
                       </div>
                     ) : (
                       <div>
@@ -948,13 +1074,39 @@ export default function CreatePool() {
                         </label>
                         <input
                           type="number"
-                          min={1}
-                          max={50}
+                          min="1"
+                          max="50"
+                          step="1"
                           value={formData.dcaTradesPerDay}
-                          onChange={(e) => setFormData({ ...formData, dcaTradesPerDay: e.target.value })}
-                          className="w-full bg-transparent border-b border-white/20 py-2 text-sm text-white placeholder-gray-700 focus:outline-none focus:border-emerald-500 transition-colors"
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            const numValue = parseInt(value, 10);
+                            // Prevent negative values and enforce range
+                            if (value === '' || (!isNaN(numValue) && numValue >= 1 && numValue <= 50)) {
+                              setFormData({ ...formData, dcaTradesPerDay: value });
+                              if (validationErrors.dcaTradesPerDay) {
+                                setValidationErrors({...validationErrors, dcaTradesPerDay: false});
+                              }
+                            }
+                          }}
+                          onBlur={() => {
+                            const trades = parseInt(formData.dcaTradesPerDay, 10);
+                            if (isNaN(trades) || trades < 1) {
+                              setFormData({ ...formData, dcaTradesPerDay: '1' });
+                            } else if (trades > 50) {
+                              setFormData({ ...formData, dcaTradesPerDay: '50' });
+                            }
+                          }}
+                          className={`w-full bg-transparent border-b py-2 text-sm text-white placeholder-gray-700 focus:outline-none transition-colors ${
+                            validationErrors.dcaTradesPerDay 
+                              ? 'border-red-500 focus:border-red-500' 
+                              : 'border-white/20 focus:border-emerald-500'
+                          }`}
                           placeholder="e.g. 1"
                         />
+                        {validationErrors.dcaTradesPerDay && (
+                          <p className="text-[10px] text-red-400 mt-1">Trades per day must be between 1 and 50</p>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1000,15 +1152,39 @@ export default function CreatePool() {
                           </label>
                           <input
                             type="number"
-                            min={1}
-                            max={50}
+                            min="1"
+                            max="50"
+                            step="1"
                             value={formData.githubCommitsPerDay}
-                            onChange={(e) =>
-                              setFormData({ ...formData, githubCommitsPerDay: e.target.value })
-                            }
-                            className="w-full bg-transparent border-b border-white/20 py-2 text-sm text-white placeholder-gray-700 focus:outline-none focus:border-emerald-500 transition-colors"
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              const numValue = parseInt(value, 10);
+                              // Prevent negative values and enforce range
+                              if (value === '' || (!isNaN(numValue) && numValue >= 1 && numValue <= 50)) {
+                                setFormData({ ...formData, githubCommitsPerDay: value });
+                                if (validationErrors.githubCommitsPerDay) {
+                                  setValidationErrors({...validationErrors, githubCommitsPerDay: false});
+                                }
+                              }
+                            }}
+                            onBlur={() => {
+                              const commits = parseInt(formData.githubCommitsPerDay, 10);
+                              if (isNaN(commits) || commits < 1) {
+                                setFormData({ ...formData, githubCommitsPerDay: '1' });
+                              } else if (commits > 50) {
+                                setFormData({ ...formData, githubCommitsPerDay: '50' });
+                              }
+                            }}
+                            className={`w-full bg-transparent border-b py-2 text-sm text-white placeholder-gray-700 focus:outline-none transition-colors ${
+                              validationErrors.githubCommitsPerDay 
+                                ? 'border-red-500 focus:border-red-500' 
+                                : 'border-white/20 focus:border-emerald-500'
+                            }`}
                             placeholder="e.g. 1"
                           />
+                          {validationErrors.githubCommitsPerDay && (
+                            <p className="text-[10px] text-red-400 mt-1">Commits per day must be between 1 and 50</p>
+                          )}
                         </div>
                         <div>
                           <label className="flex items-center gap-2 text-xs uppercase tracking-widest text-gray-500 mb-2">
@@ -1017,15 +1193,39 @@ export default function CreatePool() {
                           </label>
                           <input
                             type="number"
-                            min={1}
-                            max={1000}
+                            min="1"
+                            max="1000"
+                            step="1"
                             value={formData.githubMinLinesPerCommit}
-                            onChange={(e) =>
-                              setFormData({ ...formData, githubMinLinesPerCommit: e.target.value })
-                            }
-                            className="w-full bg-transparent border-b border-white/20 py-2 text-sm text-white placeholder-gray-700 focus:outline-none focus:border-emerald-500 transition-colors"
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              const numValue = parseInt(value, 10);
+                              // Prevent negative values and enforce range
+                              if (value === '' || (!isNaN(numValue) && numValue >= 1 && numValue <= 1000)) {
+                                setFormData({ ...formData, githubMinLinesPerCommit: value });
+                                if (validationErrors.githubMinLinesPerCommit) {
+                                  setValidationErrors({...validationErrors, githubMinLinesPerCommit: false});
+                                }
+                              }
+                            }}
+                            onBlur={() => {
+                              const minLines = parseInt(formData.githubMinLinesPerCommit, 10);
+                              if (isNaN(minLines) || minLines < 1) {
+                                setFormData({ ...formData, githubMinLinesPerCommit: '1' });
+                              } else if (minLines > 1000) {
+                                setFormData({ ...formData, githubMinLinesPerCommit: '1000' });
+                              }
+                            }}
+                            className={`w-full bg-transparent border-b py-2 text-sm text-white placeholder-gray-700 focus:outline-none transition-colors ${
+                              validationErrors.githubMinLinesPerCommit 
+                                ? 'border-red-500 focus:border-red-500' 
+                                : 'border-white/20 focus:border-emerald-500'
+                            }`}
                             placeholder="e.g. 10"
                           />
+                          {validationErrors.githubMinLinesPerCommit && (
+                            <p className="text-[10px] text-red-400 mt-1">Min lines per commit must be between 1 and 1000</p>
+                          )}
                         </div>
                       </div>
                       <p className="text-[10px] text-gray-600">
@@ -1039,16 +1239,39 @@ export default function CreatePool() {
                       </label>
                       <input
                         type="number"
-                        min={0.5}
-                        max={24}
+                        min="0.5"
+                        max="24"
                         step="0.5"
                         value={formData.screenTimeHours}
-                        onChange={(e) =>
-                          setFormData({ ...formData, screenTimeHours: e.target.value })
-                        }
-                        className="w-full bg-transparent border-b border-white/20 py-2 text-sm text-white placeholder-gray-700 focus:outline-none focus:border-emerald-500 transition-colors"
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          const numValue = parseFloat(value);
+                          // Prevent negative values and enforce range
+                          if (value === '' || (!isNaN(numValue) && numValue >= 0.5 && numValue <= 24)) {
+                            setFormData({ ...formData, screenTimeHours: value });
+                            if (validationErrors.screenTimeHours) {
+                              setValidationErrors({...validationErrors, screenTimeHours: false});
+                            }
+                          }
+                        }}
+                        onBlur={() => {
+                          const hours = parseFloat(formData.screenTimeHours);
+                          if (isNaN(hours) || hours < 0.5) {
+                            setFormData({ ...formData, screenTimeHours: '0.5' });
+                          } else if (hours > 24) {
+                            setFormData({ ...formData, screenTimeHours: '24' });
+                          }
+                        }}
+                        className={`w-full bg-transparent border-b py-2 text-sm text-white placeholder-gray-700 focus:outline-none transition-colors ${
+                          validationErrors.screenTimeHours 
+                            ? 'border-red-500 focus:border-red-500' 
+                            : 'border-white/20 focus:border-emerald-500'
+                        }`}
                         placeholder="e.g. 2"
                       />
+                      {validationErrors.screenTimeHours && (
+                        <p className="text-[10px] text-red-400 mt-1">Screen time must be between 0.5 and 24 hours</p>
+                      )}
                       <p className="text-[10px] text-gray-600">
                         Used by the agent when validating your daily screen-time check-ins.
                       </p>
@@ -1127,18 +1350,45 @@ export default function CreatePool() {
                     </button>
                     <input
                       type="number"
-                      min={1}
+                      min="1"
+                      max="100"
+                      step="1"
                       value={formData.minParticipants}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          minParticipants: e.target.value,
-                        })
-                      }
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        const numValue = parseInt(value, 10);
+                        const maxParts = parseInt(formData.maxParticipants, 10);
+                        // Prevent negative values and enforce range
+                        if (value === '' || (!isNaN(numValue) && numValue >= 1 && numValue <= (isNaN(maxParts) ? 100 : maxParts))) {
+                          setFormData({
+                            ...formData,
+                            minParticipants: value,
+                          });
+                          if (validationErrors.minParticipants) {
+                            setValidationErrors({...validationErrors, minParticipants: false});
+                          }
+                        }
+                      }}
+                      onBlur={() => {
+                        const minParts = parseInt(formData.minParticipants, 10);
+                        const maxParts = parseInt(formData.maxParticipants, 10);
+                        if (isNaN(minParts) || minParts < 1) {
+                          setFormData({...formData, minParticipants: '1'});
+                        } else if (!isNaN(maxParts) && minParts > maxParts) {
+                          setFormData({...formData, minParticipants: formData.maxParticipants});
+                        }
+                      }}
                       disabled={!formData.requireMinParticipants}
-                      className="w-20 bg-transparent border-b border-white/20 py-1 text-sm text-white placeholder-gray-700 focus:outline-none focus:border-emerald-500 disabled:text-gray-700 disabled:border-white/10"
+                      className={`w-20 bg-transparent border-b py-1 text-sm text-white placeholder-gray-700 focus:outline-none transition-colors disabled:text-gray-700 disabled:border-white/10 ${
+                        validationErrors.minParticipants 
+                          ? 'border-red-500 focus:border-red-500' 
+                          : 'border-white/20 focus:border-emerald-500'
+                      }`}
                       placeholder="10"
                     />
+                    {validationErrors.minParticipants && (
+                      <p className="text-[10px] text-red-400 mt-1">Min participants must be between 1 and max participants</p>
+                    )}
                     <span className="text-[10px] text-gray-500 uppercase tracking-widest">
                       People
                     </span>

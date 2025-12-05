@@ -715,3 +715,18 @@ export async function getPoolStats(
     `/api/pools/${poolId}/stats`
   );
 }
+
+/**
+ * Trigger immediate GitHub verification for a user
+ */
+export async function triggerGitHubVerification(
+  poolId: number,
+  wallet: string
+): Promise<{ verified: boolean; message: string; day?: number }> {
+  return fetchApi<{ verified: boolean; message: string; day?: number }>(
+    `/api/pools/${poolId}/participants/${wallet}/verify-github`,
+    {
+      method: 'POST',
+    }
+  );
+}
