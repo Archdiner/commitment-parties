@@ -71,32 +71,53 @@ class PoolActivator:
 
                     # For scheduled (non-immediate) public pools, queue a "new pool" tweet
                     # soon after creation so people can see and join during recruitment.
-                    # We only do this for pools with a future scheduled_start_time and rely
+                    # We only do this for pools with a scheduled_start_time (future or past) and rely
                     # on SocialManager's internal tracking to avoid duplicate tweets.
-                    if (
-                        _social_manager
-                        and pool.get("is_public", True)
-                        and scheduled_start
-                        and scheduled_start > current_time
-                    ):
-                        try:
-                            from social import SocialEventType
+                    # Queue the tweet for ALL pending pools with scheduled_start_time, not just future ones,
+                    # to catch pools that were created while the activator wasn't running.
+                    # Note: Immediate start pools (recruitment_period_hours == 0) have scheduled_start_time = None
+                    # and are set to "active" status immediately, so they won't appear in pending pools list.
+                    # Even if they did, the check for scheduled_start would skip them.
+                    if _social_manager:
+                        is_public = pool.get("is_public", True)
+                        # Only queue tweets for pools with scheduled_start_time (skips immediate start pools)
+                        if is_public and scheduled_start:
+                            try:
+                                from social import SocialEventType
 
-                            # Only queue if we haven't posted a POOL_CREATED event for this pool
-                            last_events = getattr(_social_manager, "last_event_post_time", {})
-                            key = (pool_id, SocialEventType.POOL_CREATED)
-                            if not last_events.get(key):
-                                await _social_manager.post_event_update(
-                                    SocialEventType.POOL_CREATED,
-                                    pool_id,
+                                # Only queue if we haven't posted a POOL_CREATED event for this pool
+                                last_events = getattr(_social_manager, "last_event_post_time", {})
+                                key = (pool_id, SocialEventType.POOL_CREATED)
+                                if not last_events.get(key):
+                                    result = await _social_manager.post_event_update(
+                                        SocialEventType.POOL_CREATED,
+                                        pool_id,
+                                    )
+                                    if result:
+                                        logger.info(
+                                            f"Queued POOL_CREATED tweet for newly created scheduled pool {pool_id}"
+                                        )
+                                    else:
+                                        logger.warning(
+                                            f"Failed to queue POOL_CREATED tweet for pool {pool_id} "
+                                            f"(post_event_update returned None)"
+                                        )
+                                else:
+                                    logger.debug(
+                                        f"Skipping POOL_CREATED tweet for pool {pool_id} "
+                                        f"(already queued/posted at {last_events.get(key)})"
+                                    )
+                            except Exception as e:
+                                logger.error(
+                                    f"Failed to queue POOL_CREATED tweet for pool {pool_id}: {e}",
+                                    exc_info=True
                                 )
-                                logger.info(
-                                    f"Queued POOL_CREATED tweet for newly created scheduled pool {pool_id}"
-                                )
-                        except Exception as e:
-                            logger.warning(
-                                f"Failed to queue POOL_CREATED tweet for pool {pool_id}: {e}"
-                            )
+                        elif not is_public:
+                            logger.debug(f"Skipping tweet for pool {pool_id} (not public)")
+                        elif not scheduled_start:
+                            logger.debug(f"Skipping tweet for pool {pool_id} (no scheduled_start_time)")
+                    else:
+                        logger.debug("Social manager not available, skipping tweet queue")
                     
                     # Check if it's time to activate
                     if current_time >= scheduled_start:
@@ -130,19 +151,11 @@ class PoolActivator:
                         )
                         activated_count += 1
                         
-                        # Post tweet about new pool (only for scheduled pools, not immediate start)
-                        if _social_manager:
-                            try:
-                                from social import SocialEventType
-                                # Only tweet if pool is public and has a scheduled start (not immediate)
-                                if pool.get("is_public", True) and scheduled_start:
-                                    await _social_manager.post_event_update(
-                                        SocialEventType.POOL_CREATED,
-                                        pool_id
-                                    )
-                                    logger.info(f"Posted new pool tweet for pool {pool_id}")
-                            except Exception as e:
-                                logger.warning(f"Failed to post tweet for new pool {pool_id}: {e}")
+                        # Note: POOL_CREATED tweet should have been queued earlier when pool was pending.
+                        # We don't queue it here at activation time because:
+                        # 1. It's too late - recruitment period is over
+                        # 2. It would be redundant - should have been posted during recruitment
+                        # 3. The tweet should go out when the pool is created, not when it starts
                 
                 if activated_count > 0:
                     logger.info(f"Activated {activated_count} pool(s)")

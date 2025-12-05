@@ -83,6 +83,11 @@ export const Footer = () => {
                   Privacy Policy
                 </Link>
               </li>
+              <li>
+                <Link href="/contact" className="text-sm text-gray-400 hover:text-emerald-400 transition-colors">
+                  Contact Us
+                </Link>
+              </li>
             </ul>
             <div className="flex items-center gap-4 mt-6">
               <a 
