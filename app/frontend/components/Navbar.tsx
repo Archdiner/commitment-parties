@@ -60,7 +60,7 @@ export const Navbar = () => {
         <Link href="/" className="cursor-pointer flex items-center gap-3 group">
           <div className="w-3 h-3 bg-emerald-500 transform rotate-45 group-hover:rotate-90 transition-transform duration-500" />
           <div className="flex flex-col">
-            <span className="font-medium tracking-[0.1em] text-base text-white">COMMITMENT_AGENT</span>
+            <span className="font-medium tracking-[0.1em] text-base text-white">COMMITMINT</span>
             <span className="text-xs text-gray-500 tracking-wider">AI ACCOUNTABILITY</span>
           </div>
         </Link>

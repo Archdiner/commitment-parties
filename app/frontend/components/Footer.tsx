@@ -16,7 +16,7 @@ export const Footer = () => {
             <div className="flex items-center gap-3">
               <div className="w-3 h-3 bg-emerald-500 transform rotate-45" />
               <div className="flex flex-col">
-                <span className="font-medium tracking-[0.1em] text-xs text-white">COMMITMENT_AGENT</span>
+                <span className="font-medium tracking-[0.1em] text-xs text-white">COMMITMINT</span>
                 <span className="text-[8px] text-gray-500 tracking-wider">AI ACCOUNTABILITY</span>
               </div>
             </div>
@@ -96,7 +96,7 @@ export const Footer = () => {
             </ul>
             <div className="flex items-center gap-4 mt-6">
               <a 
-                href="https://x.com/CommitmentAgent" 
+                href="https://x.com/CommitMint" 
                 target="_blank" 
                 rel="noopener noreferrer"
                 className="text-gray-400 hover:text-emerald-400 transition-colors"
@@ -121,7 +121,7 @@ export const Footer = () => {
         <div className="pt-8 border-t border-white/5 space-y-4">
           <div className="flex flex-col md:flex-row justify-between items-center gap-4">
             <p className="text-xs text-gray-500">
-              © {currentYear} Commitment Agent. All rights reserved.
+              © {currentYear} CommitMint. All rights reserved.
             </p>
             <div className="flex items-center gap-6 text-xs text-gray-500">
               <span>Built on Solana</span>

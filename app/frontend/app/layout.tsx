@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Commitment Agent",
+  title: "CommitMint",
   description: "AI-Powered Accountability Protocol on Solana",
 };
 
