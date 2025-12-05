@@ -31,6 +31,14 @@ export default function Dashboard() {
     totalStaked: number;
     successfulChallenges: number;
   } | null>(null);
+  const [historyData, setHistoryData] = useState<Array<{
+    pool_id: number;
+    name: string;
+    participant_status: string;
+    stake_amount: number;
+    earnings: number;
+    end_timestamp: number;
+  }>>([]);
 
   useEffect(() => {
     const address = getPersistedWalletAddress();
@@ -75,8 +83,49 @@ export default function Dashboard() {
       // Store full participation data for challenge type checking
       setParticipationsData(participations);
       
-      // Map API data to UI format
-      const mapped = participations.map(p => ({
+      // Separate active and completed participations
+      const active = participations.filter(p => 
+        p.status === 'active' && 
+        p.participant_status !== 'success' &&
+        p.participant_status !== 'failed' &&
+        p.participant_status !== 'forfeit'
+      );
+      
+      const completed = participations.filter(p => 
+        p.participant_status === 'success' || 
+        p.participant_status === 'failed' || 
+        p.participant_status === 'forfeit' ||
+        p.status === 'ended' || 
+        p.status === 'settled'
+      );
+      
+      // Calculate history data with earnings
+      const history = completed.map(p => {
+        let earnings = 0;
+        if (p.participant_status === 'success') {
+          // Successful: got stake back + estimated profit (20% of stake)
+          earnings = p.stake_amount * 1.2;
+        } else {
+          // Failed/Forfeit: lost stake (negative)
+          earnings = -p.stake_amount;
+        }
+        
+        return {
+          pool_id: p.pool_id,
+          name: p.name,
+          participant_status: p.participant_status,
+          stake_amount: p.stake_amount,
+          earnings,
+          end_timestamp: p.end_timestamp,
+        };
+      });
+      
+      // Sort by end_timestamp (most recent first)
+      history.sort((a, b) => b.end_timestamp - a.end_timestamp);
+      setHistoryData(history);
+      
+      // Map API data to UI format (only active challenges)
+      const mapped = active.map(p => ({
         id: p.pool_id,
         title: p.name,
         type: p.goal_type.includes('Lifestyle') ? 'LIFESTYLE' : 'CRYPTO',
@@ -665,13 +714,36 @@ export default function Dashboard() {
                     <span className="text-xs uppercase tracking-widest text-gray-500">History</span>
                     <Link href="/pools" className="text-xs text-white hover:text-emerald-500">View All</Link>
                  </div>
-                 {/* Placeholder history */}
-                 <div className="space-y-3">
-                   <div className="flex justify-between text-sm text-gray-400">
-                     <span>Previous Challenge</span>
-                     <span className="text-emerald-500">+1.2 SOL</span>
+                 {historyData.length > 0 ? (
+                   <div className="space-y-3">
+                     {historyData.slice(0, 5).map((item) => (
+                       <div key={item.pool_id} className="flex justify-between items-center text-sm">
+                         <div className="flex flex-col">
+                           <span className="text-gray-300">{item.name}</span>
+                           <span className="text-[10px] text-gray-500 uppercase tracking-wider mt-0.5">
+                             {item.participant_status === 'success' ? 'Completed' : 
+                              item.participant_status === 'failed' ? 'Failed' : 
+                              item.participant_status === 'forfeit' ? 'Forfeited' : 'Ended'}
+                           </span>
+                         </div>
+                         <span className={`font-medium ${
+                           item.earnings > 0 ? 'text-emerald-500' : 'text-red-400'
+                         }`}>
+                           {item.earnings > 0 ? '+' : ''}{item.earnings.toFixed(4)} SOL
+                         </span>
+                       </div>
+                     ))}
+                     {historyData.length > 5 && (
+                       <div className="text-[10px] text-gray-500 text-center pt-2">
+                         +{historyData.length - 5} more
+                       </div>
+                     )}
                    </div>
-                 </div>
+                 ) : (
+                   <div className="text-sm text-gray-500 text-center py-4">
+                     No completed challenges yet
+                   </div>
+                 )}
               </div>
            </div>
         </div>

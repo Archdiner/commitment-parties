@@ -24,7 +24,7 @@ from solders.pubkey import Pubkey
 # Initialize logger first before any try/except blocks that use it
 logger = logging.getLogger(__name__)
 
-# Add agent src to path for verification logic
+# Try to import agent modules (for advanced features)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'agent', 'src'))
 try:
     from monitor import Monitor
@@ -33,7 +33,11 @@ try:
     AGENT_AVAILABLE = True
 except ImportError:
     AGENT_AVAILABLE = False
-    logger.warning("Agent modules not available, GitHub verification endpoint will be limited")
+    logger.info("Agent modules not available, using standalone GitHub verification")
+
+# Import standalone verification modules (always available)
+from github_verification import verify_github_commits as verify_github_commits_standalone
+from screen_time_verification import verify_screen_time_screenshot
 
 # Try to import solders for PDA derivation, fallback if not available
 try:
@@ -625,118 +629,126 @@ async def trigger_github_verification(pool_id: int, wallet: str) -> dict:
                     "day": current_day
                 }
         
-        # Use agent's verification logic if available
-        if AGENT_AVAILABLE:
-            try:
-                # Initialize minimal Monitor for verification
-                solana_client = SolanaClient(
-                    rpc_url=settings.SOLANA_RPC_URL,
-                    program_id=settings.PROGRAM_ID,
-                )
-                await solana_client.initialize()
-                verifier = Verifier(solana_client)
-                monitor = Monitor(solana_client, verifier)
-                
-                # Verify GitHub commits
-                passed, checked_commit_shas = await monitor.verify_github_commits(
+        # Use standalone verification (always available) or agent if available
+        try:
+            # Try agent first if available (has advanced features like code quality checking)
+            if AGENT_AVAILABLE:
+                try:
+                    # Initialize minimal Monitor for verification
+                    solana_client = SolanaClient(
+                        rpc_url=settings.SOLANA_RPC_URL,
+                        program_id=settings.PROGRAM_ID,
+                    )
+                    await solana_client.initialize()
+                    verifier = Verifier(solana_client)
+                    monitor = Monitor(solana_client, verifier)
+                    
+                    # Verify GitHub commits using agent (has advanced features)
+                    passed, checked_commit_shas = await monitor.verify_github_commits(
+                        pool, participant, current_day
+                    )
+                except Exception as agent_err:
+                    logger.warning(f"Agent verification failed, falling back to standalone: {agent_err}")
+                    # Fall back to standalone verification
+                    passed, checked_commit_shas = await verify_github_commits_standalone(
+                        pool, participant, current_day
+                    )
+            else:
+                # Use standalone verification (no agent available)
+                passed, checked_commit_shas = await verify_github_commits_standalone(
                     pool, participant, current_day
                 )
+            
+            if passed is True:
+                # User has sufficient commits - verify them
+                proof_data = {
+                    "verified_at": datetime.now(timezone.utc).isoformat(),
+                    "habit_type": "github_commits",
+                    "checked_commit_shas": checked_commit_shas,
+                    "daily_complete": True,  # Flag as complete for today
+                    "triggered_manually": True
+                }
                 
-                if passed is True:
-                    # User has sufficient commits - verify them
-                    proof_data = {
-                        "verified_at": datetime.now(timezone.utc).isoformat(),
-                        "habit_type": "github_commits",
-                        "checked_commit_shas": checked_commit_shas,
-                        "daily_complete": True,  # Flag as complete for today
-                        "triggered_manually": True
-                    }
-                    
-                    # Store or update verification
-                    if existing_verifications:
-                        await execute_query(
-                            table="verifications",
-                            operation="update",
-                            filters={
-                                "pool_id": pool_id,
-                                "participant_wallet": wallet,
-                                "day": current_day
-                            },
-                            data={
-                                "passed": True,
-                                "proof_data": proof_data
-                            }
-                        )
-                    else:
-                        await execute_query(
-                            table="verifications",
-                            operation="insert",
-                            data={
-                                "pool_id": pool_id,
-                                "participant_wallet": wallet,
-                                "day": current_day,
-                                "passed": True,
-                                "verification_type": "github_commits",
-                                "proof_data": proof_data
-                            }
-                        )
-                    
-                    # Update days_verified count
-                    all_verifications = await execute_query(
-                        table="verifications",
-                        operation="select",
-                        filters={
-                            "pool_id": pool_id,
-                            "participant_wallet": wallet,
-                            "passed": True
-                        }
-                    )
-                    days_verified = len(all_verifications)
-                    
+                # Store or update verification
+                if existing_verifications:
                     await execute_query(
-                        table="participants",
+                        table="verifications",
                         operation="update",
                         filters={
                             "pool_id": pool_id,
-                            "wallet_address": wallet
+                            "participant_wallet": wallet,
+                            "day": current_day
                         },
-                        data={"days_verified": days_verified}
+                        data={
+                            "passed": True,
+                            "proof_data": proof_data
+                        }
                     )
-                    
-                    logger.info(
-                        f"Immediate GitHub verification successful: pool={pool_id}, "
-                        f"wallet={wallet}, day={current_day}"
-                    )
-                    
-                    return {
-                        "verified": True,
-                        "message": "Successfully verified GitHub commits for today",
-                        "day": current_day
-                    }
-                elif passed is False:
-                    return {
-                        "verified": False,
-                        "message": "Insufficient commits found for today. Please make commits and try again.",
-                        "day": current_day
-                    }
                 else:
-                    # None - day still active, no commits yet
-                    return {
-                        "verified": False,
-                        "message": "No commits found yet for today. Please make commits and try again.",
-                        "day": current_day
+                    await execute_query(
+                        table="verifications",
+                        operation="insert",
+                        data={
+                            "pool_id": pool_id,
+                            "participant_wallet": wallet,
+                            "day": current_day,
+                            "passed": True,
+                            "verification_type": "github_commits",
+                            "proof_data": proof_data
+                        }
+                    )
+                
+                # Update days_verified count
+                all_verifications = await execute_query(
+                    table="verifications",
+                    operation="select",
+                    filters={
+                        "pool_id": pool_id,
+                        "participant_wallet": wallet,
+                        "passed": True
                     }
-            
-            except Exception as e:
-                logger.error(f"Error in agent verification: {e}", exc_info=True)
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Verification failed: {str(e)}"
                 )
-        else:
+                days_verified = len(all_verifications)
+                
+                await execute_query(
+                    table="participants",
+                    operation="update",
+                    filters={
+                        "pool_id": pool_id,
+                        "wallet_address": wallet
+                    },
+                    data={"days_verified": days_verified}
+                )
+                
+                logger.info(
+                    f"Immediate GitHub verification successful: pool={pool_id}, "
+                    f"wallet={wallet}, day={current_day}"
+                )
+                
+                return {
+                    "verified": True,
+                    "message": "Successfully verified GitHub commits for today",
+                    "day": current_day
+                }
+            elif passed is False:
+                return {
+                    "verified": False,
+                    "message": "Insufficient commits found for today. Please make commits and try again.",
+                    "day": current_day
+                }
+            else:
+                # None - day still active, no commits yet
+                return {
+                    "verified": False,
+                    "message": "No commits found yet for today. Please make commits and try again.",
+                    "day": current_day
+                }
+        
+        except Exception as e:
+            logger.error(f"Error in GitHub verification: {e}", exc_info=True)
             raise HTTPException(
-                status_code=503,
-                detail="Agent verification system not available"
+                status_code=500,
+                detail=f"Verification failed: {str(e)}"
             )
     
     except HTTPException:
@@ -849,19 +861,9 @@ async def verify_screen_time(
                 "day": current_day
             }
         
-        # Read and encode image file
+        # Read image file
         try:
             image_data = await file.read()
-            # Validate it's an image
-            if not file.content_type or not file.content_type.startswith('image/'):
-                raise HTTPException(
-                    status_code=400,
-                    detail="File must be an image (PNG, JPEG, etc.)"
-                )
-            
-            # Encode to base64 for OpenAI API
-            image_base64 = base64.b64encode(image_data).decode('utf-8')
-            image_data_url = f"data:{file.content_type};base64,{image_base64}"
         except Exception as e:
             logger.error(f"Error reading image file: {e}")
             raise HTTPException(
@@ -869,215 +871,148 @@ async def verify_screen_time(
                 detail=f"Failed to read image file: {str(e)}"
             )
         
-        # Use OpenAI vision API to verify
-        try:
-            from openai import OpenAI
-            
-            if not settings.OPENAI_API_KEY:
-                raise HTTPException(
-                    status_code=503,
-                    detail="OpenAI API key not configured"
-                )
-            
-            client = OpenAI(api_key=settings.OPENAI_API_KEY)
-            
-            # Get today's date in a format the AI can recognize
-            today = datetime.now(timezone.utc)
-            today_str = today.strftime("%Y-%m-%d")
-            today_readable = today.strftime("%B %d, %Y")
-            
-            # Create prompt for verification
-            prompt = f"""Analyze this mobile screen time screenshot. You need to verify two things:
-
-1. DATE VERIFICATION: Check if the date visible in the screenshot matches today's date: {today_readable} ({today_str}). The date must be clearly visible and match exactly.
-
-2. SCREEN TIME VERIFICATION: Check if the total screen time shown is LESS than {max_hours} hours. Look for the total screen time number (usually displayed prominently).
-
-Respond with ONLY a JSON object in this exact format:
-{{
-  "date_matches": true/false,
-  "screen_time_hours": <number>,
-  "screen_time_below_limit": true/false,
-  "reason": "brief explanation"
-}}
-
-If the date is not visible or unclear, set date_matches to false.
-If screen time is not visible or unclear, set screen_time_below_limit to false."""
-            
-            response = client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": prompt
-                            },
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": image_data_url
-                                }
-                            }
-                        ]
-                    }
-                ],
-                max_tokens=200,
-                temperature=0.1
-            )
-            
-            # Parse response
-            response_text = response.choices[0].message.content.strip()
-            
-            # Try to extract JSON from response (might be wrapped in markdown)
-            import json
-            import re
-            
-            # Remove markdown code blocks if present
-            response_text = re.sub(r'```json\s*', '', response_text)
-            response_text = re.sub(r'```\s*', '', response_text)
-            response_text = response_text.strip()
-            
-            try:
-                verification_result = json.loads(response_text)
-            except json.JSONDecodeError:
-                # Try to extract JSON object from text
-                json_match = re.search(r'\{[^}]+\}', response_text)
-                if json_match:
-                    verification_result = json.loads(json_match.group())
-                else:
-                    raise ValueError("Could not parse AI response as JSON")
-            
-            date_matches = verification_result.get("date_matches", False)
-            screen_time_hours = verification_result.get("screen_time_hours", 0)
-            screen_time_below_limit = verification_result.get("screen_time_below_limit", False)
-            reason = verification_result.get("reason", "")
-            
-            # Determine if verification passed
-            passed = date_matches and screen_time_below_limit
-            
-            # Create verification record
-            verification_data = {
-                "pool_id": pool_id,
-                "participant_wallet": wallet,
-                "day": current_day,
-                "passed": passed,
-                "verification_type": "screen_time",
-                "proof_data": {
-                    "date_matches": date_matches,
-                    "screen_time_hours": screen_time_hours,
-                    "screen_time_below_limit": screen_time_below_limit,
-                    "max_hours_allowed": max_hours,
-                    "reason": reason,
-                    "verified_at": datetime.now(timezone.utc).isoformat()
-                }
-            }
-            
-            # Insert verification (upsert - update if exists)
-            try:
-                await execute_query(
-                    table="verifications",
-                    operation="insert",
-                    data=verification_data
-                )
-            except Exception:
-                # If insert fails (duplicate), try update
-                await execute_query(
-                    table="verifications",
-                    operation="update",
-                    filters={
-                        "pool_id": pool_id,
-                        "participant_wallet": wallet,
-                        "day": current_day
-                    },
-                    data=verification_data
-                )
-            
-            # Also create a check-in record for compatibility with existing lifestyle verification
-            checkin_data = {
-                "pool_id": pool_id,
-                "participant_wallet": wallet,
-                "day": current_day,
-                "success": passed,
-                "screenshot_url": None  # We don't store the image, just verify it
-            }
-            
-            try:
-                await execute_query(
-                    table="checkins",
-                    operation="insert",
-                    data=checkin_data
-                )
-            except Exception:
-                # Update if exists
-                await execute_query(
-                    table="checkins",
-                    operation="update",
-                    filters={
-                        "pool_id": pool_id,
-                        "participant_wallet": wallet,
-                        "day": current_day
-                    },
-                    data=checkin_data
-                )
-            
-            if passed:
-                # Update participant days_verified
-                days_verified = participant.get("days_verified", 0)
-                if current_day > days_verified:
-                    await execute_query(
-                        table="participants",
-                        operation="update",
-                        filters={
-                            "pool_id": pool_id,
-                            "wallet_address": wallet
-                        },
-                        data={"days_verified": current_day}
-                    )
-                
-                logger.info(
-                    f"Screen time verification successful: pool={pool_id}, "
-                    f"wallet={wallet}, day={current_day}, screen_time={screen_time_hours}h"
-                )
-                
-                return {
-                    "verified": True,
-                    "message": f"Verification successful! Screen time: {screen_time_hours:.1f}h (limit: {max_hours}h)",
-                    "day": current_day,
-                    "screen_time_hours": screen_time_hours
-                }
-            else:
-                error_msg = "Verification failed: "
-                if not date_matches:
-                    error_msg += "Date does not match today. "
-                if not screen_time_below_limit:
-                    error_msg += f"Screen time ({screen_time_hours:.1f}h) exceeds limit ({max_hours}h)."
-                
-                logger.info(
-                    f"Screen time verification failed: pool={pool_id}, "
-                    f"wallet={wallet}, day={current_day}, reason={reason}"
-                )
-                
-                return {
-                    "verified": False,
-                    "message": error_msg.strip(),
-                    "day": current_day,
-                    "screen_time_hours": screen_time_hours,
-                    "reason": reason
-                }
+        # Use standalone verification function
+        passed, verification_details = await verify_screen_time_screenshot(
+            image_data=image_data,
+            image_content_type=file.content_type or "image/png",
+            pool=pool,
+            participant=participant,
+            day=current_day
+        )
         
-        except ImportError:
-            raise HTTPException(
-                status_code=503,
-                detail="OpenAI library not available"
-            )
-        except Exception as e:
-            logger.error(f"Error in OpenAI vision verification: {e}", exc_info=True)
+        # Handle verification errors
+        if passed is None:
+            error_reason = verification_details.get("reason", "Unknown error")
+            error_detail = verification_details.get("error", "Verification failed")
             raise HTTPException(
                 status_code=500,
-                detail=f"AI verification failed: {str(e)}"
+                detail=f"{error_detail}: {error_reason}"
             )
+        
+        # Extract verification details
+        date_matches = verification_details.get("date_matches", False)
+        screen_time_hours = verification_details.get("screen_time_hours", 0)
+        screen_time_below_limit = verification_details.get("screen_time_below_limit", False)
+        reason = verification_details.get("reason", "")
+        
+        # Create verification record
+        verification_data = {
+            "pool_id": pool_id,
+            "participant_wallet": wallet,
+            "day": current_day,
+            "passed": passed,
+            "verification_type": "screen_time",
+            "proof_data": {
+                "date_matches": date_matches,
+                "screen_time_hours": screen_time_hours,
+                "screen_time_below_limit": screen_time_below_limit,
+                "max_hours_allowed": max_hours,
+                "reason": reason,
+                "verified_at": datetime.now(timezone.utc).isoformat()
+            }
+        }
+        
+        # Insert verification (upsert - update if exists)
+        try:
+            await execute_query(
+                table="verifications",
+                operation="insert",
+                data=verification_data
+            )
+        except Exception:
+            # If insert fails (duplicate), try update
+            await execute_query(
+                table="verifications",
+                operation="update",
+                filters={
+                    "pool_id": pool_id,
+                    "participant_wallet": wallet,
+                    "day": current_day
+                },
+                data=verification_data
+            )
+        
+        # Also create a check-in record for compatibility with existing lifestyle verification
+        checkin_data = {
+            "pool_id": pool_id,
+            "participant_wallet": wallet,
+            "day": current_day,
+            "success": passed,
+            "screenshot_url": None  # We don't store the image, just verify it
+        }
+        
+        try:
+            await execute_query(
+                table="checkins",
+                operation="insert",
+                data=checkin_data
+            )
+        except Exception:
+            # Update if exists
+            await execute_query(
+                table="checkins",
+                operation="update",
+                filters={
+                    "pool_id": pool_id,
+                    "participant_wallet": wallet,
+                    "day": current_day
+                },
+                data=checkin_data
+            )
+        
+        if passed:
+            # Update participant days_verified
+            all_verifications = await execute_query(
+                table="verifications",
+                operation="select",
+                filters={
+                    "pool_id": pool_id,
+                    "participant_wallet": wallet,
+                    "passed": True
+                }
+            )
+            days_verified = len(all_verifications)
+            
+            await execute_query(
+                table="participants",
+                operation="update",
+                filters={
+                    "pool_id": pool_id,
+                    "wallet_address": wallet
+                },
+                data={"days_verified": days_verified}
+            )
+            
+            logger.info(
+                f"Screen time verification successful: pool={pool_id}, "
+                f"wallet={wallet}, day={current_day}, screen_time={screen_time_hours}h"
+            )
+            
+            return {
+                "verified": True,
+                "message": f"Verification successful! Screen time: {screen_time_hours:.1f}h (limit: {max_hours}h)",
+                "day": current_day,
+                "screen_time_hours": screen_time_hours
+            }
+        else:
+            error_msg = "Verification failed: "
+            if not date_matches:
+                error_msg += "Date does not match today. "
+            if not screen_time_below_limit:
+                error_msg += f"Screen time ({screen_time_hours:.1f}h) exceeds limit ({max_hours}h)."
+            
+            logger.info(
+                f"Screen time verification failed: pool={pool_id}, "
+                f"wallet={wallet}, day={current_day}, reason={reason}"
+            )
+            
+            return {
+                "verified": False,
+                "message": error_msg.strip(),
+                "day": current_day,
+                "screen_time_hours": screen_time_hours,
+                "reason": reason
+            }
     
     except HTTPException:
         raise
