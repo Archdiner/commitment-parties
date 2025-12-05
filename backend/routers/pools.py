@@ -8,6 +8,9 @@ from fastapi import APIRouter, HTTPException, Query
 from typing import Optional, List
 import logging
 import time
+from datetime import datetime, timezone, timedelta
+import sys
+import os
 
 from models import PoolCreate, PoolResponse, ErrorResponse, PoolConfirmRequest, JoinPoolConfirmRequest
 from database import execute_query
@@ -15,6 +18,17 @@ from config import settings
 from solana.rpc.async_api import AsyncClient
 from solana.rpc.commitment import Confirmed
 from solders.pubkey import Pubkey
+
+# Add agent src to path for verification logic
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'agent', 'src'))
+try:
+    from monitor import Monitor
+    from solana_client import SolanaClient
+    from verify import Verifier
+    AGENT_AVAILABLE = True
+except ImportError:
+    AGENT_AVAILABLE = False
+    logger.warning("Agent modules not available, GitHub verification endpoint will be limited")
 
 # Try to import solders for PDA derivation, fallback if not available
 try:
@@ -514,6 +528,222 @@ async def get_pool_stats(pool_id: int) -> dict:
     except Exception as e:
         logger.error(f"Error fetching pool stats for {pool_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch pool stats")
+
+
+@router.post(
+    "/{pool_id}/participants/{wallet}/verify-github",
+    summary="Trigger immediate GitHub verification",
+    description="Immediately checks GitHub commits for today and verifies the user if sufficient commits are found.",
+)
+async def trigger_github_verification(pool_id: int, wallet: str) -> dict:
+    """
+    Trigger immediate GitHub verification for a participant.
+    
+    This endpoint:
+    1. Checks if the pool is a GitHub challenge
+    2. Verifies the user's GitHub commits for today
+    3. If sufficient commits found, marks them as verified for the day
+    4. Flags them as complete so the agent doesn't check them again today
+    """
+    try:
+        # Get pool information
+        pools = await execute_query(
+            table="pools",
+            operation="select",
+            filters={"pool_id": pool_id},
+            limit=1
+        )
+        
+        if not pools:
+            raise HTTPException(status_code=404, detail="Pool not found")
+        
+        pool = pools[0]
+        goal_metadata = pool.get("goal_metadata") or {}
+        habit_type = goal_metadata.get("habit_type")
+        
+        # Verify this is a GitHub challenge
+        if habit_type != "github_commits":
+            raise HTTPException(
+                status_code=400,
+                detail="This endpoint is only for GitHub commit challenges"
+            )
+        
+        # Get participant
+        participants = await execute_query(
+            table="participants",
+            operation="select",
+            filters={
+                "pool_id": pool_id,
+                "wallet_address": wallet
+            },
+            limit=1
+        )
+        
+        if not participants:
+            raise HTTPException(status_code=404, detail="Participant not found in pool")
+        
+        participant = participants[0]
+        
+        # Calculate current day
+        start_timestamp = pool.get("start_timestamp") or pool.get("scheduled_start_time")
+        if not start_timestamp:
+            raise HTTPException(status_code=400, detail="Pool start timestamp not found")
+        
+        current_time = int(time.time())
+        if current_time < start_timestamp:
+            raise HTTPException(
+                status_code=400,
+                detail="Pool has not started yet"
+            )
+        
+        days_elapsed = (current_time - start_timestamp) // 86400
+        current_day = days_elapsed + 1
+        
+        # Check if user is already verified for today
+        existing_verifications = await execute_query(
+            table="verifications",
+            operation="select",
+            filters={
+                "pool_id": pool_id,
+                "participant_wallet": wallet,
+                "day": current_day
+            },
+            limit=1
+        )
+        
+        if existing_verifications:
+            existing = existing_verifications[0]
+            proof_data = existing.get("proof_data") or {}
+            # Check if already verified and flagged as complete for today
+            if existing.get("passed") and proof_data.get("daily_complete"):
+                return {
+                    "verified": True,
+                    "message": "Already verified for today",
+                    "day": current_day
+                }
+        
+        # Use agent's verification logic if available
+        if AGENT_AVAILABLE:
+            try:
+                # Initialize minimal Monitor for verification
+                solana_client = SolanaClient(
+                    rpc_url=settings.SOLANA_RPC_URL,
+                    program_id=settings.PROGRAM_ID,
+                )
+                await solana_client.initialize()
+                verifier = Verifier(solana_client)
+                monitor = Monitor(solana_client, verifier)
+                
+                # Verify GitHub commits
+                passed, checked_commit_shas = await monitor.verify_github_commits(
+                    pool, participant, current_day
+                )
+                
+                if passed is True:
+                    # User has sufficient commits - verify them
+                    proof_data = {
+                        "verified_at": datetime.now(timezone.utc).isoformat(),
+                        "habit_type": "github_commits",
+                        "checked_commit_shas": checked_commit_shas,
+                        "daily_complete": True,  # Flag as complete for today
+                        "triggered_manually": True
+                    }
+                    
+                    # Store or update verification
+                    if existing_verifications:
+                        await execute_query(
+                            table="verifications",
+                            operation="update",
+                            filters={
+                                "pool_id": pool_id,
+                                "participant_wallet": wallet,
+                                "day": current_day
+                            },
+                            data={
+                                "passed": True,
+                                "proof_data": proof_data
+                            }
+                        )
+                    else:
+                        await execute_query(
+                            table="verifications",
+                            operation="insert",
+                            data={
+                                "pool_id": pool_id,
+                                "participant_wallet": wallet,
+                                "day": current_day,
+                                "passed": True,
+                                "verification_type": "github_commits",
+                                "proof_data": proof_data
+                            }
+                        )
+                    
+                    # Update days_verified count
+                    all_verifications = await execute_query(
+                        table="verifications",
+                        operation="select",
+                        filters={
+                            "pool_id": pool_id,
+                            "participant_wallet": wallet,
+                            "passed": True
+                        }
+                    )
+                    days_verified = len(all_verifications)
+                    
+                    await execute_query(
+                        table="participants",
+                        operation="update",
+                        filters={
+                            "pool_id": pool_id,
+                            "wallet_address": wallet
+                        },
+                        data={"days_verified": days_verified}
+                    )
+                    
+                    logger.info(
+                        f"Immediate GitHub verification successful: pool={pool_id}, "
+                        f"wallet={wallet}, day={current_day}"
+                    )
+                    
+                    return {
+                        "verified": True,
+                        "message": "Successfully verified GitHub commits for today",
+                        "day": current_day
+                    }
+                elif passed is False:
+                    return {
+                        "verified": False,
+                        "message": "Insufficient commits found for today. Please make commits and try again.",
+                        "day": current_day
+                    }
+                else:
+                    # None - day still active, no commits yet
+                    return {
+                        "verified": False,
+                        "message": "No commits found yet for today. Please make commits and try again.",
+                        "day": current_day
+                    }
+            
+            except Exception as e:
+                logger.error(f"Error in agent verification: {e}", exc_info=True)
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Verification failed: {str(e)}"
+                )
+        else:
+            raise HTTPException(
+                status_code=503,
+                detail="Agent verification system not available"
+            )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error triggering GitHub verification: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to trigger verification: {str(e)}"
+        )
 
 
 @router.delete(

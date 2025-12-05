@@ -268,6 +268,8 @@ class SocialManager:
         """
         Generate engaging tweet content using AI or templates.
         
+        Includes challenge-specific information for better context.
+        
         Args:
             pool: Pool data from database
             stats: Calculated pool statistics
@@ -276,19 +278,37 @@ class SocialManager:
             Tweet text (max 280 characters)
         """
         pool_name = pool.get("name", "Challenge")
-        goal_type = pool.get("goal_type", "unknown")
+        goal_type = pool.get("goal_type", "unknown").lower()
+        goal_metadata = pool.get("goal_metadata") or {}
+        if not isinstance(goal_metadata, dict):
+            goal_metadata = {}
+        
         participant_count = stats.get("participant_count", 0)
         total_staked = stats.get("total_staked", 0.0)
         days_remaining = stats.get("days_remaining", 0)
         eliminations = stats.get("eliminations", 0)
         active_participants = participant_count - eliminations
         
+        # Build challenge context
+        challenge_info = ""
+        if goal_type == "hodl_token":
+            token_mint = goal_metadata.get("token_mint")
+            token_symbol = self._get_token_symbol(token_mint)
+            challenge_info = f"💎 HODL {token_symbol}"
+        elif goal_type == "dailydca" or goal_type == "daily_dca":
+            token_mint = goal_metadata.get("token_mint")
+            token_symbol = self._get_token_symbol(token_mint)
+            challenge_info = f"💰 DCA {token_symbol}"
+        elif goal_type == "lifestyle_habit":
+            habit_name = goal_metadata.get("habit_name") or "Lifestyle"
+            challenge_info = f"🏃 {habit_name}"
+        
         # Try AI generation first if available
         if self.ai_client:
             try:
                 prompt = f"""Create an engaging Twitter post about a commitment challenge pool:
 - Pool name: {pool_name}
-- Goal type: {goal_type}
+- Challenge type: {challenge_info or goal_type}
 - Participants: {participant_count} total, {active_participants} still active
 - Total staked: {total_staked:.2f} SOL
 - Days remaining: {days_remaining}
@@ -315,28 +335,32 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
             except Exception as e:
                 logger.warning(f"AI tweet generation failed: {e}, falling back to template")
         
-        # Template-based generation (fallback)
+        # Template-based generation (fallback) with challenge context
         goal_emojis = {
             "daily_dca": "💰",
+            "dailydca": "💰",
             "hodl_token": "💎",
             "lifestyle_habit": "🏃"
         }
-        emoji = goal_emojis.get(goal_type.lower(), "🎯")
+        emoji = goal_emojis.get(goal_type, "🎯")
+        
+        # Include challenge info in templates if available
+        challenge_prefix = f"{challenge_info} " if challenge_info else ""
         
         templates = [
-            f"{emoji} {pool_name} Challenge Update!\n\n"
+            f"{emoji} {challenge_prefix}{pool_name} Update!\n\n"
             f"👥 {active_participants}/{participant_count} still in\n"
             f"💰 {total_staked:.2f} SOL at stake\n"
             f"⏰ {days_remaining} days left\n\n"
             f"Join the competition!",
             
-            f"🔥 {pool_name} is heating up!\n\n"
+            f"🔥 {challenge_prefix}{pool_name} is heating up!\n\n"
             f"💪 {active_participants} warriors still fighting\n"
             f"💵 {total_staked:.2f} SOL prize pool\n"
             f"📉 {eliminations} eliminated\n\n"
             f"Who will win?",
             
-            f"⚡ {pool_name} Challenge\n\n"
+            f"⚡ {challenge_prefix}{pool_name} Challenge\n\n"
             f"🎯 {active_participants} active participants\n"
             f"🏆 {total_staked:.2f} SOL up for grabs\n"
             f"⏳ {days_remaining} days remaining\n\n"
@@ -375,62 +399,188 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
         if not wallet or len(wallet) < 8:
             return "winner"
         return f"{wallet[:4]}...{wallet[-4:]}"
+    
+    def _get_token_symbol(self, token_mint: Optional[str]) -> str:
+        """
+        Get token symbol from mint address.
+        Returns symbol if known, otherwise returns shortened mint address.
+        """
+        if not token_mint:
+            return "SOL"
+        
+        # Popular token mappings (matching frontend tokens.ts)
+        token_map = {
+            "So11111111111111111111111111111111111111112": "SOL",
+            "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v": "USDC",
+            "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB": "USDT",
+            "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263": "BONK",
+            "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R": "RAY",
+            "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN": "JUP",
+        }
+        
+        # Case-insensitive lookup
+        token_mint_lower = token_mint.lower()
+        for mint, symbol in token_map.items():
+            if mint.lower() == token_mint_lower:
+                return symbol
+        
+        # If not found, return shortened mint (first 4 + last 4 chars)
+        if len(token_mint) > 8:
+            return f"{token_mint[:4]}...{token_mint[-4:]}"
+        return token_mint
+    
+    def _format_recruitment_time_remaining(self, pool: Dict[str, Any]) -> Optional[str]:
+        """
+        Calculate and format how long recruitment is still open.
+        Returns formatted string like "2h", "1d", "3d 5h", or None if recruitment closed.
+        """
+        current_time = int(time.time())
+        scheduled_start = pool.get("scheduled_start_time")
+        recruitment_hours = pool.get("recruitment_period_hours", 0)
+        
+        # If no scheduled start or recruitment already closed, return None
+        if not scheduled_start or current_time >= scheduled_start:
+            return None
+        
+        # Calculate time remaining
+        seconds_remaining = scheduled_start - current_time
+        
+        if seconds_remaining <= 0:
+            return None
+        
+        hours_remaining = seconds_remaining // 3600
+        days_remaining = hours_remaining // 24
+        hours_in_day = hours_remaining % 24
+        
+        if days_remaining > 0:
+            if hours_in_day > 0:
+                return f"{days_remaining}d {hours_in_day}h"
+            return f"{days_remaining}d"
+        elif hours_remaining > 0:
+            return f"{hours_remaining}h"
+        else:
+            minutes_remaining = seconds_remaining // 60
+            if minutes_remaining > 0:
+                return f"{minutes_remaining}m"
+            return "soon"
 
     def generate_new_pool_tweet(self, pool: Dict[str, Any], stats: Dict[str, Any]) -> str:
         """
         Generate tweet text for a newly created/activated pool.
         
-        Includes brief description, sign-up close time, potential prize, and stake required.
+        Includes challenge-specific details: coin, amount, stake, max participants, recruitment time.
         """
         name = pool.get("name", "New Challenge")
-        description = pool.get("description") or ""
+        goal_type = pool.get("goal_type", "").lower()
         goal_metadata = pool.get("goal_metadata") or {}
-        if not description and isinstance(goal_metadata, dict):
-            # Prefer explicit summary from AI blueprint when available
-            description = (
-                goal_metadata.get("summary")
-                or goal_metadata.get("habit_name")
-                or goal_metadata.get("habit_type")
-                or ""
-            )
-
-        description_snippet = self._truncate_body(description, max_len=80)
-        stake = float(pool.get("stake_amount", 0.0))
-        participant_count = stats.get("participant_count", pool.get("participant_count", 0))
-        max_participants = pool.get("max_participants") or participant_count or 0
-        potential_prize = stake * float(max_participants or 0)
-        signup_deadline = self._format_signup_deadline(pool)
-
-        # Optional extra hook from AI blueprint
-        tweet_hook = None
-        if isinstance(goal_metadata, dict):
-            tweet_hook = goal_metadata.get("tweet_hook")
+        if not isinstance(goal_metadata, dict):
+            goal_metadata = {}
         
-        base = (
-            f"🎉 New challenge: {name}\n"
-            f"{description_snippet}\n"
-            f"💰 Stake: {stake:.2f} SOL to join\n"
-            f"🏆 Potential pool: ~{potential_prize:.2f} SOL\n"
-            f"⏰ Sign-up closes: {signup_deadline}"
-        )
-        if tweet_hook:
-            hook_snippet = self._truncate_body(str(tweet_hook), max_len=80)
-            base = base + f"\n🔥 {hook_snippet}"
+        stake = float(pool.get("stake_amount", 0.0))
+        max_participants = pool.get("max_participants", 0)
+        recruitment_time = self._format_recruitment_time_remaining(pool)
+        
+        # Build challenge-specific content
+        challenge_details = []
+        
+        if goal_type == "hodl_token":
+            # HODL challenge: coin, amount, stake, max participants, recruitment time
+            token_mint = goal_metadata.get("token_mint")
+            token_symbol = self._get_token_symbol(token_mint)
+            min_balance_raw = goal_metadata.get("min_balance")
+            
+            # Get token decimals (default to 9 for SOL)
+            token_decimals = 9
+            if token_symbol == "USDC" or token_symbol == "USDT":
+                token_decimals = 6
+            elif token_symbol == "BONK":
+                token_decimals = 5
+            elif token_symbol == "RAY" or token_symbol == "JUP":
+                token_decimals = 6
+            
+            if min_balance_raw is not None:
+                min_balance_tokens = float(min_balance_raw) / (10 ** token_decimals)
+                challenge_details.append(f"💎 Hold {min_balance_tokens:.2f} {token_symbol}")
+            else:
+                challenge_details.append(f"💎 Hold {token_symbol}")
+            
+        elif goal_type == "dailydca" or goal_type == "daily_dca":
+            # DCA challenge: coin, amount per trade, stake, max participants, recruitment time
+            token_mint = goal_metadata.get("token_mint")
+            token_symbol = self._get_token_symbol(token_mint)
+            dca_amount_raw = goal_metadata.get("amount")
+            
+            # Get token decimals
+            token_decimals = 9
+            if token_symbol == "USDC" or token_symbol == "USDT":
+                token_decimals = 6
+            elif token_symbol == "BONK":
+                token_decimals = 5
+            elif token_symbol == "RAY" or token_symbol == "JUP":
+                token_decimals = 6
+            
+            if dca_amount_raw is not None:
+                dca_amount_tokens = float(dca_amount_raw) / (10 ** token_decimals)
+                challenge_details.append(f"💰 DCA {dca_amount_tokens:.2f} {token_symbol}/day")
+            else:
+                challenge_details.append(f"💰 DCA {token_symbol}")
+                
+        elif goal_type == "lifestyle_habit":
+            # Lifestyle challenge: habit name, stake, max participants, recruitment time
+            habit_name = goal_metadata.get("habit_name") or goal_metadata.get("summary") or "Lifestyle Habit"
+            challenge_details.append(f"🏃 {habit_name}")
+        
+        # Add common details
+        challenge_details.append(f"💵 Stake: {stake:.2f} SOL")
+        challenge_details.append(f"👥 Max: {max_participants} participants")
+        
+        if recruitment_time:
+            challenge_details.append(f"⏰ Recruiting for: {recruitment_time}")
+        else:
+            signup_deadline = self._format_signup_deadline(pool)
+            challenge_details.append(f"⏰ Sign-up: {signup_deadline}")
+        
+        # Build tweet
+        base = f"🎉 New challenge: {name}\n\n"
+        base += "\n".join(challenge_details)
+        
         return self._truncate_body(base, max_len=220)
 
     def generate_midway_tweet(self, pool: Dict[str, Any], stats: Dict[str, Any]) -> str:
         """
         Generate tweet text for a mid-challenge update.
         
-        Highlights how many participants remain and time left.
+        Highlights challenge details, how many participants remain, and time left.
         """
         name = pool.get("name", "Challenge")
+        goal_type = pool.get("goal_type", "").lower()
+        goal_metadata = pool.get("goal_metadata") or {}
+        if not isinstance(goal_metadata, dict):
+            goal_metadata = {}
+        
         active = stats.get("active_participants", 0)
         total = stats.get("participant_count", 0)
         days_left = stats.get("days_remaining", 0)
         total_staked = stats.get("total_staked", float(pool.get("total_staked", 0.0)))
-        base = (
-            f"⚡ {name} is halfway through!\n"
+        
+        # Add challenge-specific context
+        challenge_context = ""
+        if goal_type == "hodl_token":
+            token_mint = goal_metadata.get("token_mint")
+            token_symbol = self._get_token_symbol(token_mint)
+            challenge_context = f"💎 HODL {token_symbol} Challenge"
+        elif goal_type == "dailydca" or goal_type == "daily_dca":
+            token_mint = goal_metadata.get("token_mint")
+            token_symbol = self._get_token_symbol(token_mint)
+            challenge_context = f"💰 DCA {token_symbol} Challenge"
+        elif goal_type == "lifestyle_habit":
+            habit_name = goal_metadata.get("habit_name") or "Lifestyle"
+            challenge_context = f"🏃 {habit_name} Challenge"
+        
+        base = f"⚡ {name} is halfway through!\n"
+        if challenge_context:
+            base += f"{challenge_context}\n"
+        base += (
             f"👥 {active}/{total} still in the game\n"
             f"💰 {total_staked:.2f} SOL on the line\n"
             f"⏳ {days_left} days left"

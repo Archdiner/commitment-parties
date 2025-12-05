@@ -51,15 +51,30 @@ async def describe_join_pool(
         stake_amount = pool.get("stake_amount", 0.0)
         
         # Build full URL for the action endpoint
-        # Use request URL base if available, otherwise fall back to config
-        if request:
-            base_url = str(request.base_url).rstrip('/')
-        else:
-            # Fallback: construct from common patterns
-            base_url = os.getenv("ACTION_BASE_URL", "https://api.commitment-parties.xyz")
-            if not base_url.startswith("http"):
-                base_url = f"https://{base_url}"
+        # Priority: 1) Environment variable, 2) Request URL, 3) Default
+        base_url = None
         
+        # Try environment variable first (for Render deployment)
+        env_base_url = os.getenv("ACTION_BASE_URL") or os.getenv("BACKEND_URL")
+        if env_base_url:
+            base_url = env_base_url.rstrip('/')
+            # Remove /solana/actions if present (we'll add it)
+            if base_url.endswith('/solana/actions'):
+                base_url = base_url[:-15]
+        
+        # Fallback to request URL if no env var
+        if not base_url and request:
+            base_url = str(request.base_url).rstrip('/')
+        
+        # Final fallback
+        if not base_url:
+            base_url = "https://api.commitment-parties.xyz"
+        
+        # Ensure it starts with http/https
+        if not base_url.startswith("http"):
+            base_url = f"https://{base_url}"
+        
+        # Construct the full action URL
         action_href = f"{base_url}/solana/actions/join-pool?pool_id={pool_id}"
 
         # Solana Actions JSON schema for Twitter/X Blinks
@@ -86,6 +101,8 @@ async def describe_join_pool(
             headers={
                 "Content-Type": "application/json",
                 "Access-Control-Allow-Origin": "*",  # Allow Twitter/X to fetch
+                "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type, Authorization",
             }
         )
     except HTTPException:

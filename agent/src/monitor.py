@@ -1426,6 +1426,66 @@ Respond with only "yes" or "no"."""
                                 if not wallet:
                                     continue
 
+                                # For GitHub challenges, check if user is already verified for today
+                                # and reset flags for previous days
+                                if habit_type == "github_commits":
+                                    # Check existing verification for current day
+                                    existing_verifications = await execute_query(
+                                        table="verifications",
+                                        operation="select",
+                                        filters={
+                                            "pool_id": pool_id,
+                                            "participant_wallet": wallet,
+                                            "day": current_day
+                                        },
+                                        limit=1
+                                    )
+                                    
+                                    if existing_verifications:
+                                        existing = existing_verifications[0]
+                                        proof_data = existing.get("proof_data") or {}
+                                        # If already verified and flagged as complete for today, skip
+                                        if existing.get("passed") and proof_data.get("daily_complete"):
+                                            logger.info(
+                                                f"Skipping verification for pool={pool_id}, wallet={wallet}, "
+                                                f"day={current_day} - already verified and flagged as complete"
+                                            )
+                                            continue
+                                    
+                                    # Reset daily_complete flag for previous days (new day started)
+                                    # Get all verifications for this participant
+                                    all_participant_verifications = await execute_query(
+                                        table="verifications",
+                                        operation="select",
+                                        filters={
+                                            "pool_id": pool_id,
+                                            "participant_wallet": wallet
+                                        }
+                                    )
+                                    
+                                    # Reset daily_complete for previous days
+                                    for old_verification in all_participant_verifications:
+                                        old_day = old_verification.get("day")
+                                        if old_day and old_day < current_day:
+                                            old_proof = old_verification.get("proof_data") or {}
+                                            if old_proof.get("daily_complete"):
+                                                # Remove daily_complete flag for previous days
+                                                old_proof.pop("daily_complete", None)
+                                                await execute_query(
+                                                    table="verifications",
+                                                    operation="update",
+                                                    filters={
+                                                        "pool_id": pool_id,
+                                                        "participant_wallet": wallet,
+                                                        "day": old_day
+                                                    },
+                                                    data={"proof_data": old_proof}
+                                                )
+                                                logger.debug(
+                                                    f"Reset daily_complete flag for pool={pool_id}, "
+                                                    f"wallet={wallet}, day={old_day} (new day {current_day} started)"
+                                                )
+
                                 # Route verification based on lifestyle habit type
                                 checked_commit_shas = []
                                 if habit_type == "github_commits":
@@ -1484,6 +1544,12 @@ Respond with only "yes" or "no"."""
                                         if habit_type == "github_commits" and checked_commit_shas:
                                             # Merge with any previously checked commits
                                             proof_data["checked_commit_shas"] = checked_commit_shas
+                                        
+                                        # For GitHub challenges: only flag as daily_complete after day ends
+                                        # During the day, we allow manual verification which sets daily_complete
+                                        # but the agent should only set it after the day ends
+                                        if habit_type == "github_commits" and day_has_ended and passed:
+                                            proof_data["daily_complete"] = True
                                         
                                         verification_data = {
                                             "pool_id": pool_id,
