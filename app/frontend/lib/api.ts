@@ -226,8 +226,15 @@ async function fetchApi<T>(
       console.error('Error:', err);
       console.error('==================');
       
+      // Extract error message safely
+      const errorMessage = err instanceof Error 
+        ? err.message 
+        : (typeof err === 'object' && err !== null && 'message' in err)
+          ? String((err as any).message)
+          : 'Network error contacting backend API. Backend may be waking up from sleep - please try again.';
+      
       throw new ApiError(
-        err?.message || 'Network error contacting backend API. Backend may be waking up from sleep - please try again.',
+        errorMessage,
         0,
         err
       );
