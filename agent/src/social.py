@@ -872,7 +872,17 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
                 return "duplicate"
             else:
                 # Other 403 errors - log and return None
-                logger.error(f"Twitter forbidden (403) for pool {pool_id}: {e}")
+                error_str = str(e)
+                if "oauth1 app permissions" in error_str.lower() or "permissions" in error_str.lower():
+                    logger.error(
+                        f"Twitter forbidden (403) - OAuth permissions issue for pool {pool_id}. "
+                        f"ERROR: {e}. "
+                        f"SOLUTION: Go to https://developer.twitter.com/en/portal/dashboard, select your app, "
+                        f"go to 'Settings' > 'User authentication settings', and ensure 'App permissions' is set to 'Read and Write'. "
+                        f"Then regenerate your Access Token and Secret."
+                    )
+                else:
+                    logger.error(f"Twitter forbidden (403) for pool {pool_id}: {e}")
                 return None
         except tweepy.Unauthorized as e:
             logger.error(
@@ -1183,9 +1193,22 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
                 return "duplicate"
             else:
                 # Other 403 errors - log and don't retry
-                logger.error(
-                    f"Twitter account {account.account_id} forbidden (403) for pool {task.pool_id}: {e}"
-                )
+                error_str = str(e)
+                if "oauth1 app permissions" in error_str.lower() or "permissions" in error_str.lower():
+                    logger.error(
+                        f"Twitter account {account.account_id} forbidden (403) - OAuth permissions issue for pool {task.pool_id}. "
+                        f"ERROR: {e}. "
+                        f"SOLUTION: Go to https://developer.twitter.com/en/portal/dashboard, select your app, "
+                        f"go to 'Settings' > 'User authentication settings', and ensure 'App permissions' is set to 'Read and Write'. "
+                        f"Then regenerate your Access Token and Secret."
+                    )
+                else:
+                    logger.error(
+                        f"Twitter account {account.account_id} forbidden (403) for pool {task.pool_id}: {e}"
+                    )
+                # Mark account as having permission issues - don't retry for a while
+                account.rate_limit_until = time.time() + 3600  # Don't retry for 1 hour
+                account.rate_limit_remaining = 0
                 return None
         except tweepy.Unauthorized as e:
             # Invalid credentials - don't retry, mark account as invalid
