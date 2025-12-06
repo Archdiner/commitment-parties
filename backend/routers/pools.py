@@ -392,8 +392,35 @@ async def confirm_pool_creation(pool_data: PoolConfirmRequest) -> PoolResponse:
         if not results:
             raise HTTPException(status_code=500, detail="Failed to create pool")
         
-        logger.info(f"Confirmed pool creation {pool_data.pool_id} with signature {pool_data.transaction_signature}")
-        return PoolResponse(**results[0])
+        created_pool = results[0]
+        pool_id = created_pool.get("pool_id")
+        
+        logger.info(f"Confirmed pool creation {pool_id} with signature {pool_data.transaction_signature}")
+        
+        # Trigger Twitter post for new pool (non-blocking background task)
+        try:
+            from utils.twitter import get_twitter_poster
+            import asyncio
+            
+            twitter_poster = get_twitter_poster()
+            if twitter_poster.twitter_enabled:
+                # Post tweet in background (don't block the response)
+                async def post_tweet():
+                    try:
+                        await twitter_poster.post_new_pool_tweet(created_pool)
+                    except Exception as e:
+                        logger.error(f"Error in background Twitter post: {e}", exc_info=True)
+                
+                # Schedule the task (fire-and-forget)
+                asyncio.create_task(post_tweet())
+                logger.info(f"Queued Twitter post for new pool {pool_id}")
+            else:
+                logger.debug(f"Twitter not enabled, skipping post for pool {pool_id}")
+        except Exception as e:
+            # Don't fail pool creation if Twitter posting fails
+            logger.warning(f"Failed to queue Twitter post for pool {pool_id}: {e}", exc_info=True)
+        
+        return PoolResponse(**created_pool)
     
     except HTTPException:
         raise

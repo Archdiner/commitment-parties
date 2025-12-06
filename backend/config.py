@@ -55,6 +55,16 @@ class Settings(BaseSettings):
     # OpenAI (for vision API - screen time verification)
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     
+    # Twitter API (for posting tweets when pools are created)
+    TWITTER_API_KEY: str = os.getenv("TWITTER_API_KEY", "")
+    TWITTER_API_SECRET: str = os.getenv("TWITTER_API_SECRET", "")
+    TWITTER_ACCESS_TOKEN: str = os.getenv("TWITTER_ACCESS_TOKEN", "")
+    TWITTER_ACCESS_TOKEN_SECRET: str = os.getenv("TWITTER_ACCESS_TOKEN_SECRET", "")
+    
+    # App URLs (for Twitter links)
+    APP_BASE_URL: str = os.getenv("APP_BASE_URL", "https://commitment-parties.vercel.app")
+    ACTION_BASE_URL: str = os.getenv("ACTION_BASE_URL", "https://commitment-backend.onrender.com/solana/actions")
+    
     # Environment
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
     

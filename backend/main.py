@@ -79,6 +79,20 @@ async def root():
     }
 
 
+@app.options("/actions.json")
+async def options_actions_json():
+    """Handle CORS preflight requests for actions.json"""
+    from fastapi.responses import Response
+    return Response(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization, Content-Encoding, Accept-Encoding",
+        }
+    )
+
+
 @app.get("/actions.json")
 async def actions_json():
     """
@@ -86,6 +100,9 @@ async def actions_json():
     
     Maps URL patterns to API endpoints for Blink integration.
     Required for Twitter/X Blinks to properly unfurl and recognize actions.
+    
+    This file must be accessible at the root domain for Blinks to work.
+    Must return CORS headers with Access-Control-Allow-Origin: *
     """
     import os
     
@@ -93,11 +110,18 @@ async def actions_json():
     base_url = os.getenv("BACKEND_URL", "https://commitment-backend.onrender.com")
     base_url = base_url.rstrip('/')
     
-    return {
+    # Return actions.json in the format expected by Solana Actions
+    # Reference: https://docs.solana.com/developers/actions-and-blinks
+    actions_config = {
+        "version": "1.0.0",
         "rules": [
             {
                 "pathPattern": "/solana/actions/join-pool",
                 "apiPath": f"{base_url}/solana/actions/join-pool"
+            },
+            {
+                "pathPattern": "/solana/actions/create-pool",
+                "apiPath": f"{base_url}/solana/actions/create-pool"
             },
             {
                 "pathPattern": "/solana/actions/*",
@@ -105,6 +129,18 @@ async def actions_json():
             }
         ]
     }
+    
+    # Return with CORS headers as required by spec
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        content=actions_config,
+        headers={
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",  # Required by spec
+            "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization, Content-Encoding, Accept-Encoding",
+        }
+    )
 
 
 @app.exception_handler(Exception)

@@ -4,7 +4,7 @@ Solana Actions (Blinks) endpoints.
 Provides Action-compatible endpoints for joining pools from wallets or Blinks.
 """
 
-from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi import APIRouter, HTTPException, Query, Request, Response, Body
 from typing import Any, Dict, List
 import logging
 import os
@@ -26,8 +26,8 @@ async def options_join_pool():
         status_code=200,
         headers={
             "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization, Content-Encoding, Accept-Encoding",
         }
     )
 
@@ -91,17 +91,26 @@ async def describe_join_pool(
         # Construct the full action URL
         action_href = f"{base_url}/solana/actions/join-pool?pool_id={pool_id}"
 
+        # Get icon URL - use a default icon or pool-specific icon if available
+        # Icon must be an absolute HTTP/HTTPS URL to SVG, PNG, or WebP
+        icon_url = os.getenv("ACTION_ICON_URL", "https://commitment-backend.onrender.com/static/icon.png")
+        # If pool has a custom icon, use it (future enhancement)
+        # For now, use default icon
+
         # Solana Actions JSON schema for Twitter/X Blinks
-        # Reference: https://docs.solanamobile.com/reference/actions
-        # Spec requires: icon, title, description, label, disabled (optional), links.actions
+        # Reference: https://docs.solana.com/developers/actions-and-blinks
+        # Spec requires: type, icon, title, description, label, links.actions
+        # Following Solana Actions specification for proper Blink recognition
         action = {
-            "icon": None,  # Optional: can add icon URL later
+            "type": "action",  # Required: type of action
+            "icon": icon_url,  # Required: absolute URL to icon image (SVG, PNG, or WebP)
             "title": title,
             "description": description,
             "label": f"Join Challenge ({stake_amount:.2f} SOL)",  # Button text at root level
             "links": {
                 "actions": [
                     {
+                        "type": "action",  # Type of linked action
                         "label": f"Join Challenge ({stake_amount:.2f} SOL)",
                         "href": action_href,
                     }
@@ -116,8 +125,8 @@ async def describe_join_pool(
             headers={
                 "Content-Type": "application/json",
                 "Access-Control-Allow-Origin": "*",  # Allow Twitter/X to fetch
-                "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-                "Access-Control-Allow-Headers": "Content-Type, Authorization",
+                "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type, Authorization, Content-Encoding, Accept-Encoding",
             }
         )
     except HTTPException:
@@ -132,20 +141,23 @@ async def describe_join_pool(
     summary="Build join-pool transaction",
     description="Builds a Solana transaction for joining a commitment pool.",
 )
-async def build_join_pool_tx(request: Dict[str, Any]) -> Dict[str, Any]:
+async def build_join_pool_tx(
+    request_body: Dict[str, Any] = Body(...),
+    pool_id: int = Query(..., description="Pool ID to join")
+) -> Dict[str, Any]:
     """
     POST handler for the join-pool Action.
 
-    Expects a request body that includes the user's wallet account and pool_id.
+    According to Solana Actions spec, POST request body should only contain:
+    {"account": "<account>"}
+    
+    Parameters like pool_id should come from the URL query string.
     Returns a base64-encoded transaction as per Solana Actions spec.
     """
     try:
-        account = request.get("account")
-        pool_id = request.get("pool_id")
+        account = request_body.get("account")
         if not account or not isinstance(account, str):
             raise HTTPException(status_code=400, detail="Missing or invalid 'account'")
-        if pool_id is None:
-            raise HTTPException(status_code=400, detail="Missing 'pool_id'")
 
         pools = await execute_query(
             table="pools",
@@ -188,8 +200,8 @@ async def build_join_pool_tx(request: Dict[str, Any]) -> Dict[str, Any]:
             headers={
                 "Content-Type": "application/json",
                 "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-                "Access-Control-Allow-Headers": "Content-Type, Authorization",
+                "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type, Authorization, Content-Encoding, Accept-Encoding",
             }
         )
     except HTTPException:
@@ -197,6 +209,20 @@ async def build_join_pool_tx(request: Dict[str, Any]) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error building join-pool transaction: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to build join-pool transaction")
+
+
+@router.options("/create-pool")
+async def options_create_pool():
+    """Handle CORS preflight requests for create-pool action"""
+    from fastapi.responses import Response
+    return Response(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization, Content-Encoding, Accept-Encoding",
+        }
+    )
 
 
 @router.post(

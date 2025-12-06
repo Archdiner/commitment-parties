@@ -209,9 +209,10 @@ class SocialManager:
         """
         Create a Solana Blink (Action) URL for joining a pool.
         
-        This should point to a Solana Action endpoint that returns
-        the transaction to join the pool. When shared on Twitter/X,
-        this URL can be rendered as a Blink button.
+        Generates a properly formatted Blink URL that Twitter/X can recognize
+        and convert to an interactive action button. Uses the direct action URL
+        format which Twitter/X will automatically detect if the endpoint returns
+        proper Solana Action JSON.
         
         Args:
             pool_id: ID of the pool
@@ -219,10 +220,19 @@ class SocialManager:
                          but kept for future customization)
         
         Returns:
-            Blink/Action URL
+            Direct Blink/Action URL pointing to the Solana Action endpoint
         """
-        # Example: https://commitment-backend.onrender.com/solana/actions/join-pool?pool_id=123
-        return f"{self.action_base_url}/join-pool?pool_id={pool_id}"
+        # Ensure action_base_url doesn't have trailing slash
+        base_url = self.action_base_url.rstrip('/')
+        
+        # Return direct URL to the action endpoint
+        # Twitter/X will automatically detect this as a Blink if:
+        # 1. The endpoint returns proper Solana Action JSON (GET request)
+        # 2. The domain has actions.json configured
+        # 3. The action is registered in Dialect's Actions Registry
+        blink_url = f"{base_url}/join-pool?pool_id={pool_id}"
+        
+        return blink_url
 
     def create_app_link(self, pool_id: int) -> str:
         """
