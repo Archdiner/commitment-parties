@@ -71,9 +71,18 @@ class TwitterPoster:
             self.twitter_enabled = False
     
     def create_blink(self, pool_id: int) -> str:
-        """Create a Solana Blink (Action) URL for joining a pool"""
+        """
+        Create a Solana Blink (Action) URL for joining a pool.
+        
+        Uses Dialect's blink interstitial URL format (dial.to) which works
+        universally for all users, even without wallet extensions.
+        """
+        from urllib.parse import quote
+        
         base_url = self.action_base_url.rstrip('/')
-        return f"{base_url}/join-pool?pool_id={pool_id}"
+        action_url = f"{base_url}/join-pool?pool_id={pool_id}"
+        encoded_action_url = quote(action_url, safe='')
+        return f"https://dial.to/?action={encoded_action_url}"
     
     def create_app_link(self, pool_id: int) -> str:
         """Create a link to the pool page in the web app"""

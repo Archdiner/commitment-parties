@@ -209,10 +209,15 @@ class SocialManager:
         """
         Create a Solana Blink (Action) URL for joining a pool.
         
-        Generates a properly formatted Blink URL that Twitter/X can recognize
-        and convert to an interactive action button. Uses the direct action URL
-        format which Twitter/X will automatically detect if the endpoint returns
-        proper Solana Action JSON.
+        Generates a properly formatted Blink URL using Dialect's interstitial site
+        (dial.to) which works universally for all users, even without wallet extensions.
+        
+        Format: https://dial.to/?action=<url-encoded-action-url>
+        
+        This format ensures that when users click the link:
+        1. They're taken to dial.to which recognizes it as a Blink
+        2. dial.to fetches the action metadata and displays the action UI
+        3. Users can sign and execute the transaction directly
         
         Args:
             pool_id: ID of the pool
@@ -220,17 +225,21 @@ class SocialManager:
                          but kept for future customization)
         
         Returns:
-            Direct Blink/Action URL pointing to the Solana Action endpoint
+            Blink URL using Dialect's interstitial format
         """
         # Ensure action_base_url doesn't have trailing slash
         base_url = self.action_base_url.rstrip('/')
         
-        # Return direct URL to the action endpoint
-        # Twitter/X will automatically detect this as a Blink if:
-        # 1. The endpoint returns proper Solana Action JSON (GET request)
-        # 2. The domain has actions.json configured
-        # 3. The action is registered in Dialect's Actions Registry
-        blink_url = f"{base_url}/join-pool?pool_id={pool_id}"
+        # Build the action URL
+        action_url = f"{base_url}/join-pool?pool_id={pool_id}"
+        
+        # URL-encode the action URL for use in dial.to query parameter
+        from urllib.parse import quote
+        encoded_action_url = quote(action_url, safe='')
+        
+        # Return Dialect's blink interstitial URL
+        # This format works universally and will open the action in dial.to
+        blink_url = f"https://dial.to/?action={encoded_action_url}"
         
         return blink_url
 
