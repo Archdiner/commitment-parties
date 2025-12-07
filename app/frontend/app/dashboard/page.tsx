@@ -2,9 +2,9 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ChevronDown, Check, Smartphone, ArrowRight, Users, TrendingDown } from 'lucide-react';
+import { ChevronDown, Check, Smartphone, ArrowRight, Users, TrendingDown, X } from 'lucide-react';
 import { InfoIcon } from '@/components/ui/Tooltip';
-import { getUserParticipations, UserParticipation, getPoolStats, getParticipantVerifications, triggerGitHubVerification, verifyScreenTime } from '@/lib/api';
+import { getUserParticipations, UserParticipation, getPoolStats, getParticipantVerifications, triggerGitHubVerification, verifyScreenTime, buildForfeitPoolTransaction, confirmPoolForfeit } from '@/lib/api';
 import { getPersistedWalletAddress } from '@/lib/wallet';
 import { SectionLabel } from '@/components/ui/SectionLabel';
 import { Stat } from '@/components/ui/Stat';
@@ -26,6 +26,8 @@ export default function Dashboard() {
   const [participantStats, setParticipantStats] = useState<{ started: number; remaining: number } | null>(null);
   const [timeLeft, setTimeLeft] = useState<string | null>(null);
   const [currentBlock, setCurrentBlock] = useState<number | null>(null);
+  const [forfeiting, setForfeiting] = useState(false);
+  const [showForfeitConfirm, setShowForfeitConfirm] = useState(false);
   const [userStats, setUserStats] = useState<{
     totalEarned: number;
     totalStaked: number;
@@ -346,6 +348,88 @@ export default function Dashboard() {
       setVerifying(false); 
       setCheckedIn(true); 
     }, 1500);
+  };
+
+  const handleForfeit = async () => {
+    if (!walletAddress || !selectedChallengeId) return;
+    
+    // Find the current participation data
+    const participation = participationsData.find(p => p.pool_id === selectedChallengeId);
+    if (!participation) return;
+    
+    // Check if participant has already failed/forfeited
+    if (participation.participant_status === 'failed' || participation.participant_status === 'forfeit') {
+      setVerificationMessage('You have already forfeited or failed this challenge.');
+      return;
+    }
+    
+    setForfeiting(true);
+    setVerificationMessage(null);
+    
+    try {
+      // Build forfeit transaction
+      const { transaction: txB64 } = await buildForfeitPoolTransaction(selectedChallengeId, walletAddress);
+      
+      // Get wallet provider
+      const anyWindow = window as any;
+      const provider = 
+        (anyWindow.phantom && anyWindow.phantom.solana) ||
+        anyWindow.solana ||
+        null;
+      
+      if (!provider) {
+        alert('Please install Phantom Wallet to forfeit this challenge.');
+        setForfeiting(false);
+        return;
+      }
+      
+      if (!provider.publicKey) {
+        await provider.connect();
+      }
+      
+      const connection = getConnection();
+      const { Transaction } = await import('@solana/web3.js');
+      const tx = Transaction.from(Buffer.from(txB64, 'base64'));
+      
+      // Send transaction
+      let signature: string;
+      if (typeof provider.sendTransaction === 'function') {
+        signature = await provider.sendTransaction(tx, connection, {
+          skipPreflight: false,
+          maxRetries: 3,
+          preflightCommitment: 'confirmed',
+        });
+      } else if (typeof provider.signTransaction === 'function') {
+        const signed = await provider.signTransaction(tx);
+        signature = await connection.sendRawTransaction(signed.serialize(), {
+          skipPreflight: false,
+          maxRetries: 3,
+        });
+      } else {
+        throw new Error('Connected wallet does not support sending transactions.');
+      }
+      
+      await connection.confirmTransaction(signature, 'confirmed');
+      
+      // Confirm forfeit with backend
+      await confirmPoolForfeit(selectedChallengeId, {
+        transaction_signature: signature,
+        participant_wallet: walletAddress,
+      });
+      
+      setVerificationMessage('Challenge forfeited. You have lost your stake.');
+      setShowForfeitConfirm(false);
+      
+      // Refresh participation data
+      if (walletAddress) {
+        await fetchData(walletAddress);
+      }
+    } catch (error: any) {
+      console.error('Error forfeiting challenge:', error);
+      setVerificationMessage(error.message || 'Failed to forfeit challenge. Please try again.');
+    } finally {
+      setForfeiting(false);
+    }
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -752,6 +836,23 @@ export default function Dashboard() {
                       )}
                     </div>
                  </div>
+                 
+                 {/* Forfeit Button - Only show if active and not failed */}
+                 {!hasFailed && currentParticipation && currentParticipation.participant_status === 'active' && (
+                   <div className="mt-6 pt-6 border-t border-white/5">
+                     <button
+                       onClick={() => setShowForfeitConfirm(true)}
+                       disabled={forfeiting}
+                       className="w-full px-4 py-3 border border-red-500/30 text-red-400 uppercase tracking-widest text-xs font-medium hover:bg-red-500/10 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                     >
+                       <X className="w-4 h-4" />
+                       {forfeiting ? 'Forfeiting...' : 'Forfeit Challenge'}
+                     </button>
+                     <p className="text-[9px] text-gray-600 mt-2 text-center">
+                       Forfeiting will immediately end your participation and you will lose your stake
+                     </p>
+                   </div>
+                 )}
               </div>
 
               <div className="pt-8 border-t border-white/5">
@@ -850,6 +951,40 @@ export default function Dashboard() {
                 className="flex-1 px-4 py-2 border border-white/10 rounded-lg text-sm text-gray-400 hover:border-white/20 transition-colors disabled:opacity-50"
               >
                 Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Forfeit Confirmation Modal */}
+      {showForfeitConfirm && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-6">
+          <div className="bg-[#0A0A0A] border border-red-500/30 rounded-2xl p-8 max-w-md w-full">
+            <h2 className="text-2xl font-light mb-4 text-red-400">Forfeit Challenge?</h2>
+            <p className="text-sm text-gray-400 mb-6">
+              Are you sure you want to forfeit this challenge? This action cannot be undone.
+            </p>
+            <div className="p-4 border border-red-500/20 bg-red-500/5 rounded-lg mb-6">
+              <p className="text-sm text-red-400 font-medium mb-2">You will lose:</p>
+              <p className="text-lg text-white">
+                {currentParticipation?.stake_amount || 0} SOL
+              </p>
+            </div>
+            <div className="flex gap-4">
+              <button
+                onClick={() => setShowForfeitConfirm(false)}
+                disabled={forfeiting}
+                className="flex-1 px-4 py-2 border border-white/10 rounded-lg text-sm text-gray-400 hover:border-white/20 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleForfeit}
+                disabled={forfeiting}
+                className="flex-1 px-4 py-2 bg-red-500/20 border border-red-500 text-red-400 rounded-lg text-sm font-medium hover:bg-red-500/30 transition-colors disabled:opacity-50"
+              >
+                {forfeiting ? 'Forfeiting...' : 'Yes, Forfeit'}
               </button>
             </div>
           </div>

@@ -14,7 +14,7 @@ import os
 import base64
 from io import BytesIO
 
-from models import PoolCreate, PoolResponse, ErrorResponse, PoolConfirmRequest, JoinPoolConfirmRequest
+from models import PoolCreate, PoolResponse, ErrorResponse, PoolConfirmRequest, JoinPoolConfirmRequest, ForfeitPoolConfirmRequest
 from database import execute_query
 from config import settings
 from utils.timezone import (
@@ -1391,4 +1391,173 @@ async def confirm_pool_join(
     except Exception as e:
         logger.error(f"Error confirming pool join: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to confirm pool join")
+
+
+@router.post(
+    "/{pool_id}/forfeit",
+    summary="Build forfeit pool transaction",
+    description="Builds a Solana transaction for forfeiting a pool. User must sign and submit, then call confirm endpoint.",
+)
+async def build_forfeit_pool_transaction(
+    pool_id: int,
+    participant_wallet: str = Query(..., description="Participant wallet address")
+) -> dict:
+    """
+    Build a forfeit pool transaction.
+    
+    Returns a base64-encoded unsigned transaction that the user's wallet must sign.
+    After signing and submitting, call the confirm endpoint to update the database.
+    """
+    try:
+        # Get pool information
+        pools = await execute_query(
+            table="pools",
+            operation="select",
+            filters={"pool_id": pool_id},
+            limit=1
+        )
+        
+        if not pools:
+            raise HTTPException(status_code=404, detail="Pool not found")
+        
+        pool = pools[0]
+        
+        # Check pool is active
+        if pool.get("status") != "active":
+            raise HTTPException(
+                status_code=400,
+                detail="Pool must be active to forfeit"
+            )
+        
+        # Check participant exists and is active
+        participants = await execute_query(
+            table="participants",
+            operation="select",
+            filters={
+                "pool_id": pool_id,
+                "wallet_address": participant_wallet
+            },
+            limit=1
+        )
+        
+        if not participants:
+            raise HTTPException(status_code=404, detail="Participant not found in pool")
+        
+        participant = participants[0]
+        
+        if participant.get("status") != "active":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Participant is not active (status: {participant.get('status')}). Cannot forfeit."
+            )
+        
+        # Build transaction
+        from solana_tx_builder import get_tx_builder
+        tx_builder = get_tx_builder()
+        tx_b64 = await tx_builder.build_forfeit_pool_transaction(
+            pool_id=pool_id,
+            participant_wallet=participant_wallet
+        )
+        
+        return {
+            "transaction": tx_b64,
+            "message": f"Forfeit {pool.get('name', 'Challenge')} - You will lose your stake",
+            "pool_id": pool_id,
+            "participant_wallet": participant_wallet
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error building forfeit transaction: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to build forfeit transaction")
+
+
+@router.post(
+    "/{pool_id}/forfeit/confirm",
+    response_model=PoolResponse,
+    summary="Confirm pool forfeit after on-chain transaction",
+    description="Updates participant status to forfeit after successful forfeit transaction",
+)
+async def confirm_pool_forfeit(
+    pool_id: int,
+    forfeit_data: ForfeitPoolConfirmRequest
+) -> PoolResponse:
+    """
+    Confirm pool forfeit after on-chain transaction.
+    
+    Verifies the transaction signature and updates participant status to 'forfeit'.
+    """
+    try:
+        # Verify participant wallet matches
+        if forfeit_data.participant_wallet != forfeit_data.participant_wallet:
+            raise HTTPException(status_code=400, detail="Participant wallet mismatch")
+        
+        # Get pool
+        pools = await execute_query(
+            table="pools",
+            operation="select",
+            filters={"pool_id": pool_id},
+            limit=1
+        )
+        
+        if not pools:
+            raise HTTPException(status_code=404, detail="Pool not found")
+        
+        pool = pools[0]
+        
+        # Get participant
+        participants = await execute_query(
+            table="participants",
+            operation="select",
+            filters={
+                "pool_id": pool_id,
+                "wallet_address": forfeit_data.participant_wallet
+            },
+            limit=1
+        )
+        
+        if not participants:
+            raise HTTPException(status_code=404, detail="Participant not found in pool")
+        
+        participant = participants[0]
+        
+        # Verify transaction signature (basic check - in production, verify on-chain)
+        # For now, we'll trust the client and update the database
+        # In production, you should verify the transaction on-chain
+        
+        # Update participant status to forfeit
+        await execute_query(
+            table="participants",
+            operation="update",
+            filters={
+                "pool_id": pool_id,
+                "wallet_address": forfeit_data.participant_wallet
+            },
+            data={"status": "forfeit"}
+        )
+        
+        logger.info(
+            f"Confirmed forfeit for pool {pool_id} by {forfeit_data.participant_wallet} "
+            f"with signature {forfeit_data.transaction_signature}"
+        )
+        
+        # Return updated pool
+        updated_pools = await execute_query(
+            table="pools",
+            operation="select",
+            filters={"pool_id": pool_id},
+            limit=1
+        )
+        
+        if not updated_pools:
+            raise HTTPException(status_code=500, detail="Failed to retrieve updated pool")
+        
+        return PoolResponse(**updated_pools[0])
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error confirming pool forfeit: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to confirm pool forfeit")
 

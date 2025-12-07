@@ -315,3 +315,161 @@ async def build_create_pool_tx(request: Dict[str, Any]) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail="Failed to build create-pool transaction")
 
 
+@router.options("/forfeit-pool")
+async def options_forfeit_pool():
+    """Handle CORS preflight requests for forfeit-pool action"""
+    from fastapi.responses import Response
+    return Response(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization, Content-Encoding, Accept-Encoding",
+        }
+    )
+
+
+@router.get(
+    "/forfeit-pool",
+    summary="Describe forfeit-pool Solana Action",
+    description="Solana Action metadata for forfeiting a commitment pool.",
+)
+async def describe_forfeit_pool(
+    pool_id: int = Query(..., description="Pool ID to forfeit")
+) -> Dict[str, Any]:
+    """
+    GET handler for the forfeit-pool Action.
+    
+    Returns metadata about the forfeit action for Solana Actions/Blinks.
+    """
+    try:
+        pools = await execute_query(
+            table="pools",
+            operation="select",
+            filters={"pool_id": pool_id},
+            limit=1,
+        )
+        if not pools:
+            raise HTTPException(status_code=404, detail="Pool not found")
+        pool = pools[0]
+        
+        title = f"Forfeit {pool.get('name', 'Challenge')}"
+        description = f"Forfeit your participation in this challenge. You will lose your stake."
+        
+        base_url = settings.BASE_URL or "http://localhost:8000"
+        action_href = f"{base_url}/solana/actions/forfeit-pool?pool_id={pool_id}"
+        
+        return {
+            "type": "action",
+            "title": title,
+            "description": description,
+            "icon": "🚪",
+            "label": "Forfeit Challenge",
+            "links": {
+                "action": {
+                    "href": action_href,
+                    "method": "POST",
+                }
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error describing forfeit-pool action for pool {pool_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to describe forfeit-pool action")
+
+
+@router.post(
+    "/forfeit-pool",
+    summary="Build forfeit-pool transaction",
+    description="Builds a Solana transaction for forfeiting a commitment pool.",
+)
+async def build_forfeit_pool_tx(
+    request_body: Dict[str, Any] = Body(...),
+    pool_id: int = Query(..., description="Pool ID to forfeit")
+) -> Dict[str, Any]:
+    """
+    POST handler for the forfeit-pool Action.
+    
+    According to Solana Actions spec, POST request body should only contain:
+    {"account": "<account>"}
+    
+    Parameters like pool_id should come from the URL query string.
+    Returns a base64-encoded transaction as per Solana Actions spec.
+    """
+    try:
+        account = request_body.get("account")
+        if not account or not isinstance(account, str):
+            raise HTTPException(status_code=400, detail="Missing or invalid 'account'")
+
+        pools = await execute_query(
+            table="pools",
+            operation="select",
+            filters={"pool_id": pool_id},
+            limit=1,
+        )
+        if not pools:
+            raise HTTPException(status_code=404, detail="Pool not found")
+        pool = pools[0]
+        if pool.get("status") != "active":
+            raise HTTPException(status_code=400, detail="Pool must be active to forfeit")
+        
+        # Check if participant exists and is active
+        participants = await execute_query(
+            table="participants",
+            operation="select",
+            filters={
+                "pool_id": pool_id,
+                "wallet_address": account
+            },
+            limit=1
+        )
+        if not participants:
+            raise HTTPException(status_code=404, detail="Participant not found in pool")
+        
+        participant = participants[0]
+        if participant.get("status") != "active":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Participant is not active (status: {participant.get('status')}). Cannot forfeit."
+            )
+
+        # Build real transaction using the transaction builder
+        pool_id_int = int(pool_id)  # Ensure it's an int
+        try:
+            tx_builder = get_tx_builder()
+            tx_b64 = await tx_builder.build_forfeit_pool_transaction(
+                pool_id=pool_id_int,
+                participant_wallet=account,
+            )
+        except Exception as e:
+            logger.error(f"Failed to build forfeit_pool transaction: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to build transaction: {str(e)}"
+            )
+        
+        pool_name = pool.get("name", "Challenge")
+        response: Dict[str, Any] = {
+            "transaction": tx_b64,
+            "message": f"Forfeit {pool_name} - You will lose your stake",
+        }
+        
+        # Return with proper headers for Solana Actions
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            content=response,
+            headers={
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type, Authorization, Content-Encoding, Accept-Encoding",
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error building forfeit-pool transaction: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to build forfeit-pool transaction")
+
+

@@ -91,6 +91,11 @@ export interface JoinPoolConfirmRequest {
   participant_wallet: string;
 }
 
+export interface ForfeitPoolConfirmRequest {
+  transaction_signature: string;
+  participant_wallet: string;
+}
+
 
 class ApiError extends Error {
   constructor(
@@ -438,6 +443,31 @@ export async function confirmPoolJoin(
   data: JoinPoolConfirmRequest
 ): Promise<PoolResponse> {
   return fetchApi<PoolResponse>(`/api/pools/${poolId}/join/confirm`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+/**
+ * Build forfeit pool transaction
+ */
+export async function buildForfeitPoolTransaction(
+  poolId: number,
+  participantWallet: string
+): Promise<{ transaction: string; message: string; pool_id: number; participant_wallet: string }> {
+  return fetchApi<{ transaction: string; message: string; pool_id: number; participant_wallet: string }>(
+    `/api/pools/${poolId}/forfeit?participant_wallet=${encodeURIComponent(participantWallet)}`
+  );
+}
+
+/**
+ * Confirm pool forfeit after on-chain transaction
+ */
+export async function confirmPoolForfeit(
+  poolId: number,
+  data: ForfeitPoolConfirmRequest
+): Promise<PoolResponse> {
+  return fetchApi<PoolResponse>(`/api/pools/${poolId}/forfeit/confirm`, {
     method: 'POST',
     body: JSON.stringify(data),
   });

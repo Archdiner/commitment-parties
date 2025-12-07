@@ -271,6 +271,76 @@ class SolanaTransactionBuilder:
             logger.error(f"Error building create_pool transaction: {e}", exc_info=True)
             raise
 
+    async def build_forfeit_pool_transaction(
+        self,
+        pool_id: int,
+        participant_wallet: str,
+    ) -> str:
+        """
+        Build an unsigned transaction for forfeiting a pool.
+        
+        Args:
+            pool_id: Pool ID to forfeit
+            participant_wallet: Wallet address of the participant (will be the fee payer)
+        
+        Returns:
+            Base64-encoded unsigned transaction ready for wallet signing
+        """
+        try:
+            participant_pubkey = Pubkey.from_string(participant_wallet)
+            
+            # Derive PDAs
+            pool_pubkey, _ = self.derive_pool_pda(pool_id)
+            participant_pda, _ = self.derive_participant_pda(pool_pubkey, participant_pubkey)
+            
+            # Build instruction data (just discriminator - no args for forfeit_pool)
+            discriminator = self._anchor_discriminator("forfeit_pool")
+            instruction_data = discriminator
+            
+            # Build account metas (order matters - must match program's account order!)
+            accounts = [
+                AccountMeta(pubkey=pool_pubkey, is_signer=False, is_writable=True),
+                AccountMeta(pubkey=participant_pda, is_signer=False, is_writable=True),
+                AccountMeta(pubkey=participant_pubkey, is_signer=True, is_writable=False),
+            ]
+            
+            # Create instruction
+            instruction = Instruction(
+                program_id=self.program_pubkey,
+                accounts=accounts,
+                data=bytes(instruction_data)
+            )
+            
+            # Get recent blockhash
+            client = await self._get_client()
+            blockhash_resp = await client.get_latest_blockhash()
+            if blockhash_resp.value is None:
+                raise RuntimeError("Failed to get latest blockhash")
+            
+            blockhash = blockhash_resp.value.blockhash
+            
+            # Build message (unsigned transaction)
+            message = Message.new_with_blockhash([instruction], participant_pubkey, blockhash)
+            
+            # Build unsigned transaction
+            transaction = Transaction.new_unsigned(message)
+            
+            # Serialize transaction to bytes
+            tx_bytes = bytes(transaction)
+            
+            # Encode as base64
+            tx_b64 = base64.b64encode(tx_bytes).decode("utf-8")
+            
+            logger.info(f"Built forfeit_pool transaction for pool {pool_id}, participant {participant_wallet}")
+            logger.info(f"  Pool PDA: {pool_pubkey}")
+            logger.info(f"  Participant PDA: {participant_pda}")
+            
+            return tx_b64
+        
+        except Exception as e:
+            logger.error(f"Error building forfeit_pool transaction: {e}", exc_info=True)
+            raise
+
 
 # Global instance (lazy initialization)
 _tx_builder: Optional[SolanaTransactionBuilder] = None

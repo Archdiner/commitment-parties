@@ -170,6 +170,12 @@ class JoinPoolConfirmRequest(BaseModel):
     participant_wallet: str = Field(..., description="Participant wallet address", max_length=44)
 
 
+class ForfeitPoolConfirmRequest(BaseModel):
+    """Request model for confirming pool forfeit after on-chain transaction"""
+    transaction_signature: str = Field(..., description="Transaction signature from Solana")
+    participant_wallet: str = Field(..., description="Participant wallet address", max_length=44)
+
+
 class PoolResponse(BaseModel):
     """Response model for pool data"""
     pool_id: int
