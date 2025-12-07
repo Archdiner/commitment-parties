@@ -617,6 +617,14 @@ async def trigger_github_verification(pool_id: int, wallet: str) -> dict:
         
         participant = participants[0]
         
+        # Check if participant has failed - prevent verification
+        participant_status = participant.get("status")
+        if participant_status in ("failed", "forfeit"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Participant has failed this challenge (status: {participant_status}) and can no longer participate"
+            )
+        
         # Calculate current day using Eastern Time
         start_timestamp = pool.get("start_timestamp") or pool.get("scheduled_start_time")
         if not start_timestamp:
@@ -856,6 +864,14 @@ async def verify_screen_time(
             raise HTTPException(status_code=404, detail="Participant not found in pool")
         
         participant = participants[0]
+        
+        # Check if participant has failed - prevent verification
+        participant_status = participant.get("status")
+        if participant_status in ("failed", "forfeit"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Participant has failed this challenge (status: {participant_status}) and can no longer participate"
+            )
         
         # Calculate current day using Eastern Time
         start_timestamp = pool.get("start_timestamp") or pool.get("scheduled_start_time")

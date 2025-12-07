@@ -291,6 +291,12 @@ export default function Dashboard() {
     const participation = participationsData.find(p => p.pool_id === selectedChallengeId);
     if (!participation) return;
     
+    // Check if participant has failed - prevent interaction
+    if (participation.participant_status === 'failed' || participation.participant_status === 'forfeit') {
+      setVerificationMessage('You have failed this challenge and can no longer participate.');
+      return;
+    }
+    
     const goalType = participation.goal_type;
     const goalMetadata = participation.goal_metadata || {};
     const habitType = goalMetadata.habit_type;
@@ -465,6 +471,10 @@ export default function Dashboard() {
   const isScreenTimeChallenge = currentParticipation && 
     currentParticipation.goal_type === 'lifestyle_habit' && 
     currentParticipation.goal_metadata?.habit_type === 'screen_time';
+  const hasFailed = currentParticipation && (
+    currentParticipation.participant_status === 'failed' || 
+    currentParticipation.participant_status === 'forfeit'
+  );
 
   return (
     <div className="min-h-screen bg-[#050505] text-white pt-32 px-6 pb-20">
@@ -656,15 +666,19 @@ export default function Dashboard() {
                       <div className="flex items-center justify-center gap-2 mb-2">
                         <button 
                            onClick={handleCheckIn}
-                           disabled={verifying || isCryptoChallenge}
+                           disabled={verifying || isCryptoChallenge || hasFailed}
                            className={`flex-1 h-20 border uppercase tracking-widest text-xs font-medium transition-all flex items-center justify-center gap-4 group ${
-                             isCryptoChallenge
+                             hasFailed || isCryptoChallenge
                                ? 'border-white/10 bg-white/[0.02] text-gray-500 cursor-not-allowed'
                                : 'border-white/20 hover:border-emerald-500 hover:bg-emerald-500/5 text-white'
                            }`}
                         >
                            {verifying ? (
                               <span className="animate-pulse">Verifying...</span>
+                           ) : hasFailed ? (
+                              <>
+                                 <span>Challenge Failed - No Longer Active</span>
+                              </>
                            ) : isCryptoChallenge ? (
                               <>
                                  <span>Crypto Challenge - Auto-Verified</span>
@@ -732,7 +746,7 @@ export default function Dashboard() {
                  <div className="flex justify-between mt-4 text-[9px] text-gray-600 font-mono">
                     <span>Verified</span>
                     <div className="flex items-center gap-2">
-                      <span>Status: Active</span>
+                      <span>Status: {hasFailed ? 'Failed' : 'Active'}</span>
                       {currentBlock && (
                         <InfoIcon content={`This shows the latest Solana blockchain block (#${currentBlock}) and the status of your last on-chain interaction. 'Confirmed' means your transaction was successfully processed.`} />
                       )}

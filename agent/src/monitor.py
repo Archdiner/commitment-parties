@@ -1614,7 +1614,17 @@ Respond with only "yes" or "no"."""
                                     )
                                     days_verified = len(all_verifications)
                                     
-                                    # Update participant's days_verified
+                                    # Update participant's days_verified and status
+                                    update_data = {"days_verified": days_verified}
+                                    
+                                    # If verification failed, mark participant as failed
+                                    if not passed:
+                                        update_data["status"] = "failed"
+                                        logger.info(
+                                            f"Marking participant as failed: pool={pool_id}, "
+                                            f"wallet={wallet}, day={current_day}"
+                                        )
+                                    
                                     await execute_query(
                                         table="participants",
                                         operation="update",
@@ -1622,11 +1632,12 @@ Respond with only "yes" or "no"."""
                                             "pool_id": pool_id,
                                             "wallet_address": wallet
                                         },
-                                        data={"days_verified": days_verified}
+                                        data=update_data
                                     )
                                     logger.info(
-                                        f"Updated days_verified for participant: pool={pool_id}, "
-                                        f"wallet={wallet}, days_verified={days_verified}"
+                                        f"Updated participant: pool={pool_id}, "
+                                        f"wallet={wallet}, days_verified={days_verified}, "
+                                        f"status={'failed' if not passed else 'active'}"
                                     )
                                     
                                 except Exception as db_err:
@@ -1635,13 +1646,9 @@ Respond with only "yes" or "no"."""
                                         exc_info=True
                                     )
                                 
-                                # Submit verification to smart contract
-                                # IMPORTANT: Only submit PASSED verifications to on-chain.
-                                # Failed verifications are tracked in database but not submitted on-chain
-                                # because the smart contract marks participants as Failed immediately,
-                                # which prevents future verifications. We'll mark as Failed at challenge end
-                                # if they didn't complete all days.
-                                if self.verifier and passed:
+                                # Submit verification to smart contract (both passed and failed)
+                                # This ensures on-chain state matches database state
+                                if self.verifier:
                                     pool_pubkey = pool.get("pool_pubkey")
                                     if pool_pubkey:
                                         signature = await self.verifier.submit_verification(
@@ -1664,12 +1671,8 @@ Respond with only "yes" or "no"."""
                                                 f"wallet={wallet}, day={current_day}. "
                                                 f"Database was updated successfully."
                                             )
-                                elif not passed:
-                                    logger.debug(
-                                        f"Skipping on-chain submission for failed verification: pool={pool_id}, "
-                                        f"wallet={wallet}, day={current_day}. "
-                                        f"Failed verifications are tracked in database only to keep participant Active."
-                                    )
+                                else:
+                                    logger.warning("Verifier not available, skipping on-chain submission")
                                 else:
                                     logger.warning("Verifier not available, skipping on-chain submission")
                         
