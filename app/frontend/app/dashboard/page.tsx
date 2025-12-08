@@ -28,6 +28,8 @@ export default function Dashboard() {
   const [currentBlock, setCurrentBlock] = useState<number | null>(null);
   const [forfeiting, setForfeiting] = useState(false);
   const [showForfeitConfirm, setShowForfeitConfirm] = useState(false);
+  const [showLossNotification, setShowLossNotification] = useState(false);
+  const [lostChallenges, setLostChallenges] = useState<Array<{pool_id: number; name: string}>>([]);
   const [userStats, setUserStats] = useState<{
     totalEarned: number;
     totalStaked: number;
@@ -86,20 +88,38 @@ export default function Dashboard() {
       setParticipationsData(participations);
       
       // Separate active and completed participations
+      // Active = pool is still running (status='active'), regardless of participant status
+      // Completed = pool has ended (status='ended' or 'settled')
       const active = participations.filter(p => 
-        p.status === 'active' && 
-        p.participant_status !== 'success' &&
-        p.participant_status !== 'failed' &&
-        p.participant_status !== 'forfeit'
+        p.status === 'active'
       );
       
       const completed = participations.filter(p => 
-        p.participant_status === 'success' || 
-        p.participant_status === 'failed' || 
-        p.participant_status === 'forfeit' ||
         p.status === 'ended' || 
         p.status === 'settled'
       );
+      
+      // Check for newly lost challenges (failed/forfeit but pool still active)
+      // Show notification if user has lost challenges they haven't been notified about
+      const lostButActive = active.filter(p => 
+        (p.participant_status === 'failed' || p.participant_status === 'forfeit') &&
+        p.status === 'active'
+      );
+      
+      // Check localStorage to see if we've already notified about these challenges
+      const notifiedKey = `notified_losses_${address}`;
+      const previouslyNotified = JSON.parse(localStorage.getItem(notifiedKey) || '[]');
+      const newlyLost = lostButActive.filter(p => 
+        !previouslyNotified.includes(p.pool_id)
+      );
+      
+      if (newlyLost.length > 0) {
+        setLostChallenges(newlyLost.map(p => ({ pool_id: p.pool_id, name: p.name })));
+        setShowLossNotification(true);
+        // Mark as notified
+        const updatedNotified = [...previouslyNotified, ...newlyLost.map(p => p.pool_id)];
+        localStorage.setItem(notifiedKey, JSON.stringify(updatedNotified));
+      }
       
       // Calculate history data with earnings
       const history = completed.map(p => {
@@ -126,7 +146,7 @@ export default function Dashboard() {
       history.sort((a, b) => b.end_timestamp - a.end_timestamp);
       setHistoryData(history);
       
-      // Map API data to UI format (only active challenges)
+      // Map API data to UI format (all active challenges, including failed ones)
       // We'll fetch current_day from the verification status API
       const mapped = await Promise.all(active.map(async (p) => {
         let currentDay = 1; // Default to day 1
@@ -155,6 +175,7 @@ export default function Dashboard() {
           totalDays: p.duration_days,
           progress: p.progress,
           joinedAt: p.joined_at,
+          participantStatus: p.participant_status, // Include participant status
         };
       }));
       
@@ -540,7 +561,9 @@ export default function Dashboard() {
   }
 
   const activeChallenge = activeChallenges.find(c => c.id === selectedChallengeId) || activeChallenges[0];
-  const progress = activeChallenge.progress ?? Math.floor((activeChallenge.streak / activeChallenge.totalDays) * 100);
+  const progress = activeChallenge 
+    ? (activeChallenge.progress ?? Math.floor((activeChallenge.streak / activeChallenge.totalDays) * 100))
+    : 0;
   
   // Determine challenge type for current challenge
   const currentParticipation = participationsData.find(p => p.pool_id === selectedChallengeId);
@@ -559,6 +582,7 @@ export default function Dashboard() {
     currentParticipation.participant_status === 'failed' || 
     currentParticipation.participant_status === 'forfeit'
   );
+  const hasWon = currentParticipation && currentParticipation.participant_status === 'success';
 
   return (
     <div className="min-h-screen bg-[#050505] text-white pt-32 px-6 pb-20">
@@ -603,14 +627,22 @@ export default function Dashboard() {
                           <span className="text-[9px] text-gray-500 uppercase tracking-widest">Active Protocol</span>
                           <InfoIcon content="This is your current active challenge. Track your progress and see how you're doing compared to others." />
                         </div>
-                        <span className="text-xs font-medium uppercase tracking-widest text-white">{activeChallenge.title}</span>
+                        <span className="text-xs font-medium uppercase tracking-widest text-white">{activeChallenge?.title || 'No Challenge Selected'}</span>
                     </div>
                     <ChevronDown className={`w-4 h-4 text-emerald-500 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
                 </button>
                 
                 {isDropdownOpen && (
                     <div className="absolute top-full left-0 w-full mt-2 bg-[#0A0A0A] border border-white/10 rounded-2xl overflow-hidden shadow-2xl z-30">
-                        {activeChallenges.map(challenge => (
+                        {activeChallenges.map(challenge => {
+                        const challengeParticipation = participationsData.find(p => p.pool_id === challenge.id);
+                        const isFailed = challengeParticipation && (
+                          challengeParticipation.participant_status === 'failed' || 
+                          challengeParticipation.participant_status === 'forfeit'
+                        );
+                        const isWon = challengeParticipation && challengeParticipation.participant_status === 'success';
+                        
+                        return (
                             <button
                                 key={challenge.id}
                                 onClick={() => {
@@ -621,13 +653,28 @@ export default function Dashboard() {
                                     loadParticipantStats(challenge.id);
                                 }}
                                 className={`w-full text-left px-8 py-4 text-[10px] uppercase tracking-widest hover:bg-white/[0.05] transition-colors border-b border-white/5 last:border-0 flex justify-between items-center ${
-                                    selectedChallengeId === challenge.id ? 'text-white bg-white/[0.02]' : 'text-gray-500'
+                                    selectedChallengeId === challenge.id 
+                                      ? 'text-white bg-white/[0.02]' 
+                                      : isFailed 
+                                      ? 'text-red-400' 
+                                      : isWon
+                                      ? 'text-emerald-400'
+                                      : 'text-gray-500'
                                 }`}
                             >
-                                <span>{challenge.title}</span>
-                                {selectedChallengeId === challenge.id && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
+                                <div className="flex items-center gap-2">
+                                  <span>{challenge.title}</span>
+                                  {isFailed && <span className="text-[8px] text-red-400">(Lost)</span>}
+                                  {isWon && <span className="text-[8px] text-emerald-400">(Won)</span>}
+                                </div>
+                                {selectedChallengeId === challenge.id && (
+                                  <div className={`w-1.5 h-1.5 rounded-full ${
+                                    isFailed ? 'bg-red-500' : isWon ? 'bg-emerald-500' : 'bg-emerald-500'
+                                  }`} />
+                                )}
                             </button>
-                        ))}
+                        );
+                    })}
                     </div>
                 )}
             </div>
@@ -637,27 +684,58 @@ export default function Dashboard() {
            
            {/* Left: Progress Visualization */}
            <div className="flex flex-col items-center md:items-start">
-              <SectionLabel>Active Protocol</SectionLabel>
+              <SectionLabel>
+                {hasFailed ? 'Challenge Lost' : hasWon ? 'Challenge Won' : 'Active Protocol'}
+              </SectionLabel>
               <h1 className="text-4xl font-light mb-12 text-center md:text-left">
-                Day {activeChallenge.currentDay || activeChallenge.streak || 1} <span className="text-gray-600">/ {activeChallenge.totalDays}</span>
+                {hasFailed ? (
+                  <span className="text-red-400">Challenge Failed</span>
+                ) : hasWon ? (
+                  <span className="text-emerald-400">Challenge Won!</span>
+                ) : (
+                  <>
+                    Day {activeChallenge?.currentDay || activeChallenge?.streak || 1} <span className="text-gray-600">/ {activeChallenge?.totalDays || 1}</span>
+                  </>
+                )}
               </h1>
               
-              <div className="relative w-72 h-72 md:w-96 md:h-96 border border-white/10 rounded-full flex items-center justify-center p-8">
+              <div className={`relative w-72 h-72 md:w-96 md:h-96 border rounded-full flex items-center justify-center p-8 ${
+                hasFailed ? 'border-red-500/30' : hasWon ? 'border-emerald-500/30' : 'border-white/10'
+              }`}>
                  {/* Thin subtle track */}
-                 <div className="absolute inset-0 rounded-full border border-white/5 scale-90" />
+                 <div className={`absolute inset-0 rounded-full border scale-90 ${
+                   hasFailed ? 'border-red-500/10' : hasWon ? 'border-emerald-500/10' : 'border-white/5'
+                 }`} />
                  
-                 {/* Spinner visual */}
-                 <div 
-                    className="absolute inset-0 rounded-full border-2 border-transparent border-t-emerald-500 transition-all duration-1000 ease-out" 
-                    style={{ transform: `rotate(${progress * 3.6}deg)` }}
-                 />
+                 {/* Spinner visual - only show if not failed/won */}
+                 {!hasFailed && !hasWon && (
+                   <div 
+                      className="absolute inset-0 rounded-full border-2 border-transparent border-t-emerald-500 transition-all duration-1000 ease-out" 
+                      style={{ transform: `rotate(${progress * 3.6}deg)` }}
+                   />
+                 )}
+                 
+                 {/* Failed/Won overlay */}
+                 {(hasFailed || hasWon) && (
+                   <div className={`absolute inset-0 rounded-full ${
+                     hasFailed ? 'bg-red-500/5' : 'bg-emerald-500/5'
+                   }`} />
+                 )}
                  
                  <div className="text-center">
                     <div className="flex items-center justify-center gap-2 text-[10px] uppercase tracking-widest text-gray-500 mb-2">
-                      Days Completed
-                      <InfoIcon content="Your current streak of consecutive successful verifications. Keep it going!" />
+                      {hasFailed ? 'Challenge Status' : hasWon ? 'Final Result' : 'Days Completed'}
+                      {!hasFailed && !hasWon && (
+                        <InfoIcon content="Your current streak of consecutive successful verifications. Keep it going!" />
+                      )}
                     </div>
-                    <div className="text-6xl font-light tracking-tighter text-white">{activeChallenge.streak}</div>
+                    {hasFailed ? (
+                      <div className="text-6xl font-light tracking-tighter text-red-400">Lost</div>
+                    ) : hasWon ? (
+                      <div className="text-6xl font-light tracking-tighter text-emerald-400">Won!</div>
+                    ) : (
+                      <div className="text-6xl font-light tracking-tighter text-white">{activeChallenge?.streak || 0}</div>
+                    )}
                  </div>
               </div>
            </div>
@@ -665,19 +743,49 @@ export default function Dashboard() {
            {/* Right: Actions & Stats */}
            <div className="flex flex-col justify-center space-y-12">
               <div className="space-y-8">
-                 <div className="border-l-2 border-emerald-500 pl-6">
-                    <h3 className="text-xl font-light mb-2">{activeChallenge.title}</h3>
-                    <p className="text-sm text-gray-500 leading-relaxed mb-3">
-                      {timeLeft
-                        ? `You are on track. Next verification window closes in ${timeLeft}.`
-                        : 'You are on track. Waiting for next verification window.'}
-                    </p>
-                    <div className="flex items-start gap-2 text-[10px] text-gray-600">
-                      <InfoIcon content="You need to verify your progress every day. Missing a day means you're out of the challenge." />
-                      <span>
-                        You need to verify your progress every day. Missing a day means you're out of the challenge.
-                      </span>
-                    </div>
+                 <div className={`border-l-2 pl-6 ${
+                   hasFailed ? 'border-red-500' : hasWon ? 'border-emerald-500' : 'border-emerald-500'
+                 }`}>
+                    <h3 className="text-xl font-light mb-2">{activeChallenge?.title || 'Challenge'}</h3>
+                    {hasFailed ? (
+                      <div>
+                        <p className="text-sm text-red-400 leading-relaxed mb-3">
+                          You have lost this challenge. The challenge will continue until it ends, but you are no longer participating.
+                        </p>
+                        <div className="flex items-start gap-2 text-[10px] text-gray-600">
+                          <InfoIcon content="You failed to meet the challenge requirements. Your stake will be distributed to winners when the challenge ends." />
+                          <span>
+                            You failed to meet the challenge requirements. Your stake will be distributed to winners when the challenge ends.
+                          </span>
+                        </div>
+                      </div>
+                    ) : hasWon ? (
+                      <div>
+                        <p className="text-sm text-emerald-400 leading-relaxed mb-3">
+                          Congratulations! You've completed this challenge. The challenge will continue until it ends, then rewards will be distributed.
+                        </p>
+                        <div className="flex items-start gap-2 text-[10px] text-gray-600">
+                          <InfoIcon content="You successfully completed all days of the challenge. You'll receive your share of the prize pool when the challenge ends." />
+                          <span>
+                            You successfully completed all days of the challenge. You'll receive your share of the prize pool when the challenge ends.
+                          </span>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <p className="text-sm text-gray-500 leading-relaxed mb-3">
+                          {timeLeft
+                            ? `You are on track. Next verification window closes in ${timeLeft}.`
+                            : 'You are on track. Waiting for next verification window.'}
+                        </p>
+                        <div className="flex items-start gap-2 text-[10px] text-gray-600">
+                          <InfoIcon content="You need to verify your progress every day. Missing a day means you're out of the challenge." />
+                          <span>
+                            You need to verify your progress every day. Missing a day means you're out of the challenge.
+                          </span>
+                        </div>
+                      </>
+                    )}
                  </div>
 
                  <div className="grid grid-cols-2 gap-8">
@@ -953,6 +1061,42 @@ export default function Dashboard() {
                 Cancel
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Loss Notification Modal */}
+      {showLossNotification && lostChallenges.length > 0 && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-6">
+          <div className="bg-[#0A0A0A] border border-red-500/30 rounded-2xl p-8 max-w-md w-full">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 rounded-full bg-red-500/20 border border-red-500/30 flex items-center justify-center">
+                <X className="w-6 h-6 text-red-400" />
+              </div>
+              <h2 className="text-2xl font-light text-red-400">Challenge Lost</h2>
+            </div>
+            <p className="text-sm text-gray-400 mb-4">
+              {lostChallenges.length === 1 
+                ? `You have lost the challenge "${lostChallenges[0].name}".`
+                : `You have lost ${lostChallenges.length} challenges.`
+              }
+            </p>
+            {lostChallenges.length > 1 && (
+              <ul className="list-disc list-inside text-sm text-gray-400 mb-4 space-y-1">
+                {lostChallenges.map(c => (
+                  <li key={c.pool_id}>{c.name}</li>
+                ))}
+              </ul>
+            )}
+            <p className="text-sm text-gray-500 mb-6">
+              The challenge will continue until it ends. Your stake will be distributed to winners when the challenge concludes.
+            </p>
+            <button
+              onClick={() => setShowLossNotification(false)}
+              className="w-full px-4 py-2 bg-red-500/20 border border-red-500 text-red-400 rounded-lg text-sm font-medium hover:bg-red-500/30 transition-colors"
+            >
+              I Understand
+            </button>
           </div>
         </div>
       )}
