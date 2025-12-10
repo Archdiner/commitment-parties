@@ -151,6 +151,32 @@ class PoolActivator:
                         )
                         activated_count += 1
                         
+                        # Mark forfeited participants as failed when challenge starts
+                        # If someone forfeited before challenge started, they're now failed
+                        forfeited_participants = await execute_query(
+                            table="participants",
+                            operation="select",
+                            filters={
+                                "pool_id": pool_id,
+                                "status": "forfeit"
+                            }
+                        )
+                        if forfeited_participants:
+                            logger.info(
+                                f"Marking {len(forfeited_participants)} forfeited participants as failed "
+                                f"for pool {pool_id} (challenge starting)"
+                            )
+                            for participant in forfeited_participants:
+                                await execute_query(
+                                    table="participants",
+                                    operation="update",
+                                    filters={
+                                        "pool_id": pool_id,
+                                        "wallet_address": participant.get("wallet_address")
+                                    },
+                                    data={"status": "failed"}
+                                )
+                        
                         # Note: POOL_CREATED tweet should have been queued earlier when pool was pending.
                         # We don't queue it here at activation time because:
                         # 1. It's too late - recruitment period is over

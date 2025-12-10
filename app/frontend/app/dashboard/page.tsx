@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ChevronDown, Check, Smartphone, ArrowRight, Users, TrendingDown, X } from 'lucide-react';
 import { InfoIcon } from '@/components/ui/Tooltip';
-import { getUserParticipations, UserParticipation, getPoolStats, getParticipantVerifications, triggerGitHubVerification, verifyScreenTime, buildForfeitPoolTransaction, confirmPoolForfeit } from '@/lib/api';
+import { getUserParticipations, UserParticipation, getPoolStats, getParticipantVerifications, triggerGitHubVerification, verifyScreenTime, forfeitPool } from '@/lib/api';
 import { getPersistedWalletAddress } from '@/lib/wallet';
 import { SectionLabel } from '@/components/ui/SectionLabel';
 import { Stat } from '@/components/ui/Stat';
@@ -298,18 +298,21 @@ export default function Dashboard() {
           const days = Math.floor(diff / 86400);
           const hours = Math.floor((diff % 86400) / 3600);
           const minutes = Math.floor((diff % 3600) / 60);
+          const seconds = diff % 60;
           
           if (days > 0) {
             setTimeLeft(`${days}d ${hours}h`);
           } else if (hours > 0) {
             setTimeLeft(`${hours}h ${minutes}m`);
+          } else if (minutes > 0) {
+            setTimeLeft(`${minutes}m ${seconds}s`);
           } else {
-            setTimeLeft(`${minutes}m`);
+            setTimeLeft(`${seconds}s`);
           }
           setTimeLeftLabel('Challenge starts in');
         };
         update();
-        intervalId = setInterval(update, 60_000);
+        intervalId = setInterval(update, 1000); // Update every second for countdown
         return;
       }
 
@@ -442,55 +445,8 @@ export default function Dashboard() {
     setVerificationMessage(null);
     
     try {
-      // Build forfeit transaction
-      const { transaction: txB64 } = await buildForfeitPoolTransaction(selectedChallengeId, walletAddress);
-      
-      // Get wallet provider
-      const anyWindow = window as any;
-      const provider = 
-        (anyWindow.phantom && anyWindow.phantom.solana) ||
-        anyWindow.solana ||
-        null;
-      
-      if (!provider) {
-        alert('Please install Phantom Wallet to forfeit this challenge.');
-        setForfeiting(false);
-        return;
-      }
-      
-      if (!provider.publicKey) {
-        await provider.connect();
-      }
-      
-      const connection = getConnection();
-      const { Transaction } = await import('@solana/web3.js');
-      const tx = Transaction.from(Buffer.from(txB64, 'base64'));
-      
-      // Send transaction
-      let signature: string;
-      if (typeof provider.sendTransaction === 'function') {
-        signature = await provider.sendTransaction(tx, connection, {
-          skipPreflight: false,
-          maxRetries: 3,
-          preflightCommitment: 'confirmed',
-        });
-      } else if (typeof provider.signTransaction === 'function') {
-        const signed = await provider.signTransaction(tx);
-        signature = await connection.sendRawTransaction(signed.serialize(), {
-          skipPreflight: false,
-          maxRetries: 3,
-        });
-      } else {
-        throw new Error('Connected wallet does not support sending transactions.');
-      }
-      
-      await connection.confirmTransaction(signature, 'confirmed');
-      
-      // Confirm forfeit with backend
-      await confirmPoolForfeit(selectedChallengeId, {
-        transaction_signature: signature,
-        participant_wallet: walletAddress,
-      });
+      // Forfeit directly - no transaction needed
+      await forfeitPool(selectedChallengeId, walletAddress);
       
       setVerificationMessage('Challenge forfeited. You have lost your stake.');
       setShowForfeitConfirm(false);
@@ -637,6 +593,7 @@ export default function Dashboard() {
     currentParticipation.participant_status === 'forfeit'
   );
   const hasWon = currentParticipation && currentParticipation.participant_status === 'success';
+  const isPending = currentParticipation && currentParticipation.status === 'pending';
 
   return (
     <div className="min-h-screen bg-[#050505] text-white pt-32 px-6 pb-20">
@@ -746,6 +703,8 @@ export default function Dashboard() {
                   <span className="text-red-400">Challenge Failed</span>
                 ) : hasWon ? (
                   <span className="text-emerald-400">Challenge Won!</span>
+                ) : isPending ? (
+                  <span className="text-gray-400">Challenge Starting Soon</span>
                 ) : (
                   <>
                     Day {activeChallenge?.currentDay || activeChallenge?.streak || 1} <span className="text-gray-600">/ {activeChallenge?.totalDays || 1}</span>
@@ -753,45 +712,67 @@ export default function Dashboard() {
                 )}
               </h1>
               
-              <div className={`relative w-72 h-72 md:w-96 md:h-96 border rounded-full flex items-center justify-center p-8 ${
-                hasFailed ? 'border-red-500/30' : hasWon ? 'border-emerald-500/30' : 'border-white/10'
-              }`}>
-                 {/* Thin subtle track */}
-                 <div className={`absolute inset-0 rounded-full border scale-90 ${
-                   hasFailed ? 'border-red-500/10' : hasWon ? 'border-emerald-500/10' : 'border-white/5'
-                 }`} />
-                 
-                 {/* Spinner visual - only show if not failed/won */}
-                 {!hasFailed && !hasWon && (
-                   <div 
-                      className="absolute inset-0 rounded-full border-2 border-transparent border-t-emerald-500 transition-all duration-1000 ease-out" 
-                      style={{ transform: `rotate(${progress * 3.6}deg)` }}
-                   />
-                 )}
-                 
-                 {/* Failed/Won overlay */}
-                 {(hasFailed || hasWon) && (
-                   <div className={`absolute inset-0 rounded-full ${
-                     hasFailed ? 'bg-red-500/5' : 'bg-emerald-500/5'
-                   }`} />
-                 )}
-                 
-                 <div className="text-center">
-                    <div className="flex items-center justify-center gap-2 text-[10px] uppercase tracking-widest text-gray-500 mb-2">
-                      {hasFailed ? 'Challenge Status' : hasWon ? 'Final Result' : 'Days Completed'}
-                      {!hasFailed && !hasWon && (
-                        <InfoIcon content="Your current streak of consecutive successful verifications. Keep it going!" />
-                      )}
-                    </div>
-                    {hasFailed ? (
-                      <div className="text-6xl font-light tracking-tighter text-red-400">Lost</div>
-                    ) : hasWon ? (
-                      <div className="text-6xl font-light tracking-tighter text-emerald-400">Won!</div>
+              {isPending ? (
+                // Large countdown timer for pending challenges
+                <div className="relative w-72 h-72 md:w-96 md:h-96 border border-emerald-500/30 rounded-full flex items-center justify-center p-8">
+                  <div className="absolute inset-0 rounded-full border scale-90 border-emerald-500/10" />
+                  <div className="text-center">
+                    <div className="text-[10px] uppercase tracking-widest text-gray-500 mb-4">Challenge Starts In</div>
+                    {timeLeft ? (
+                      <div className="text-5xl md:text-6xl font-light tracking-tighter text-emerald-400 mb-2">
+                        {timeLeft}
+                      </div>
                     ) : (
-                      <div className="text-6xl font-light tracking-tighter text-white">{activeChallenge?.streak || 0}</div>
+                      <div className="text-5xl md:text-6xl font-light tracking-tighter text-gray-400 mb-2">
+                        Soon...
+                      </div>
                     )}
-                 </div>
-              </div>
+                    <div className="text-xs text-gray-500 mt-4">
+                      Challenge is still recruiting
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className={`relative w-72 h-72 md:w-96 md:h-96 border rounded-full flex items-center justify-center p-8 ${
+                  hasFailed ? 'border-red-500/30' : hasWon ? 'border-emerald-500/30' : 'border-white/10'
+                }`}>
+                   {/* Thin subtle track */}
+                   <div className={`absolute inset-0 rounded-full border scale-90 ${
+                     hasFailed ? 'border-red-500/10' : hasWon ? 'border-emerald-500/10' : 'border-white/5'
+                   }`} />
+                   
+                   {/* Spinner visual - only show if not failed/won */}
+                   {!hasFailed && !hasWon && (
+                     <div 
+                        className="absolute inset-0 rounded-full border-2 border-transparent border-t-emerald-500 transition-all duration-1000 ease-out" 
+                        style={{ transform: `rotate(${progress * 3.6}deg)` }}
+                     />
+                   )}
+                   
+                   {/* Failed/Won overlay */}
+                   {(hasFailed || hasWon) && (
+                     <div className={`absolute inset-0 rounded-full ${
+                       hasFailed ? 'bg-red-500/5' : 'bg-emerald-500/5'
+                     }`} />
+                   )}
+                   
+                   <div className="text-center">
+                      <div className="flex items-center justify-center gap-2 text-[10px] uppercase tracking-widest text-gray-500 mb-2">
+                        {hasFailed ? 'Challenge Status' : hasWon ? 'Final Result' : 'Days Completed'}
+                        {!hasFailed && !hasWon && (
+                          <InfoIcon content="Your current streak of consecutive successful verifications. Keep it going!" />
+                        )}
+                      </div>
+                      {hasFailed ? (
+                        <div className="text-6xl font-light tracking-tighter text-red-400">Lost</div>
+                      ) : hasWon ? (
+                        <div className="text-6xl font-light tracking-tighter text-emerald-400">Won!</div>
+                      ) : (
+                        <div className="text-6xl font-light tracking-tighter text-white">{activeChallenge?.streak || 0}</div>
+                      )}
+                   </div>
+                </div>
+              )}
            </div>
 
            {/* Right: Actions & Stats */}
@@ -924,101 +905,113 @@ export default function Dashboard() {
               </div>
 
               <div>
-                 {!checkedIn ? (
-                    <div>
-                      <div className="flex items-center justify-center gap-2 mb-2">
-                        <button 
-                           onClick={handleCheckIn}
-                           disabled={verifying || isCryptoChallenge || hasFailed}
-                           className={`flex-1 h-20 border uppercase tracking-widest text-xs font-medium transition-all flex items-center justify-center gap-4 group ${
-                             hasFailed || isCryptoChallenge
-                               ? 'border-white/10 bg-white/[0.02] text-gray-500 cursor-not-allowed'
-                               : 'border-white/20 hover:border-emerald-500 hover:bg-emerald-500/5 text-white'
-                           }`}
-                        >
-                           {verifying ? (
-                              <span className="animate-pulse">Verifying...</span>
-                           ) : hasFailed ? (
-                              <>
-                                 <span>Challenge Failed - No Longer Active</span>
-                              </>
-                           ) : isCryptoChallenge ? (
-                              <>
-                                 <span>Crypto Challenge - Auto-Verified</span>
-                              </>
-                           ) : isGitHubChallenge ? (
-                              <>
-                                 <span>Check GitHub Commits</span>
-                                 <Smartphone strokeWidth={1} className="w-5 h-5 group-hover:-translate-y-1 transition-transform" />
-                              </>
-                           ) : isScreenTimeChallenge ? (
-                              <>
-                                 <span>Upload Screen Time</span>
-                                 <Smartphone strokeWidth={1} className="w-5 h-5 group-hover:-translate-y-1 transition-transform" />
-                              </>
-                           ) : (
-                              <>
-                                 <span>Submit Daily Proof</span>
-                                 <Smartphone strokeWidth={1} className="w-5 h-5 group-hover:-translate-y-1 transition-transform" />
-                              </>
-                           )}
-                        </button>
-                        <InfoIcon content={
-                          isCryptoChallenge
-                            ? "Crypto challenges are automatically verified on-chain. No manual verification needed."
-                            : isGitHubChallenge
-                            ? "Click to immediately check your GitHub commits for today. Our agent will verify your code."
-                            : isScreenTimeChallenge
-                            ? "Click to upload a screenshot of your mobile screen time data. Make sure the date is visible (showing 'Today' or today's date). Our AI will verify your screen time is below the limit."
-                            : "Click here to submit your daily proof of progress. Our AI agent will verify it! Upload a photo, screenshot, or other proof that you completed your goal today."
-                        } />
-                      </div>
-                      {verificationMessage ? (
-                        <p className={`text-[9px] mt-2 text-center ${
-                          checkedIn 
-                            ? 'text-emerald-400' 
-                            : 'text-red-400'
-                        }`}>
-                          {verificationMessage}
-                        </p>
-                      ) : (
-                      <p className="text-[9px] text-gray-600 mt-2 text-center">
-                        {isCryptoChallenge
-                          ? "Crypto challenges are verified automatically on-chain"
-                          : isGitHubChallenge
-                          ? "We'll check your GitHub commits for today's code"
-                          : isScreenTimeChallenge
-                          ? "Upload a screenshot of your mobile screen time (showing 'Today' or today's date)"
-                          : "Upload proof that you completed your goal today (photo, screenshot, etc.)"}
-                      </p>
-                      )}
-                    </div>
+                 {/* Only show verification UI if challenge has started (not pending) */}
+                 {!isPending ? (
+                   <>
+                     {!checkedIn ? (
+                        <div>
+                          <div className="flex items-center justify-center gap-2 mb-2">
+                            <button 
+                               onClick={handleCheckIn}
+                               disabled={verifying || isCryptoChallenge || hasFailed}
+                               className={`flex-1 h-20 border uppercase tracking-widest text-xs font-medium transition-all flex items-center justify-center gap-4 group ${
+                                 hasFailed || isCryptoChallenge
+                                   ? 'border-white/10 bg-white/[0.02] text-gray-500 cursor-not-allowed'
+                                   : 'border-white/20 hover:border-emerald-500 hover:bg-emerald-500/5 text-white'
+                               }`}
+                            >
+                               {verifying ? (
+                                  <span className="animate-pulse">Verifying...</span>
+                               ) : hasFailed ? (
+                                  <>
+                                     <span>Challenge Failed - No Longer Active</span>
+                                  </>
+                               ) : isCryptoChallenge ? (
+                                  <>
+                                     <span>Crypto Challenge - Auto-Verified</span>
+                                  </>
+                               ) : isGitHubChallenge ? (
+                                  <>
+                                     <span>Check GitHub Commits</span>
+                                     <Smartphone strokeWidth={1} className="w-5 h-5 group-hover:-translate-y-1 transition-transform" />
+                                  </>
+                               ) : isScreenTimeChallenge ? (
+                                  <>
+                                     <span>Upload Screen Time</span>
+                                     <Smartphone strokeWidth={1} className="w-5 h-5 group-hover:-translate-y-1 transition-transform" />
+                                  </>
+                               ) : (
+                                  <>
+                                     <span>Submit Daily Proof</span>
+                                     <Smartphone strokeWidth={1} className="w-5 h-5 group-hover:-translate-y-1 transition-transform" />
+                                  </>
+                               )}
+                            </button>
+                            <InfoIcon content={
+                              isCryptoChallenge
+                                ? "Crypto challenges are automatically verified on-chain. No manual verification needed."
+                                : isGitHubChallenge
+                                ? "Click to immediately check your GitHub commits for today. Our agent will verify your code."
+                                : isScreenTimeChallenge
+                                ? "Click to upload a screenshot of your mobile screen time data. Make sure the date is visible (showing 'Today' or today's date). Our AI will verify your screen time is below the limit."
+                                : "Click here to submit your daily proof of progress. Our AI agent will verify it! Upload a photo, screenshot, or other proof that you completed your goal today."
+                            } />
+                          </div>
+                          {verificationMessage ? (
+                            <p className={`text-[9px] mt-2 text-center ${
+                              checkedIn 
+                                ? 'text-emerald-400' 
+                                : 'text-red-400'
+                            }`}>
+                              {verificationMessage}
+                            </p>
+                          ) : (
+                          <p className="text-[9px] text-gray-600 mt-2 text-center">
+                            {isCryptoChallenge
+                              ? "Crypto challenges are verified automatically on-chain"
+                              : isGitHubChallenge
+                              ? "We'll check your GitHub commits for today's code"
+                              : isScreenTimeChallenge
+                              ? "Upload a screenshot of your mobile screen time (showing 'Today' or today's date)"
+                              : "Upload proof that you completed your goal today (photo, screenshot, etc.)"}
+                          </p>
+                          )}
+                        </div>
+                     ) : (
+                        <div>
+                          {verificationMessage && (
+                            <p className="text-[9px] mt-2 mb-2 text-center text-emerald-400">
+                              {verificationMessage}
+                            </p>
+                          )}
+                          <div className="w-full h-20 bg-white text-black flex items-center justify-center gap-3 uppercase tracking-widest text-xs font-medium">
+                             <Check strokeWidth={1.5} className="w-5 h-5" />
+                             Verified
+                          </div>
+                        </div>
+                     )}
+                     <div className="flex justify-between mt-4 text-[9px] text-gray-600 font-mono">
+                        <span>Verified</span>
+                        <div className="flex items-center gap-2">
+                          <span>Status: {hasFailed ? 'Failed' : 'Active'}</span>
+                          {currentBlock && (
+                            <InfoIcon content={`This shows the latest Solana blockchain block (#${currentBlock}) and the status of your last on-chain interaction. 'Confirmed' means your transaction was successfully processed.`} />
+                          )}
+                        </div>
+                     </div>
+                   </>
                  ) : (
-                    <div>
-                      {verificationMessage && (
-                        <p className="text-[9px] mt-2 mb-2 text-center text-emerald-400">
-                          {verificationMessage}
-                        </p>
-                      )}
-                      <div className="w-full h-20 bg-white text-black flex items-center justify-center gap-3 uppercase tracking-widest text-xs font-medium">
-                         <Check strokeWidth={1.5} className="w-5 h-5" />
-                         Verified
-                      </div>
-                    </div>
+                   // Show message when pending
+                   <div className="text-center py-8">
+                     <p className="text-sm text-gray-400 mb-4">
+                       Challenge is still in the recruiting phase. Verification will be available once the challenge starts.
+                     </p>
+                   </div>
                  )}
-                 <div className="flex justify-between mt-4 text-[9px] text-gray-600 font-mono">
-                    <span>Verified</span>
-                    <div className="flex items-center gap-2">
-                      <span>Status: {hasFailed ? 'Failed' : 'Active'}</span>
-                      {currentBlock && (
-                        <InfoIcon content={`This shows the latest Solana blockchain block (#${currentBlock}) and the status of your last on-chain interaction. 'Confirmed' means your transaction was successfully processed.`} />
-                      )}
-                    </div>
-                 </div>
                  
-                 {/* Forfeit Button - Only show if active and not failed */}
+                 {/* Forfeit Button - Show if active (pending or active) and not failed */}
                  {!hasFailed && currentParticipation && currentParticipation.participant_status === 'active' && (
-                   <div className="mt-6 pt-6 border-t border-white/5">
+                   <div className={`mt-6 pt-6 border-t border-white/5 ${isPending ? 'mt-0 pt-0' : ''}`}>
                      <button
                        onClick={() => setShowForfeitConfirm(true)}
                        disabled={forfeiting}

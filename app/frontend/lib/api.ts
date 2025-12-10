@@ -447,31 +447,18 @@ export async function confirmPoolJoin(
 }
 
 /**
- * Build forfeit pool transaction
+ * Forfeit pool participation (no transaction required)
  */
-export async function buildForfeitPoolTransaction(
+export async function forfeitPool(
   poolId: number,
   participantWallet: string
-): Promise<{ transaction: string; message: string; pool_id: number; participant_wallet: string }> {
-  return fetchApi<{ transaction: string; message: string; pool_id: number; participant_wallet: string }>(
+): Promise<PoolResponse> {
+  return fetchApi<PoolResponse>(
     `/api/pools/${poolId}/forfeit?participant_wallet=${encodeURIComponent(participantWallet)}`,
     {
       method: 'POST',
     }
   );
-}
-
-/**
- * Confirm pool forfeit after on-chain transaction
- */
-export async function confirmPoolForfeit(
-  poolId: number,
-  data: ForfeitPoolConfirmRequest
-): Promise<PoolResponse> {
-  return fetchApi<PoolResponse>(`/api/pools/${poolId}/forfeit/confirm`, {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
 }
 
 /**

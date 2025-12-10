@@ -513,8 +513,8 @@ async def build_forfeit_pool_tx(
         if not pools:
             raise HTTPException(status_code=404, detail="Pool not found")
         pool = pools[0]
-        if pool.get("status") != "active":
-            raise HTTPException(status_code=400, detail="Pool must be active to forfeit")
+        if pool.get("status") not in ("pending", "active"):
+            raise HTTPException(status_code=400, detail="Pool must be pending or active to forfeit")
         
         # Check if participant exists and is active
         participants = await execute_query(

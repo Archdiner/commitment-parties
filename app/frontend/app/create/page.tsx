@@ -1284,9 +1284,8 @@ export default function CreatePool() {
                <SectionLabel>Onboarding & Start Time</SectionLabel>
                <div>
                   <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">Recruitment Period</label>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                     {[
-                      { label: 'Immediate', value: '0', hint: 'Starts as soon as you deploy' },
                       { label: '1 Hour', value: '1', hint: 'Quick sprint with friends' },
                       { label: '1 Day', value: '24', hint: 'Default – time to onboard' },
                       { label: '1 Week', value: '168', hint: 'Big public campaign' },

@@ -26,9 +26,9 @@ pub fn handler(ctx: Context<ForfeitPool>) -> Result<()> {
     let pool = &ctx.accounts.pool;
     let participant = &mut ctx.accounts.participant;
     
-    // Validate pool is active
+    // Validate pool is pending or active (can forfeit before or during challenge)
     require!(
-        pool.pool_status == PoolStatus::Active,
+        pool.pool_status == PoolStatus::Pending || pool.pool_status == PoolStatus::Active,
         ErrorCode::PoolNotActive
     );
     
@@ -45,6 +45,7 @@ pub fn handler(ctx: Context<ForfeitPool>) -> Result<()> {
     );
     
     // Mark participant as forfeit
+    // Money stays in pool until challenge ends (no withdrawal here)
     participant.status = ParticipantStatus::Forfeit;
     
     msg!("Participant {} forfeited pool {}", participant.wallet, pool.pool_id);
