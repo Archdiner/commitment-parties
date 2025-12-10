@@ -298,10 +298,11 @@ class SolanaTransactionBuilder:
             instruction_data = discriminator
             
             # Build account metas (order matters - must match program's account order!)
+            # Order: pool (mut), participant (mut), participant_wallet (mut, signer)
             accounts = [
                 AccountMeta(pubkey=pool_pubkey, is_signer=False, is_writable=True),
                 AccountMeta(pubkey=participant_pda, is_signer=False, is_writable=True),
-                AccountMeta(pubkey=participant_pubkey, is_signer=True, is_writable=False),
+                AccountMeta(pubkey=participant_pubkey, is_signer=True, is_writable=True),  # Fixed: should be writable (marked as mut in Rust)
             ]
             
             # Create instruction
@@ -334,6 +335,14 @@ class SolanaTransactionBuilder:
             logger.info(f"Built forfeit_pool transaction for pool {pool_id}, participant {participant_wallet}")
             logger.info(f"  Pool PDA: {pool_pubkey}")
             logger.info(f"  Participant PDA: {participant_pda}")
+            logger.info(f"  Instruction discriminator: {discriminator.hex()}")
+            logger.info(f"  Program ID: {self.program_id}")
+            
+            # Log warning if this might fail due to program not being deployed
+            logger.warning(
+                "If transaction fails with 'InstructionFallbackNotFound', the program may need to be "
+                "rebuilt and redeployed. Run 'anchor build && anchor deploy' in programs/commitment-pool/"
+            )
             
             return tx_b64
         

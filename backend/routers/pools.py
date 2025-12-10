@@ -241,12 +241,38 @@ async def create_pool(pool_data: PoolCreate) -> PoolResponse:
         pool_dict = pool_data.model_dump()
         pool_dict["status"] = "pending"
         
+        # Add required fields that might be missing (with defaults)
+        pool_dict.setdefault("participant_count", 0)
+        pool_dict.setdefault("total_staked", 0.0)
+        pool_dict.setdefault("yield_earned", 0.0)
+        
+        # Remove fields that don't exist in database schema (if they cause issues)
+        # These are handled by the confirm endpoint instead
+        pool_dict.pop("min_participants", None)  # Not in schema
+        pool_dict.pop("scheduled_start_time", None)  # Not in schema (yet)
+        pool_dict.pop("recruitment_period_hours", None)  # Not in schema (yet)
+        pool_dict.pop("require_min_participants", None)  # Not in schema (yet)
+        
         # Insert into database
-        results = await execute_query(
-            table="pools",
-            operation="insert",
-            data=pool_dict,
-        )
+        try:
+            results = await execute_query(
+                table="pools",
+                operation="insert",
+                data=pool_dict,
+            )
+        except Exception as db_err:
+            error_msg = str(db_err)
+            logger.error(f"Database error creating pool: {error_msg}", exc_info=True)
+            # Check if it's a NOT NULL constraint error
+            if "not null" in error_msg.lower() or "null value" in error_msg.lower():
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Database error: Missing required field. Please check database schema. Error: {error_msg[:200]}"
+                )
+            raise HTTPException(
+                status_code=500,
+                detail=f"Database error creating pool: {error_msg[:200]}"
+            )
         
         if not results:
             raise HTTPException(status_code=500, detail="Failed to create pool")
@@ -258,7 +284,7 @@ async def create_pool(pool_data: PoolCreate) -> PoolResponse:
         raise
     except Exception as e:
         logger.error(f"Error creating pool: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to create pool")
+        raise HTTPException(status_code=500, detail=f"Failed to create pool: {str(e)[:200]}")
 
 
 @router.post(
@@ -326,16 +352,22 @@ async def confirm_pool_creation(pool_data: PoolConfirmRequest) -> PoolResponse:
             
             if recruitment_hours > 0:
                 # Scheduled start: current time + recruitment period
-                pool_dict["scheduled_start_time"] = current_time + (recruitment_hours * 3600)
-                pool_dict["start_timestamp"] = pool_dict["scheduled_start_time"]
+                scheduled_start = current_time + (recruitment_hours * 3600)
+                pool_dict["start_timestamp"] = scheduled_start
                 pool_dict["end_timestamp"] = pool_dict["start_timestamp"] + (pool_dict["duration_days"] * 86400)
                 pool_dict["status"] = "pending"  # Will be activated by agent
             else:
                 # Immediate start: activate immediately
-                pool_dict["scheduled_start_time"] = None
                 pool_dict["start_timestamp"] = current_time
                 pool_dict["end_timestamp"] = pool_dict["start_timestamp"] + (pool_dict["duration_days"] * 86400)
                 pool_dict["status"] = "active"  # Activate immediately
+            
+            # Remove fields that don't exist in database schema
+            pool_dict.pop("transaction_signature", None)
+            pool_dict.pop("min_participants", None)
+            pool_dict.pop("scheduled_start_time", None)
+            pool_dict.pop("recruitment_period_hours", None)
+            pool_dict.pop("require_min_participants", None)
             
             results = await execute_query(
                 table="pools",
@@ -355,39 +387,61 @@ async def confirm_pool_creation(pool_data: PoolConfirmRequest) -> PoolResponse:
         pool_dict["total_staked"] = 0.0
         pool_dict["yield_earned"] = 0.0
         
-        # Ensure min_participants is set (default to 1 if not provided)
-        if "min_participants" not in pool_dict or pool_dict["min_participants"] is None:
-            pool_dict["min_participants"] = 1
-        
-        # Calculate scheduled_start_time based on recruitment_period_hours
+        # Handle recruitment period and scheduled start (if these columns exist in DB)
+        # For now, we'll calculate timestamps but only store what's in schema
         recruitment_hours = pool_dict.get("recruitment_period_hours", 24)  # Default to 24 hours
         current_time = get_eastern_timestamp()  # Use Eastern Time
         
         if recruitment_hours > 0:
             # Scheduled start: current time + recruitment period
-            pool_dict["scheduled_start_time"] = current_time + (recruitment_hours * 3600)
+            scheduled_start = current_time + (recruitment_hours * 3600)
             # Update start_timestamp to scheduled time (for end_timestamp calculation)
-            pool_dict["start_timestamp"] = pool_dict["scheduled_start_time"]
+            pool_dict["start_timestamp"] = scheduled_start
             pool_dict["end_timestamp"] = pool_dict["start_timestamp"] + (pool_dict["duration_days"] * 86400)
             pool_dict["status"] = "pending"  # Will be activated by agent at scheduled time
         else:
             # Immediate start: activate immediately
-            pool_dict["scheduled_start_time"] = None
             pool_dict["start_timestamp"] = current_time
             pool_dict["end_timestamp"] = pool_dict["start_timestamp"] + (pool_dict["duration_days"] * 86400)
             pool_dict["status"] = "active"  # Activate immediately
-            # Activate immediately for immediate start
-            pool_dict["status"] = "active"
         
-        # Remove transaction_signature from dict (not in database schema)
-        pool_dict.pop("transaction_signature", None)
+        # Remove fields that don't exist in database schema
+        # Store these in a metadata field or handle separately if needed later
+        pool_dict.pop("transaction_signature", None)  # Not in schema
+        pool_dict.pop("min_participants", None)  # Not in schema (yet)
+        pool_dict.pop("scheduled_start_time", None)  # Not in schema (yet) - we use start_timestamp instead
+        pool_dict.pop("recruitment_period_hours", None)  # Not in schema (yet)
+        pool_dict.pop("require_min_participants", None)  # Not in schema (yet)
+        
+        # NOTE: If you've added new required columns to the pools table that aren't in the schema.sql file,
+        # add default/filler values here. For example:
+        # pool_dict.setdefault("new_field_name", "default_value")
+        # Common patterns:
+        # - Boolean fields: False
+        # - Integer fields: 0 or 1
+        # - String fields: "" or "default"
+        # - Timestamp fields: current timestamp or None
         
         # Insert into database
-        results = await execute_query(
-            table="pools",
-            operation="insert",
-            data=pool_dict,
-        )
+        try:
+            results = await execute_query(
+                table="pools",
+                operation="insert",
+                data=pool_dict,
+            )
+        except Exception as db_err:
+            error_msg = str(db_err)
+            logger.error(f"Database error confirming pool creation: {error_msg}", exc_info=True)
+            # Check if it's a NOT NULL constraint error
+            if "not null" in error_msg.lower() or "null value" in error_msg.lower():
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Database error: Missing required field. Please check database schema. Error: {error_msg[:200]}"
+                )
+            raise HTTPException(
+                status_code=500,
+                detail=f"Database error confirming pool creation: {error_msg[:200]}"
+            )
         
         if not results:
             raise HTTPException(status_code=500, detail="Failed to create pool")
@@ -1475,10 +1529,22 @@ async def build_forfeit_pool_transaction(
         # Build transaction
         from solana_tx_builder import get_tx_builder
         tx_builder = get_tx_builder()
-        tx_b64 = await tx_builder.build_forfeit_pool_transaction(
-            pool_id=pool_id,
-            participant_wallet=participant_wallet
-        )
+        try:
+            tx_b64 = await tx_builder.build_forfeit_pool_transaction(
+                pool_id=pool_id,
+                participant_wallet=participant_wallet
+            )
+        except Exception as tx_err:
+            logger.error(
+                f"Error building forfeit transaction for pool {pool_id}, "
+                f"participant {participant_wallet}: {tx_err}",
+                exc_info=True
+            )
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to build forfeit transaction: {str(tx_err)}. "
+                       f"Please ensure the program is deployed with the forfeit_pool instruction."
+            )
         
         return {
             "transaction": tx_b64,
