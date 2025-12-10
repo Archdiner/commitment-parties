@@ -360,6 +360,50 @@ export async function getBalance(walletAddress: string): Promise<number> {
 }
 
 /**
+ * SOL mint address (native SOL, not an SPL token)
+ */
+const SOL_MINT = 'So11111111111111111111111111111111111111112';
+
+/**
+ * Get token balance for a wallet
+ * Returns balance in the smallest unit (e.g., lamports for SOL, smallest unit for SPL tokens)
+ */
+export async function getTokenBalance(
+  walletAddress: string,
+  tokenMint: string
+): Promise<number> {
+  const connection = getConnection();
+  const walletPublicKey = new PublicKey(walletAddress);
+  
+  // Handle native SOL specially
+  if (tokenMint === SOL_MINT) {
+    const balance = await connection.getBalance(walletPublicKey);
+    return balance; // Already in lamports
+  }
+
+  // For SPL tokens, use getParsedTokenAccountsByOwner
+  const mintPublicKey = new PublicKey(tokenMint);
+  const tokenAccounts = await connection.getParsedTokenAccountsByOwner(
+    walletPublicKey,
+    { mint: mintPublicKey }
+  );
+
+  // Sum balances across all token accounts for this mint
+  let totalBalance = 0;
+  for (const accountInfo of tokenAccounts.value) {
+    const parsedInfo = accountInfo.account.data.parsed?.info;
+    if (parsedInfo?.tokenAmount) {
+      const amount = parsedInfo.tokenAmount.amount;
+      if (amount) {
+        totalBalance += parseInt(amount, 10);
+      }
+    }
+  }
+
+  return totalBalance;
+}
+
+/**
  * Convert SOL to lamports
  */
 export function solToLamports(sol: number): number {

@@ -11,7 +11,7 @@ import {
   confirmPoolJoin,
 } from '@/lib/api';
 import { getPersistedWalletAddress } from '@/lib/wallet';
-import { getConnection } from '@/lib/solana';
+import { getConnection, getTokenBalance } from '@/lib/solana';
 import { Transaction } from '@solana/web3.js';
 import { getTokenByMint } from '@/lib/tokens';
 
@@ -89,6 +89,39 @@ export default function PoolDetailPage() {
 
     setJoining(true);
     try {
+      // Pre-check: For HODL challenges, verify wallet has required token balance BEFORE building transaction
+      if (pool.goal_type === 'hodl_token') {
+        const goalMetadata = (pool.goal_metadata || {}) as any;
+        const tokenMint = goalMetadata.token_mint;
+        const minBalance = goalMetadata.min_balance;
+
+        if (tokenMint && minBalance !== undefined) {
+          try {
+            const currentBalance = await getTokenBalance(currentWallet, tokenMint);
+            const minBalanceNum = typeof minBalance === 'number' ? minBalance : parseInt(minBalance, 10);
+
+            if (currentBalance < minBalanceNum) {
+              const tokenInfo = getTokenByMint(tokenMint);
+              const tokenDecimals = tokenInfo?.decimals ?? 9;
+              const minBalanceTokens = minBalanceNum / (10 ** tokenDecimals);
+              const tokenSymbol = tokenInfo?.symbol || 'tokens';
+              
+              alert(
+                `You must already hold at least ${minBalanceTokens.toLocaleString(undefined, { maximumFractionDigits: 9 })} ${tokenSymbol} in your wallet to join this HODL challenge. ` +
+                `Your current balance is insufficient.`
+              );
+              setJoining(false);
+              return;
+            }
+          } catch (error: any) {
+            console.error('Error checking token balance:', error);
+            // Don't block the join if balance check fails - let backend handle it
+            // But warn the user
+            console.warn('Could not verify token balance. Proceeding, but join may be rejected if balance is insufficient.');
+          }
+        }
+      }
+
       // Build transaction via Solana Actions backend
       const { transaction: txB64 } = await buildJoinPoolTransaction(poolId, currentWallet);
 

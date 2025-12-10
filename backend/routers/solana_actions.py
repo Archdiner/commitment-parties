@@ -178,6 +178,101 @@ async def build_join_pool_tx(
                 detail=f"Pool {pool_id} is not joinable (status: {pool.get('status')})"
             )
 
+        # Pre-check: For HODL challenges, verify wallet has required token balance BEFORE building transaction
+        if pool.get("goal_type") == "hodl_token":
+            goal_metadata = pool.get("goal_metadata") or {}
+            token_mint = goal_metadata.get("token_mint")
+            min_balance = goal_metadata.get("min_balance")
+
+            if token_mint and min_balance is not None:
+                try:
+                    from solana.rpc.async_api import AsyncClient
+                    from solana.rpc.commitment import Confirmed
+                    from solders.pubkey import Pubkey
+                    from solana.rpc.types import TokenAccountOpts
+                    from config import settings
+
+                    # SOL mint address (native SOL, not an SPL token)
+                    SOL_MINT = "So11111111111111111111111111111111111111112"
+
+                    # Get Solana client
+                    rpc_url = settings.SOLANA_RPC_URL
+                    solana_client = AsyncClient(rpc_url, commitment=Confirmed)
+                    
+                    try:
+                        owner = Pubkey.from_string(account)
+                        
+                        # Handle native SOL specially
+                        if token_mint == SOL_MINT:
+                            balance = await solana_client.get_balance(owner, commitment=Confirmed)
+                            total_balance = balance.value  # Already in lamports
+                        else:
+                            # For SPL tokens, use get_token_accounts_by_owner
+                            mint = Pubkey.from_string(token_mint)
+                            resp = await solana_client.get_token_accounts_by_owner(
+                                owner,
+                                TokenAccountOpts(mint=mint),
+                                commitment=Confirmed,
+                            )
+
+                            total_balance = 0
+                            if resp.value:
+                                for acc in resp.value:
+                                    try:
+                                        data = acc.account.data
+                                        if isinstance(data, dict) and "parsed" in data:
+                                            parsed = data["parsed"]
+                                            info = parsed.get("info", {})
+                                            token_amt = info.get("tokenAmount", {})
+                                            amount_str = token_amt.get("amount")
+                                            if amount_str is not None:
+                                                total_balance += int(amount_str)
+                                    except Exception as parse_err:
+                                        logger.warning(f"Error parsing token account for HODL pre-check: {parse_err}")
+
+                        has_min_balance = total_balance >= int(min_balance)
+                        logger.info(
+                            "HODL pre-check: pool_id=%s wallet=%s mint=%s balance=%s min_required=%s passed=%s",
+                            pool_id,
+                            account,
+                            token_mint,
+                            total_balance,
+                            min_balance,
+                            has_min_balance,
+                        )
+
+                        if not has_min_balance:
+                            # Assume 9 decimals (SOL / most SPL tokens) for human-friendly message
+                            try:
+                                human_min = int(min_balance) / 10**9
+                            except Exception:
+                                human_min = min_balance
+                            raise HTTPException(
+                                status_code=400,
+                                detail=(
+                                    f"You must already hold at least {human_min} tokens of this asset "
+                                    "in your wallet to join this HODL challenge."
+                                ),
+                            )
+                    finally:
+                        await solana_client.close()
+                except HTTPException:
+                    # Re-raise explicit HTTP errors (like insufficient balance)
+                    raise
+                except Exception as e:
+                    logger.error(
+                        "Error during HODL pre-check for pool_id=%s wallet=%s: %s",
+                        pool_id,
+                        account,
+                        e,
+                        exc_info=True,
+                    )
+                    # Fail closed: if we cannot verify balance, reject join to avoid inconsistent state
+                    raise HTTPException(
+                        status_code=500,
+                        detail="Failed to verify token balance for HODL challenge join. Please try again.",
+                    )
+
         # Build real transaction using the transaction builder
         pool_id_int = int(pool_id)  # Ensure it's an int
         try:
