@@ -12,6 +12,7 @@ export default function PoolsPage() {
   const [pools, setPools] = useState<PoolResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('ALL');
+  const [showAllChallenges, setShowAllChallenges] = useState(false); // Default: only show recruiting
 
   useEffect(() => {
     async function loadPools() {
@@ -28,6 +29,12 @@ export default function PoolsPage() {
   }, []);
 
   const filteredPools = pools.filter(p => {
+    // First filter by status: default to only show recruiting (pending) challenges
+    if (!showAllChallenges && p.status !== 'pending') {
+      return false;
+    }
+    
+    // Then filter by type if specified
     if (filter === 'ALL') return true;
     const poolType = p.goal_type.includes('Lifestyle') || p.goal_type === 'lifestyle_habit' ? 'LIFESTYLE' : 'CRYPTO';
     return poolType === filter;
@@ -59,6 +66,17 @@ export default function PoolsPage() {
                <Search className="w-3 h-3" />
                <input type="text" placeholder="Search..." className="bg-transparent outline-none w-24 md:w-48 placeholder-gray-700 text-white" />
              </div>
+             <button 
+               onClick={() => setShowAllChallenges(!showAllChallenges)} 
+               className={`flex items-center gap-2 px-3 py-2 border transition-colors ${
+                 showAllChallenges 
+                   ? 'border-emerald-500/50 text-emerald-500 bg-emerald-500/10' 
+                   : 'border-white/10 bg-white/[0.02] text-white hover:border-white/30'
+               }`}
+             >
+               <Filter className="w-3 h-3" /> 
+               {showAllChallenges ? 'Show All' : 'Recruiting Only'}
+             </button>
              <button onClick={() => setFilter('ALL')} className={`flex items-center gap-2 px-3 py-2 border transition-colors ${filter === 'ALL' ? 'border-emerald-500/50 text-emerald-500 bg-emerald-500/10' : 'border-white/10 bg-white/[0.02] text-white hover:border-white/30'}`}>
                <Filter className="w-3 h-3" /> Filter: All
              </button>
@@ -113,7 +131,12 @@ export default function PoolsPage() {
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
                       <Badge color={poolType === 'CRYPTO' ? 'blue' : 'orange'}>{poolType}</Badge>
-                      <Badge color="emerald">{status}</Badge>
+                      <Badge color={status === 'RECRUITING' || status === 'pending' ? 'emerald' : status === 'ACTIVE' || status === 'active' ? 'blue' : 'gray'}>
+                        {status}
+                      </Badge>
+                      {status === 'ACTIVE' || status === 'active' ? (
+                        <span className="text-[10px] text-gray-500 italic">(Can't join - view only)</span>
+                      ) : null}
                     </div>
                     <h3 className="text-xl font-light mb-1 group-hover:text-emerald-400 transition-colors">{pool.name}</h3>
                     {pool.description && (

@@ -313,9 +313,11 @@ export default function PoolDetailPage() {
               <div>
                 <div className="flex items-center gap-1 text-[9px] uppercase tracking-widest text-gray-500 mb-1">
                   Status
-                  <InfoIcon content={pool.status === 'pending' ? 'Challenge hasn\'t started yet. You can still join.' : pool.status === 'active' ? 'Challenge is in progress. You can still join if it just started.' : 'Challenge status'} />
+                  <InfoIcon content={pool.status === 'pending' ? 'Challenge is recruiting. You can still join.' : pool.status === 'active' ? 'Challenge is in progress. You can\'t join anymore, but you can view progress.' : 'Challenge status'} />
                 </div>
-                <div className="font-mono text-sm uppercase">{pool.status}</div>
+                <div className="font-mono text-sm uppercase">
+                  {pool.status === 'pending' ? 'RECRUITING' : pool.status === 'active' ? 'ACTIVE' : pool.status}
+                </div>
               </div>
               <div>
                 <div className="flex items-center gap-1 text-[9px] uppercase tracking-widest text-gray-500 mb-1">
@@ -541,26 +543,50 @@ export default function PoolDetailPage() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleJoin}
-                  disabled={joining || spotsRemaining <= 0 || pool.status !== 'pending' && pool.status !== 'active'}
-                  className="flex-1 h-11 border border-emerald-500 text-xs uppercase tracking-widest font-medium rounded-full flex items-center justify-center gap-2 bg-emerald-500/10 hover:bg-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {joining ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Joining...
-                    </>
-                  ) : (
-                    <>Join Challenge</>
-                  )}
-                </button>
-                <InfoIcon content="Click to join this challenge. You'll be asked to approve a transaction in your wallet. This locks your stake until the challenge ends. Make sure you're ready to commit!" />
-              </div>
-              <p className="text-[10px] text-gray-600 mt-3 text-center leading-relaxed">
-                You'll be asked to approve a transaction in your wallet. This locks your stake until the challenge ends.
-              </p>
+              {pool.status === 'active' ? (
+                <div className="space-y-3">
+                  <div className="p-4 border border-blue-500/30 bg-blue-500/5 rounded-lg">
+                    <div className="flex items-start gap-2 text-[10px] text-blue-400">
+                      <InfoIcon content="This challenge has already started. You can't join now, but you can view the progress and see how participants are doing." />
+                      <div>
+                        <p className="font-medium mb-1">Challenge Has Started</p>
+                        <p className="text-blue-300/80 leading-relaxed">
+                          This challenge is already in progress. You can't join now, but you can view the progress and see how participants are doing.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    disabled
+                    className="w-full h-11 border border-white/10 text-xs uppercase tracking-widest font-medium rounded-full flex items-center justify-center gap-2 bg-white/[0.02] text-gray-500 cursor-not-allowed opacity-50"
+                  >
+                    Join Challenge (Not Available)
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleJoin}
+                      disabled={joining || spotsRemaining <= 0 || pool.status !== 'pending'}
+                      className="flex-1 h-11 border border-emerald-500 text-xs uppercase tracking-widest font-medium rounded-full flex items-center justify-center gap-2 bg-emerald-500/10 hover:bg-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {joining ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Joining...
+                        </>
+                      ) : (
+                        <>Join Challenge</>
+                      )}
+                    </button>
+                    <InfoIcon content="Click to join this challenge. You'll be asked to approve a transaction in your wallet. This locks your stake until the challenge ends. Make sure you're ready to commit!" />
+                  </div>
+                  <p className="text-[10px] text-gray-600 mt-3 text-center leading-relaxed">
+                    You'll be asked to approve a transaction in your wallet. This locks your stake until the challenge ends.
+                  </p>
+                </>
+              )}
 
               {!walletAddress && (
                 <div className="mt-4 p-3 border border-amber-500/30 bg-amber-500/5 rounded-lg">

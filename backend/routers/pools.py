@@ -498,13 +498,16 @@ async def get_participant_verifications(
         pool = pools[0] if pools else {}
         current_time = get_eastern_timestamp()  # Use Eastern Time
         start_timestamp = pool.get("start_timestamp", 0)
+        pool_status = pool.get("status", "pending")
         current_day = calculate_current_day(start_timestamp, current_time)
 
         # Calculate next verification window end (approximate daily windows) in Eastern Time
+        # Only calculate for active pools - pending pools should not have verification windows yet
         next_window_end = None
-        if start_timestamp:
+        if pool_status == "active" and start_timestamp:
             if current_time < start_timestamp:
-                # Before pool start: first window ends after first day
+                # Pool marked as active but hasn't started yet (edge case)
+                # First window ends after first day
                 next_window_end = start_timestamp + 86400
             else:
                 days_elapsed = (current_time - start_timestamp) // 86400

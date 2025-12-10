@@ -25,6 +25,7 @@ export default function Dashboard() {
   const [verificationMessage, setVerificationMessage] = useState<string | null>(null);
   const [participantStats, setParticipantStats] = useState<{ started: number; remaining: number } | null>(null);
   const [timeLeft, setTimeLeft] = useState<string | null>(null);
+  const [timeLeftLabel, setTimeLeftLabel] = useState<string>('Next verification window closes in');
   const [currentBlock, setCurrentBlock] = useState<number | null>(null);
   const [forfeiting, setForfeiting] = useState(false);
   const [showForfeitConfirm, setShowForfeitConfirm] = useState(false);
@@ -88,10 +89,10 @@ export default function Dashboard() {
       setParticipationsData(participations);
       
       // Separate active and completed participations
-      // Active = pool is still running (status='active'), regardless of participant status
+      // Active = pool is still running (status='active' or 'pending'), regardless of participant status
       // Completed = pool has ended (status='ended' or 'settled')
       const active = participations.filter(p => 
-        p.status === 'active'
+        p.status === 'active' || p.status === 'pending'
       );
       
       const completed = participations.filter(p => 
@@ -164,7 +165,7 @@ export default function Dashboard() {
           id: p.pool_id,
           title: p.name,
           type: p.goal_type.includes('Lifestyle') ? 'LIFESTYLE' : 'CRYPTO',
-          status: p.status === 'active' ? 'ACTIVE' : p.status,
+          status: p.status === 'active' ? 'ACTIVE' : (p.status === 'pending' ? 'PENDING' : p.status.toUpperCase()),
           description: p.description,
           duration: `${p.duration_days} Days`,
           stake: p.stake_amount,
@@ -262,50 +263,103 @@ export default function Dashboard() {
     loadBlock();
   }, []);
 
-  // Load verification window and compute "closes in" countdown
+  // Load countdown - either "time until challenge starts" or "next verification window closes"
   useEffect(() => {
     let intervalId: NodeJS.Timeout | null = null;
 
-    const loadWindow = async () => {
+    const loadCountdown = async () => {
       if (!walletAddress || !selectedChallengeId) {
         setTimeLeft(null);
+        setTimeLeftLabel('Next verification window closes in');
         return;
       }
-      try {
-        const status = await getParticipantVerifications(selectedChallengeId, walletAddress);
-        if (!status.next_window_end) {
-          setTimeLeft(null);
-          return;
-        }
+      
+      // Find the participation data for this challenge
+      const participation = participationsData.find(p => p.pool_id === selectedChallengeId);
+      if (!participation) {
+        setTimeLeft(null);
+        setTimeLeftLabel('Next verification window closes in');
+        return;
+      }
+
+      const poolStatus = participation.status;
+      const startTimestamp = participation.start_timestamp;
+
+      // If challenge is pending (recruiting phase), show countdown to start
+      if (poolStatus === 'pending') {
         const update = () => {
           const now = Math.floor(Date.now() / 1000);
-          const diff = status.next_window_end! - now;
+          const diff = startTimestamp - now;
           if (diff <= 0) {
-            setTimeLeft('0 minutes');
+            setTimeLeft('Starting soon...');
+            setTimeLeftLabel('Challenge starts in');
             return;
           }
-          const hours = Math.floor(diff / 3600);
+          const days = Math.floor(diff / 86400);
+          const hours = Math.floor((diff % 86400) / 3600);
           const minutes = Math.floor((diff % 3600) / 60);
-          if (hours > 0) {
+          
+          if (days > 0) {
+            setTimeLeft(`${days}d ${hours}h`);
+          } else if (hours > 0) {
             setTimeLeft(`${hours}h ${minutes}m`);
           } else {
             setTimeLeft(`${minutes}m`);
           }
+          setTimeLeftLabel('Challenge starts in');
         };
         update();
         intervalId = setInterval(update, 60_000);
-      } catch (e) {
-        console.error('Failed to load verification window:', e);
-        setTimeLeft(null);
+        return;
       }
+
+      // If challenge is active, show verification window countdown
+      if (poolStatus === 'active') {
+        try {
+          const status = await getParticipantVerifications(selectedChallengeId, walletAddress);
+          if (!status.next_window_end) {
+            setTimeLeft(null);
+            setTimeLeftLabel('Next verification window closes in');
+            return;
+          }
+          const update = () => {
+            const now = Math.floor(Date.now() / 1000);
+            const diff = status.next_window_end! - now;
+            if (diff <= 0) {
+              setTimeLeft('0 minutes');
+              setTimeLeftLabel('Next verification window closes in');
+              return;
+            }
+            const hours = Math.floor(diff / 3600);
+            const minutes = Math.floor((diff % 3600) / 60);
+            if (hours > 0) {
+              setTimeLeft(`${hours}h ${minutes}m`);
+            } else {
+              setTimeLeft(`${minutes}m`);
+            }
+            setTimeLeftLabel('Next verification window closes in');
+          };
+          update();
+          intervalId = setInterval(update, 60_000);
+        } catch (e) {
+          console.error('Failed to load verification window:', e);
+          setTimeLeft(null);
+          setTimeLeftLabel('Next verification window closes in');
+        }
+        return;
+      }
+
+      // For other statuses, clear countdown
+      setTimeLeft(null);
+      setTimeLeftLabel('Next verification window closes in');
     };
 
-    loadWindow();
+    loadCountdown();
 
     return () => {
       if (intervalId) clearInterval(intervalId);
     };
-  }, [walletAddress, selectedChallengeId]);
+  }, [walletAddress, selectedChallengeId, participationsData]);
 
   const handleCheckIn = async () => {
     if (!walletAddress || !selectedChallengeId) return;
@@ -774,14 +828,31 @@ export default function Dashboard() {
                     ) : (
                       <>
                         <p className="text-sm text-gray-500 leading-relaxed mb-3">
-                          {timeLeft
-                            ? `You are on track. Next verification window closes in ${timeLeft}.`
-                            : 'You are on track. Waiting for next verification window.'}
+                          {timeLeft ? (
+                            <>
+                              {activeChallenge?.status === 'PENDING' || activeChallenge?.status === 'pending' ? (
+                                <>Challenge is recruiting. {timeLeftLabel} {timeLeft}.</>
+                              ) : (
+                                <>You are on track. {timeLeftLabel} {timeLeft}.</>
+                              )}
+                            </>
+                          ) : (
+                            activeChallenge?.status === 'PENDING' || activeChallenge?.status === 'pending' 
+                              ? 'Challenge is recruiting. Waiting for challenge to start.'
+                              : 'You are on track. Waiting for next verification window.'
+                          )}
                         </p>
                         <div className="flex items-start gap-2 text-[10px] text-gray-600">
-                          <InfoIcon content="You need to verify your progress every day. Missing a day means you're out of the challenge." />
+                          <InfoIcon content={
+                            activeChallenge?.status === 'PENDING' || activeChallenge?.status === 'pending'
+                              ? "The challenge is still in the recruiting phase. Once it starts, you'll need to verify your progress every day."
+                              : "You need to verify your progress every day. Missing a day means you're out of the challenge."
+                          } />
                           <span>
-                            You need to verify your progress every day. Missing a day means you're out of the challenge.
+                            {activeChallenge?.status === 'PENDING' || activeChallenge?.status === 'pending'
+                              ? "The challenge is still in the recruiting phase. Once it starts, you'll need to verify your progress every day."
+                              : "You need to verify your progress every day. Missing a day means you're out of the challenge."
+                            }
                           </span>
                         </div>
                       </>
