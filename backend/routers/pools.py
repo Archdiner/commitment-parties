@@ -373,7 +373,6 @@ async def confirm_pool_creation(pool_data: PoolConfirmRequest) -> PoolResponse:
             pool_dict.setdefault("min_participants", 1)  # Default minimum participants
             pool_dict.setdefault("recruitment_period_hours", 24)  # Default 24 hours
             pool_dict.setdefault("require_min_participants", False)  # Default false
-            pool_dict.setdefault("grace_period_minutes", 5)  # Default 5 minutes grace period
             # scheduled_start_time is calculated above and kept (nullable, so None is fine)
             
             results = await execute_query(
@@ -420,7 +419,6 @@ async def confirm_pool_creation(pool_data: PoolConfirmRequest) -> PoolResponse:
         pool_dict.setdefault("min_participants", 1)  # Default minimum participants
         pool_dict.setdefault("recruitment_period_hours", 24)  # Default 24 hours
         pool_dict.setdefault("require_min_participants", False)  # Default false
-        pool_dict.setdefault("grace_period_minutes", 5)  # Default 5 minutes grace period
         # scheduled_start_time is calculated above and kept (nullable, so None is fine)
         
         # NOTE: If you've added new required columns to the pools table that aren't in the schema.sql file,
@@ -1206,6 +1204,67 @@ async def delete_all_pools() -> dict:
     except Exception as e:
         logger.error(f"Error deleting all pools: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to delete pools")
+
+
+@router.delete(
+    "/active",
+    summary="Delete all active pools (for testing/cleanup)",
+    description="⚠️ DANGER: Deletes all ACTIVE pools from the database. Use with caution!",
+)
+async def delete_active_pools() -> dict:
+    """
+    Delete all active pools from the database.
+    
+    This will cascade delete:
+    - All participants
+    - All verifications
+    - All check-ins
+    - All pool invites
+    - All payouts
+    - All pool events
+    """
+    try:
+        # Get all active pools first
+        active_pools = await execute_query(
+            table="pools",
+            operation="select",
+            filters={"status": "active"},
+        )
+        pool_count = len(active_pools)
+        
+        if pool_count == 0:
+            return {
+                "message": "No active pools found",
+                "deleted_count": 0,
+                "requested_count": 0
+            }
+        
+        # Delete each active pool (cascade will handle related records)
+        deleted_count = 0
+        for pool in active_pools:
+            pool_id = pool.get("pool_id")
+            if pool_id:
+                try:
+                    await execute_query(
+                        table="pools",
+                        operation="delete",
+                        filters={"pool_id": pool_id},
+                    )
+                    deleted_count += 1
+                    logger.info(f"Deleted active pool {pool_id}: {pool.get('name', 'Unknown')}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete pool {pool_id}: {e}")
+        
+        logger.warning(f"Deleted {deleted_count} active pools (requested {pool_count})")
+        return {
+            "message": f"Deleted {deleted_count} active pools",
+            "deleted_count": deleted_count,
+            "requested_count": pool_count
+        }
+    
+    except Exception as e:
+        logger.error(f"Error deleting active pools: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to delete active pools")
 
 
 @router.post(
