@@ -454,7 +454,10 @@ export async function buildForfeitPoolTransaction(
   participantWallet: string
 ): Promise<{ transaction: string; message: string; pool_id: number; participant_wallet: string }> {
   return fetchApi<{ transaction: string; message: string; pool_id: number; participant_wallet: string }>(
-    `/api/pools/${poolId}/forfeit?participant_wallet=${encodeURIComponent(participantWallet)}`
+    `/api/pools/${poolId}/forfeit?participant_wallet=${encodeURIComponent(participantWallet)}`,
+    {
+      method: 'POST',
+    }
   );
 }
 
