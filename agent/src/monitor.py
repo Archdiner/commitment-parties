@@ -1611,8 +1611,9 @@ Respond with only "yes" or "no"."""
                                         exc_info=True
                                     )
                                 
-                                # Submit verification to smart contract (both passed and failed)
-                                # This ensures on-chain state matches database state
+                                # Submit verification to smart contract (for logging/auditing only)
+                                # Note: verify_participant no longer updates on-chain state (status/days_verified)
+                                # Database is the source of truth. On-chain call is optional for logging.
                                 if self.verifier:
                                     pool_pubkey = pool.get("pool_pubkey")
                                     if pool_pubkey:

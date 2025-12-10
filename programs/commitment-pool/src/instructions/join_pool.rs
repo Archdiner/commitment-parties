@@ -64,13 +64,10 @@ pub fn handler(ctx: Context<JoinPool>) -> Result<()> {
         pool.stake_amount,
     )?;
     
-    // Initialize participant account
+    // Initialize participant account (only money-related data)
     participant_account.pool = pool.key();
     participant_account.wallet = ctx.accounts.participant.key();
     participant_account.stake_amount = pool.stake_amount;
-    participant_account.join_timestamp = clock.unix_timestamp;
-    participant_account.status = ParticipantStatus::Active;
-    participant_account.days_verified = 0;
     participant_account.bump = ctx.bumps.participant_account;
     
     // Update pool

@@ -29,17 +29,11 @@ pub fn handler(
     passed: bool,
 ) -> Result<()> {
     let pool = &ctx.accounts.pool;
-    let participant = &mut ctx.accounts.participant;
+    let participant = &ctx.accounts.participant;
     
     // Validate pool is active
     require!(
         pool.pool_status == PoolStatus::Active,
-        ErrorCode::PoolNotActive
-    );
-    
-    // Validate participant is active
-    require!(
-        participant.status == ParticipantStatus::Active,
         ErrorCode::PoolNotActive
     );
     
@@ -49,17 +43,9 @@ pub fn handler(
         ErrorCode::InvalidDay
     );
     
-    if passed {
-        participant.days_verified = participant.days_verified.max(day);
-        
-        // Check if participant completed all days
-        if participant.days_verified >= pool.duration_days {
-            participant.status = ParticipantStatus::Success;
-        }
-    } else {
-        // Participant failed
-        participant.status = ParticipantStatus::Failed;
-    }
+    // Note: Status and days_verified are tracked off-chain (database)
+    // This instruction is kept for logging/auditing purposes only
+    // The agent updates the database before calling this instruction
     
     msg!("Verified participant {} for day {}: {}", 
          participant.wallet, day, if passed { "PASSED" } else { "FAILED" });

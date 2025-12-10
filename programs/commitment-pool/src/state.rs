@@ -40,14 +40,13 @@ impl CommitmentPool {
 }
 
 /// Participant account
+/// Simplified to only store money-related data.
+/// Status and verification tracking is handled off-chain (database).
 #[account]
 pub struct Participant {
     pub pool: Pubkey,                // Which pool
-    pub wallet: Pubkey,              // Participant wallet
-    pub stake_amount: u64,           // Their stake
-    pub join_timestamp: i64,          // When they joined
-    pub status: ParticipantStatus,   // Current status
-    pub days_verified: u8,            // Days successfully completed
+    pub wallet: Pubkey,              // Participant wallet (for distribution)
+    pub stake_amount: u64,           // Their stake (for payout calculation)
     pub bump: u8,                    // PDA bump
 }
 
@@ -56,9 +55,6 @@ impl Participant {
         32 +                          // pool
         32 +                          // wallet
         8 +                           // stake_amount
-        8 +                           // join_timestamp
-        4 +                           // status
-        1 +                           // days_verified
         1;                            // bump
 }
 

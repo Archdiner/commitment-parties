@@ -56,10 +56,5 @@ pub mod commitment_pool {
     pub fn distribute_rewards(ctx: Context<DistributeRewards>) -> Result<()> {
         instructions::distribute::handler(ctx)
     }
-
-    /// Allows a participant to forfeit and exit the pool early
-    pub fn forfeit_pool(ctx: Context<ForfeitPool>) -> Result<()> {
-        instructions::forfeit::handler(ctx)
-    }
 }
 
