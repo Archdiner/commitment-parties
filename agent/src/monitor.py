@@ -1673,8 +1673,6 @@ Respond with only "yes" or "no"."""
                                             )
                                 else:
                                     logger.warning("Verifier not available, skipping on-chain submission")
-                                else:
-                                    logger.warning("Verifier not available, skipping on-chain submission")
                         
                         except Exception as e:
                             logger.error(f"Error processing pool {pool.get('pool_id')}: {e}", exc_info=True)
