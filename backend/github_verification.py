@@ -280,9 +280,88 @@ async def verify_github_commits(
             time_remaining
         )
 
-        # Always use user events API to track commits from any repository
-        events_url = f"https://api.github.com/users/{github_username}/events"
+        # Check if repo is specified - if so, use Commits API as primary (more reliable for recent commits)
+        # Otherwise, use Events API to track commits across all repos
+        repo_filter = goal_metadata.get("repo")
+        candidate_commits = []  # List of (repo, sha, message) tuples
+        push_events_in_range = []
+        push_events_out_of_range = []
+        
         async with httpx.AsyncClient(timeout=30) as client:
+            # If repo is specified, try Commits API first (more reliable for recent commits)
+            if repo_filter and "/" in repo_filter:
+                try:
+                    owner, repo_name = repo_filter.split("/", 1)
+                    # Convert Eastern time window to UTC for GitHub API
+                    from utils.timezone import eastern_to_utc
+                    start_utc = eastern_to_utc(start_of_day)
+                    end_utc = eastern_to_utc(end_of_day)
+                    
+                    commits_url = f"https://api.github.com/repos/{owner}/{repo_name}/commits"
+                    commits_response = await client.get(
+                        commits_url,
+                        params={
+                            "author": github_username,
+                            "since": start_utc.isoformat(),
+                            "until": end_utc.isoformat(),
+                        },
+                        headers={
+                            "Accept": "application/vnd.github+json",
+                        },
+                    )
+                    
+                    if commits_response.status_code == 200:
+                        commits_data = commits_response.json() or []
+                        logger.info(
+                            f"Found {len(commits_data)} commits via Commits API for repo {repo_filter} "
+                            f"in time window {start_utc.isoformat()} to {end_utc.isoformat()} (UTC)"
+                        )
+                        
+                        for commit in commits_data:
+                            commit_info = commit.get("commit", {})
+                            author_info = commit_info.get("author", {})
+                            commit_date_str = author_info.get("date", "")
+                            
+                            # Verify commit is within time window
+                            if commit_date_str:
+                                try:
+                                    commit_time_utc = datetime.fromisoformat(commit_date_str.replace('Z', '+00:00'))
+                                    if commit_time_utc.tzinfo is None:
+                                        commit_time_utc = commit_time_utc.replace(tzinfo=timezone.utc)
+                                    
+                                    from utils.timezone import utc_to_eastern
+                                    commit_time_eastern = utc_to_eastern(commit_time_utc)
+                                    
+                                    if start_of_day <= commit_time_eastern < end_of_day:
+                                        msg = (commit_info.get("message", "") or "").strip()
+                                        sha = commit.get("sha", "")
+                                        if len(msg) >= 5 and sha:
+                                            candidate_commits.append({
+                                                "repo": repo_filter,
+                                                "sha": sha,
+                                                "message": msg
+                                            })
+                                except (ValueError, AttributeError) as e:
+                                    logger.debug(f"Error parsing commit date {commit_date_str}: {e}")
+                                    # If we can't parse date, include it anyway (fail open)
+                                    msg = (commit_info.get("message", "") or "").strip()
+                                    sha = commit.get("sha", "")
+                                    if len(msg) >= 5 and sha:
+                                        candidate_commits.append({
+                                            "repo": repo_filter,
+                                            "sha": sha,
+                                            "message": msg
+                                        })
+                    else:
+                        logger.warning(
+                            f"Commits API returned status {commits_response.status_code} for repo {repo_filter}, "
+                            f"falling back to Events API"
+                        )
+                except Exception as e:
+                    logger.warning(f"Error using Commits API for repo {repo_filter}: {e}, falling back to Events API")
+            
+            # Always also check Events API (for cross-repo commits or as fallback)
+            events_url = f"https://api.github.com/users/{github_username}/events"
             response = await client.get(
                 events_url,
                 headers={
@@ -299,17 +378,15 @@ async def verify_github_commits(
                     response.status_code,
                     response.text,
                 )
-                return False, []
-
-            events = response.json() or []
-            start_str = start_of_day.isoformat()
-            end_str = end_of_day.isoformat()
-
-            push_events_in_range = []
-            push_events_out_of_range = []
-            
-            # Collect all commits from PushEvents in the time range
-            candidate_commits = []  # List of (repo, sha, message) tuples
+                # If we already found commits via Commits API, continue with those
+                if not candidate_commits:
+                    return False, []
+            else:
+                events = response.json() or []
+                start_str = start_of_day.isoformat()
+                end_str = end_of_day.isoformat()
+                
+                # Collect all commits from PushEvents in the time range
             
             for event in events:
                 try:
@@ -370,18 +447,29 @@ async def verify_github_commits(
                 except Exception as e:
                     logger.warning(f"Error processing GitHub event: {e}")
                     continue
+                
+                # Log commits found outside time window for debugging
+                if push_events_out_of_range:
+                    logger.info(
+                        f"Found {len(push_events_out_of_range)} push events outside time window. "
+                        f"Time window: {start_of_day.isoformat()} to {end_of_day.isoformat()} (Eastern). "
+                        f"Recent out-of-range events: {push_events_out_of_range[:3]}"
+                    )
             
-            # Filter by repo if specified
-            repo_filter = goal_metadata.get("repo")
-            if repo_filter:
-                # Filter commits to only those in the specified repo
+            # Filter by repo if specified (only if we used Events API, Commits API already filtered)
+            # Check if we used Commits API by seeing if we have commits and repo_filter was used
+            used_commits_api = repo_filter and "/" in repo_filter and len(candidate_commits) > 0
+            if repo_filter and not used_commits_api:
+                # Filter commits to only those in the specified repo (from Events API)
+                commits_before_filter = len(candidate_commits)
                 filtered_commits = [
                     c for c in candidate_commits
                     if c["repo"].lower() == repo_filter.lower()
                 ]
                 candidate_commits = filtered_commits
                 logger.info(
-                    f"Filtered to repo '{repo_filter}': {len(candidate_commits)} commits found"
+                    f"Filtered to repo '{repo_filter}': {len(candidate_commits)} commits found "
+                    f"(from {commits_before_filter} total commits from Events API)"
                 )
             
             # Get previously checked commits from existing verifications to avoid re-checking
@@ -551,12 +639,27 @@ async def verify_github_commits(
             # Final commit count is from valid_commits
             commit_count = len(valid_commits)
             
+            # Log detailed information for debugging
             logger.info(
                 f"GitHub verification result for pool={pool.get('pool_id')}, "
                 f"wallet={participant_wallet}, day={day}: "
                 f"{commit_count} commits found (min required: {min_commits_per_day}), "
-                f"day_ended={day_has_ended}, time_remaining={time_remaining:.1f}h"
+                f"day_ended={day_has_ended}, time_remaining={time_remaining:.1f}h, "
+                f"time_window={start_of_day.isoformat()} to {end_of_day.isoformat()} (Eastern), "
+                f"total_candidate_commits={len(candidate_commits)}, "
+                f"push_events_in_range={len(push_events_in_range)}, "
+                f"push_events_out_of_range={len(push_events_out_of_range)}"
             )
+            
+            # If no commits found, log helpful debugging info
+            if commit_count == 0:
+                logger.warning(
+                    f"No commits found for pool={pool.get('pool_id')}, wallet={participant_wallet}, "
+                    f"day={day}, github_username={github_username}, "
+                    f"time_window={start_of_day.isoformat()} to {end_of_day.isoformat()} (Eastern Time). "
+                    f"Found {len(push_events_out_of_range)} push events outside window. "
+                    f"Make sure commits are made within the challenge day window."
+                )
             
             # Determine result based on commit count and day status
             if commit_count >= min_commits_per_day:

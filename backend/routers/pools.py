@@ -782,16 +782,24 @@ async def trigger_github_verification(pool_id: int, wallet: str) -> dict:
                     "day": current_day
                 }
             elif passed is False:
+                # Day has ended and no commits found
                 return {
                     "verified": False,
-                    "message": "Insufficient commits found for today. Please make commits and try again.",
+                    "message": f"Day {current_day} has ended and insufficient commits were found. The challenge day window has passed.",
                     "day": current_day
                 }
             else:
                 # None - day still active, no commits yet
+                # Provide helpful message about potential issues
+                goal_metadata = pool.get("goal_metadata") or {}
+                repo_filter = goal_metadata.get("repo")
+                repo_info = f" in repository '{repo_filter}'" if repo_filter else " to any of your repositories"
+                
                 return {
                     "verified": False,
-                    "message": "No commits found yet for today. Please make commits and try again.",
+                    "message": f"No commits found yet for today (Day {current_day}). "
+                               f"Make sure you've pushed commits{repo_info} and that they appear in your GitHub activity. "
+                               f"Note: Very recent commits (within the last few minutes) may take a moment to appear in GitHub's API.",
                     "day": current_day
                 }
         
