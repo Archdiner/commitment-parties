@@ -40,7 +40,7 @@ export default function CreatePool() {
     dcaTradesPerDay: '1',     // number of trades per day
     // Social-specific fields
     githubCommitsPerDay: '1',
-    githubMinLinesPerCommit: '10', // Minimum lines changed per commit to prevent gamification
+    githubMinTotalLinesPerDay: '50', // Minimum total lines changed per day across all commits/repos
     screenTimeHours: '2',
     // Removed: githubRepo - we now track commits from any repository
   });
@@ -210,9 +210,9 @@ export default function CreatePool() {
         if (isNaN(commitsPerDay) || commitsPerDay < 1 || commitsPerDay > 50) {
           errors.githubCommitsPerDay = true;
         }
-        const minLines = parseInt(formData.githubMinLinesPerCommit || '0', 10);
-        if (isNaN(minLines) || minLines < 1 || minLines > 1000) {
-          errors.githubMinLinesPerCommit = true;
+        const minTotalLines = parseInt(formData.githubMinTotalLinesPerDay || '0', 10);
+        if (isNaN(minTotalLines) || minTotalLines < 1 || minTotalLines > 10000) {
+          errors.githubMinTotalLinesPerDay = true;
         }
       } else if (formData.socialMode === 'Screen-time') {
         const screenTime = parseFloat(formData.screenTimeHours || '0');
@@ -365,16 +365,16 @@ export default function CreatePool() {
               setLoading(false);
               return;
             }
-            const minLines = parseInt(formData.githubMinLinesPerCommit || '10', 10);
-            if (isNaN(minLines) || minLines < 1 || minLines > 1000) {
-              alert('Minimum lines per commit must be between 1 and 1000.');
+            const minTotalLines = parseInt(formData.githubMinTotalLinesPerDay || '50', 10);
+            if (isNaN(minTotalLines) || minTotalLines < 1 || minTotalLines > 10000) {
+              alert('Minimum total lines per day must be between 1 and 10000.');
               setLoading(false);
               return;
             }
             goalMetadata = {
               habit_type: 'github_commits',
               min_commits_per_day: commitsPerDay,
-              min_lines_per_commit: minLines,
+              min_total_lines_per_day: minTotalLines, // Total lines across all commits/repos per day
             };
             goalParamsForOnchain = { habit_name: 'GitHub Commits' };
           } else {
@@ -1186,43 +1186,43 @@ export default function CreatePool() {
                         </div>
                         <div>
                           <label className="flex items-center gap-2 text-xs uppercase tracking-widest text-gray-500 mb-2">
-                            Min Lines Per Commit
-                            <InfoIcon content="Minimum lines changed (additions + deletions) per commit to prevent gamification with empty or trivial commits." />
+                            Min Total Lines Per Day
+                            <InfoIcon content="Minimum total lines changed (additions + deletions) across all commits and repositories per day. AI will evaluate all your code together to ensure it's genuine work." />
                           </label>
                           <input
                             type="number"
                             min="1"
-                            max="1000"
-                            step="1"
-                            value={formData.githubMinLinesPerCommit}
+                            max="10000"
+                            step="10"
+                            value={formData.githubMinTotalLinesPerDay}
                             onChange={(e) => {
                               const value = e.target.value;
                               const numValue = parseInt(value, 10);
                               // Prevent negative values and enforce range
-                              if (value === '' || (!isNaN(numValue) && numValue >= 1 && numValue <= 1000)) {
-                                setFormData({ ...formData, githubMinLinesPerCommit: value });
-                                if (validationErrors.githubMinLinesPerCommit) {
-                                  setValidationErrors({...validationErrors, githubMinLinesPerCommit: false});
+                              if (value === '' || (!isNaN(numValue) && numValue >= 1 && numValue <= 10000)) {
+                                setFormData({ ...formData, githubMinTotalLinesPerDay: value });
+                                if (validationErrors.githubMinTotalLinesPerDay) {
+                                  setValidationErrors({...validationErrors, githubMinTotalLinesPerDay: false});
                                 }
                               }
                             }}
                             onBlur={() => {
-                              const minLines = parseInt(formData.githubMinLinesPerCommit, 10);
-                              if (isNaN(minLines) || minLines < 1) {
-                                setFormData({ ...formData, githubMinLinesPerCommit: '1' });
-                              } else if (minLines > 1000) {
-                                setFormData({ ...formData, githubMinLinesPerCommit: '1000' });
+                              const minTotalLines = parseInt(formData.githubMinTotalLinesPerDay, 10);
+                              if (isNaN(minTotalLines) || minTotalLines < 1) {
+                                setFormData({ ...formData, githubMinTotalLinesPerDay: '50' });
+                              } else if (minTotalLines > 10000) {
+                                setFormData({ ...formData, githubMinTotalLinesPerDay: '10000' });
                               }
                             }}
                             className={`w-full bg-transparent border-b py-2 text-sm text-white placeholder-gray-700 focus:outline-none transition-colors ${
-                              validationErrors.githubMinLinesPerCommit 
+                              validationErrors.githubMinTotalLinesPerDay 
                                 ? 'border-red-500 focus:border-red-500' 
                                 : 'border-white/20 focus:border-emerald-500'
                             }`}
-                            placeholder="e.g. 10"
+                            placeholder="e.g. 50"
                           />
-                          {validationErrors.githubMinLinesPerCommit && (
-                            <p className="text-[10px] text-red-400 mt-1">Min lines per commit must be between 1 and 1000</p>
+                          {validationErrors.githubMinTotalLinesPerDay && (
+                            <p className="text-[10px] text-red-400 mt-1">Min total lines per day must be between 1 and 10000</p>
                           )}
                         </div>
                       </div>

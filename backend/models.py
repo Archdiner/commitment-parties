@@ -42,9 +42,9 @@ class GoalTypeBase(BaseModel):
              "goal_type": "lifestyle_habit",
              "goal_metadata": {
                  "habit_type": "github_commits",
-                 "github_username": "alice",
-                 "repo": "alice/commitment-parties",  // optional; if omitted, any repo counts
-                 "min_commits_per_day": 1
+                 "min_commits_per_day": 1,
+                 "min_total_lines_per_day": 50  // Total lines across all commits/repos per day (optional)
+                 // Note: repo field is deprecated - now tracks commits from ALL repositories
              }
          }
        - Screen-time (screenshot-based):

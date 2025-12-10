@@ -268,8 +268,8 @@ For lifestyle_habit, goal_metadata examples:
     "habit_type": "github_commits",
     "habit_name": "Daily GitHub Shipping",
     "min_commits_per_day": 1,
-    "repo": "user/my-project",             // optional
-    "summary": "Ship at least 1 commit per day to user/my-project."
+    "min_total_lines_per_day": 50,         // optional: total lines across all commits/repos
+    "summary": "Ship at least 1 commit per day with at least 50 total lines of code changes."
   }}
 
 For hodl_token, goal_metadata example:

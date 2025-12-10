@@ -120,7 +120,7 @@ export default function PoolsPage() {
               const hodlMinBalanceTokens = typeof hodlMinBalanceRaw === 'number' ? hodlMinBalanceRaw / (10 ** tokenDecimals) : undefined;
               const dcaTradesPerDay: number | undefined = goalMetadata.min_trades_per_day;
               const minCommitsPerDay: number | undefined = goalMetadata.min_commits_per_day;
-              const minLinesPerCommit: number | undefined = goalMetadata.min_lines_per_commit;
+              const minTotalLinesPerDay: number | undefined = goalMetadata.min_total_lines_per_day;
 
               return (
                 <Link 
@@ -203,7 +203,7 @@ export default function PoolsPage() {
                           <GitCommit className="w-4 h-4 text-purple-300" />
                           <span className="text-xs font-mono text-purple-300">
                             {minCommitsPerDay || 1} commit{minCommitsPerDay !== 1 ? 's' : ''}/day
-                            {minLinesPerCommit && minLinesPerCommit > 0 && ` • ${minLinesPerCommit}+ lines`}
+                            {minTotalLinesPerDay && minTotalLinesPerDay > 0 && ` • ${minTotalLinesPerDay}+ total lines/day`}
                           </span>
                         </div>
                       )}

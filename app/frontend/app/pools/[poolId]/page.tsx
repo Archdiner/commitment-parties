@@ -255,7 +255,7 @@ export default function PoolDetailPage() {
     typeof hodlMinBalanceRaw === 'number' ? hodlMinBalanceRaw / (10 ** tokenDecimals) : undefined;
   const dcaTradesPerDay: number | undefined = goalMetadata.min_trades_per_day;
   const minCommitsPerDay: number | undefined = goalMetadata.min_commits_per_day;
-  const minLinesPerCommit: number | undefined = goalMetadata.min_lines_per_commit;
+  const minTotalLinesPerDay: number | undefined = goalMetadata.min_total_lines_per_day;
 
   return (
     <div className="min-h-screen bg-[#050505] text-white pt-24 px-6 pb-20">
@@ -406,29 +406,21 @@ export default function PoolDetailPage() {
                     <span className="font-mono text-purple-300">
                       {minCommitsPerDay || 1}
                     </span>{' '}
-                    commit{minCommitsPerDay !== 1 ? 's' : ''} per day to your GitHub account.
-                    {minLinesPerCommit && minLinesPerCommit > 0 && (
+                    commit{minCommitsPerDay !== 1 ? 's' : ''} per day across any of your repositories.
+                    {minTotalLinesPerDay && minTotalLinesPerDay > 0 && (
                       <>
-                        {' '}Each commit must have at least{' '}
+                        {' '}Your total code changes (across all commits and repos) must be at least{' '}
                         <span className="font-mono text-purple-300">
-                          {minLinesPerCommit}
+                          {minTotalLinesPerDay}
                         </span>{' '}
-                        line{minLinesPerCommit !== 1 ? 's' : ''} changed.
+                        line{minTotalLinesPerDay !== 1 ? 's' : ''} per day.
                       </>
                     )}
                   </p>
                   
-                  {goalMetadata.repo && (
-                    <div className="text-[11px] text-gray-400">
-                      <span className="uppercase tracking-widest text-gray-500 mr-2">
-                        Repository
-                      </span>
-                      <span className="font-mono break-all text-gray-200">{goalMetadata.repo}</span>
-                    </div>
-                  )}
-                  
                   <p className="text-[11px] text-amber-400">
-                    Commits are automatically verified. Only genuine commits count - nonsensical or useless commits will be rejected.
+                    All your commits from all repositories are automatically verified together. 
+                    AI evaluates your combined code to ensure it's genuine work - nonsensical or useless commits will be rejected.
                   </p>
                 </div>
               );

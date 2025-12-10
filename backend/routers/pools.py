@@ -246,12 +246,15 @@ async def create_pool(pool_data: PoolCreate) -> PoolResponse:
         pool_dict.setdefault("total_staked", 0.0)
         pool_dict.setdefault("yield_earned", 0.0)
         
-        # Remove fields that don't exist in database schema (if they cause issues)
-        # These are handled by the confirm endpoint instead
-        pool_dict.pop("min_participants", None)  # Not in schema
-        pool_dict.pop("scheduled_start_time", None)  # Not in schema (yet)
-        pool_dict.pop("recruitment_period_hours", None)  # Not in schema (yet)
-        pool_dict.pop("require_min_participants", None)  # Not in schema (yet)
+        # Set defaults for recruitment system fields (for future feature compatibility)
+        # These fields may exist in migration but not in current schema.sql
+        pool_dict.setdefault("min_participants", 1)  # Default minimum participants
+        pool_dict.setdefault("recruitment_period_hours", 24)  # Default 24 hours if not provided
+        pool_dict.setdefault("require_min_participants", False)  # Default false
+        # scheduled_start_time will be calculated in confirm endpoint if needed
+        
+        # Only remove fields that definitely don't exist in schema
+        # Keep recruitment fields for future compatibility
         
         # Insert into database
         try:
@@ -364,10 +367,14 @@ async def confirm_pool_creation(pool_data: PoolConfirmRequest) -> PoolResponse:
             
             # Remove fields that don't exist in database schema
             pool_dict.pop("transaction_signature", None)
-            pool_dict.pop("min_participants", None)
-            pool_dict.pop("scheduled_start_time", None)
-            pool_dict.pop("recruitment_period_hours", None)
-            pool_dict.pop("require_min_participants", None)
+            
+            # Set defaults for recruitment system fields (these exist in migration_add_pool_fields.sql)
+            # These fields are used by the recruitment system feature branch
+            pool_dict.setdefault("min_participants", 1)  # Default minimum participants
+            pool_dict.setdefault("recruitment_period_hours", 24)  # Default 24 hours
+            pool_dict.setdefault("require_min_participants", False)  # Default false
+            pool_dict.setdefault("grace_period_minutes", 5)  # Default 5 minutes grace period
+            # scheduled_start_time is calculated above and kept (nullable, so None is fine)
             
             results = await execute_query(
                 table="pools",
@@ -406,12 +413,15 @@ async def confirm_pool_creation(pool_data: PoolConfirmRequest) -> PoolResponse:
             pool_dict["status"] = "active"  # Activate immediately
         
         # Remove fields that don't exist in database schema
-        # Store these in a metadata field or handle separately if needed later
         pool_dict.pop("transaction_signature", None)  # Not in schema
-        pool_dict.pop("min_participants", None)  # Not in schema (yet)
-        pool_dict.pop("scheduled_start_time", None)  # Not in schema (yet) - we use start_timestamp instead
-        pool_dict.pop("recruitment_period_hours", None)  # Not in schema (yet)
-        pool_dict.pop("require_min_participants", None)  # Not in schema (yet)
+        
+        # Set defaults for recruitment system fields (these exist in migration_add_pool_fields.sql)
+        # These fields are used by the recruitment system feature branch
+        pool_dict.setdefault("min_participants", 1)  # Default minimum participants
+        pool_dict.setdefault("recruitment_period_hours", 24)  # Default 24 hours
+        pool_dict.setdefault("require_min_participants", False)  # Default false
+        pool_dict.setdefault("grace_period_minutes", 5)  # Default 5 minutes grace period
+        # scheduled_start_time is calculated above and kept (nullable, so None is fine)
         
         # NOTE: If you've added new required columns to the pools table that aren't in the schema.sql file,
         # add default/filler values here. For example:
@@ -845,14 +855,10 @@ async def trigger_github_verification(pool_id: int, wallet: str) -> dict:
             else:
                 # None - day still active, no commits yet
                 # Provide helpful message about potential issues
-                goal_metadata = pool.get("goal_metadata") or {}
-                repo_filter = goal_metadata.get("repo")
-                repo_info = f" in repository '{repo_filter}'" if repo_filter else " to any of your repositories"
-                
                 return {
                     "verified": False,
                     "message": f"No commits found yet for today (Day {current_day}). "
-                               f"Make sure you've pushed commits{repo_info} and that they appear in your GitHub activity. "
+                               f"Make sure you've pushed commits to any of your repositories and that they appear in your GitHub activity. "
                                f"Note: Very recent commits (within the last few minutes) may take a moment to appear in GitHub's API.",
                     "day": current_day
                 }
