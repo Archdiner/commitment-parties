@@ -155,9 +155,13 @@ async def build_join_pool_tx(
     Returns a base64-encoded transaction as per Solana Actions spec.
     """
     try:
+        # Validate pool_id is provided
+        if pool_id is None:
+            raise HTTPException(status_code=422, detail="Missing required query parameter: pool_id")
+        
         account = request_body.get("account")
         if not account or not isinstance(account, str):
-            raise HTTPException(status_code=400, detail="Missing or invalid 'account'")
+            raise HTTPException(status_code=400, detail="Missing or invalid 'account' in request body")
 
         pools = await execute_query(
             table="pools",
@@ -166,10 +170,13 @@ async def build_join_pool_tx(
             limit=1,
         )
         if not pools:
-            raise HTTPException(status_code=404, detail="Pool not found")
+            raise HTTPException(status_code=404, detail=f"Pool {pool_id} not found")
         pool = pools[0]
         if pool.get("status") not in ("pending", "active"):
-            raise HTTPException(status_code=400, detail="Pool is not joinable")
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Pool {pool_id} is not joinable (status: {pool.get('status')})"
+            )
 
         # Build real transaction using the transaction builder
         pool_id_int = int(pool_id)  # Ensure it's an int

@@ -24,18 +24,24 @@ async function buildJoinPoolTransaction(
   wallet: string
 ): Promise<{ transaction: string; message: string }> {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-  const response = await fetch(`${apiUrl}/solana/actions/join-pool`, {
+  // Backend expects pool_id as query parameter, not in body
+  const response = await fetch(`${apiUrl}/solana/actions/join-pool?pool_id=${poolId}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       account: wallet,
-      pool_id: poolId,
     }),
   });
 
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({ detail: response.statusText }));
-    throw new Error(errorData.detail || 'Failed to build join transaction');
+    let errorData;
+    try {
+      errorData = await response.json();
+    } catch {
+      errorData = { detail: response.statusText || 'Failed to build join transaction' };
+    }
+    const errorMessage = errorData.detail || errorData.error || errorData.message || 'Failed to build join transaction';
+    throw new Error(errorMessage);
   }
 
   return response.json();
@@ -149,7 +155,33 @@ export default function PoolDetailPage() {
       router.push('/dashboard');
     } catch (err: any) {
       console.error('Failed to join pool:', err);
-      alert(err.message || 'Failed to join pool. Please try again.');
+      
+      // Extract error message properly
+      let errorMessage = 'Failed to join pool. Please try again.';
+      
+      if (err instanceof Error) {
+        errorMessage = err.message;
+      } else if (typeof err === 'string') {
+        errorMessage = err;
+      } else if (err?.message) {
+        errorMessage = err.message;
+      } else if (err?.detail) {
+        errorMessage = err.detail;
+      } else if (err?.error) {
+        errorMessage = err.error;
+      } else if (typeof err === 'object' && err !== null) {
+        // Try to stringify the error object for debugging
+        errorMessage = JSON.stringify(err);
+      }
+      
+      // Check for wallet-specific error codes
+      if (err?.code === 4001) {
+        errorMessage = 'Transaction was rejected by user.';
+      } else if (err?.code === -32002) {
+        errorMessage = 'Transaction already pending. Please check your wallet.';
+      }
+      
+      alert(errorMessage);
     } finally {
       setJoining(false);
     }
