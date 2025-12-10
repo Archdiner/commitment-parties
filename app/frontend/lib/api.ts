@@ -29,7 +29,6 @@ export interface PoolCreateRequest {
   is_public?: boolean;
   recruitment_period_hours?: number;
   require_min_participants?: boolean;
-  grace_period_minutes?: number;
 }
 
 export interface PoolResponse {
@@ -83,7 +82,6 @@ export interface PoolConfirmRequest {
   is_public?: boolean;
   recruitment_period_hours?: number;
   require_min_participants?: boolean;
-  grace_period_minutes?: number;
 }
 
 export interface JoinPoolConfirmRequest {
@@ -176,7 +174,7 @@ async function fetchWithRetry<T>(
       lastError = err;
       
       // Don't retry on client errors (4xx) or if it's the last attempt
-      if (err instanceof ApiError && (err.status >= 400 && err.status < 500) || attempt === maxRetries) {
+      if ((err instanceof ApiError && (err.status >= 400 && err.status < 500)) || attempt === maxRetries) {
         throw err;
       }
       

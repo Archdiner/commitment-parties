@@ -1055,20 +1055,12 @@ Respond with only "yes" or "no"."""
                                 logger.warning("Invalid DCA pool data: %s", pool)
                                 continue
 
-                            # Check grace period
-                            grace_period_minutes = pool.get("grace_period_minutes")
-                            if grace_period_minutes is None:
-                                grace_period_minutes = 5  # Default 5 minutes if not set
-                            
+                            # Check if pool has started
                             current_time = int(time.time())
-                            grace_period_end = start_timestamp + (grace_period_minutes * 60)
-                            time_until_grace_end = grace_period_end - current_time
-                            
-                            if current_time < grace_period_end:
+                            if current_time < start_timestamp:
                                 logger.info(
-                                    f"DCA pool {pool_id} still in grace period "
-                                    f"({grace_period_minutes} minutes, {time_until_grace_end}s remaining). "
-                                    f"Skipping verification until grace period ends."
+                                    f"DCA pool {pool_id} has not started yet. "
+                                    f"Skipping verification until pool starts."
                                 )
                                 continue
 
@@ -1172,20 +1164,12 @@ Respond with only "yes" or "no"."""
                                 logger.warning(f"Invalid pool data: {pool}")
                                 continue
                             
-                            # Check grace period
-                            grace_period_minutes = pool.get("grace_period_minutes")
-                            if grace_period_minutes is None:
-                                grace_period_minutes = 5  # Default 5 minutes if not set
-                            
+                            # Check if pool has started
                             current_time = int(time.time())
-                            grace_period_end = start_timestamp + (grace_period_minutes * 60)
-                            time_until_grace_end = grace_period_end - current_time
-                            
-                            if current_time < grace_period_end:
+                            if current_time < start_timestamp:
                                 logger.info(
-                                    f"HODL pool {pool_id} still in grace period "
-                                    f"({grace_period_minutes} minutes, {time_until_grace_end}s remaining). "
-                                    f"Skipping verification until grace period ends."
+                                    f"HODL pool {pool_id} has not started yet. "
+                                    f"Skipping verification until pool starts."
                                 )
                                 continue
                             
@@ -1297,10 +1281,6 @@ Respond with only "yes" or "no"."""
                                 continue
                             
                             # Check initial grace period - don't verify until pool grace period has passed
-                            grace_period_minutes = pool.get("grace_period_minutes")
-                            if grace_period_minutes is None:
-                                grace_period_minutes = 5  # Default 5 minutes if not set
-                            
                             current_time = int(time.time())
                             
                             # First check if pool has started
@@ -1311,21 +1291,6 @@ Respond with only "yes" or "no"."""
                                     f"Pool {pool_id} hasn't started yet. "
                                     f"Start: {start_dt.strftime('%Y-%m-%d %H:%M:%S %Z')}, "
                                     f"Current: {current_dt.strftime('%Y-%m-%d %H:%M:%S %Z')}"
-                                )
-                                continue
-                            
-                            # Now check initial grace period (only applies AFTER pool starts)
-                            initial_grace_period_end = start_timestamp + (grace_period_minutes * 60)
-                            
-                            if current_time < initial_grace_period_end:
-                                # Calculate actual time remaining
-                                time_remaining = initial_grace_period_end - current_time
-                                minutes_remaining = time_remaining / 60
-                                
-                                logger.info(
-                                    f"Pool {pool_id} still in initial grace period "
-                                    f"({minutes_remaining:.1f} minutes remaining). "
-                                    f"Skipping verification until grace period ends."
                                 )
                                 continue
                             

@@ -528,7 +528,6 @@ export default function CreatePool() {
         // --- Backend: confirm pool creation with transaction_signature ---
         const recruitment_period_hours = recruitmentHours;
         const require_min_participants = requireMinParticipants;
-        const grace_period_minutes = 5;
 
         const descriptionText =
           formData.descriptionText.trim() ||
@@ -555,7 +554,6 @@ export default function CreatePool() {
             is_public: true,
           recruitment_period_hours,
           require_min_participants,
-          grace_period_minutes,
         });
         
         // Success

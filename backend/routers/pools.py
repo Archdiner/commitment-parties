@@ -427,6 +427,22 @@ async def confirm_pool_creation(pool_data: PoolConfirmRequest) -> PoolResponse:
     except Exception as e:
         error_msg = str(e)
         logger.error(f"Error confirming pool creation: {e}", exc_info=True)
+        
+        # Extract more detailed error information from Supabase exceptions
+        if hasattr(e, 'message'):
+            error_msg = e.message
+        elif hasattr(e, 'args') and len(e.args) > 0:
+            error_msg = str(e.args[0])
+        
+        # Check for common database errors
+        error_str = error_msg.lower()
+        if 'column' in error_str and 'does not exist' in error_str:
+            error_msg = f"Database schema mismatch: {error_msg}. Please run database migrations."
+        elif 'duplicate' in error_str or 'unique' in error_str:
+            error_msg = f"Pool already exists: {error_msg}"
+        elif 'null value' in error_str or 'not null' in error_str:
+            error_msg = f"Missing required field: {error_msg}"
+        
         # Return more detailed error for debugging
         raise HTTPException(
             status_code=500, 
@@ -485,25 +501,19 @@ async def get_participant_verifications(
         current_day = calculate_current_day(start_timestamp, current_time)
 
         # Calculate next verification window end (approximate daily windows) in Eastern Time
-        grace_value = pool.get("grace_period_minutes", 5)
-        # Respect explicit 0; only default when value is missing/None
-        if grace_value is None:
-            grace_value = 5
-        grace_minutes = int(grace_value)
-        grace_seconds = grace_minutes * 60
         next_window_end = None
         if start_timestamp:
             if current_time < start_timestamp:
-                # Before pool start: first window ends after first day minus grace
-                next_window_end = start_timestamp + 86400 - grace_seconds
+                # Before pool start: first window ends after first day
+                next_window_end = start_timestamp + 86400
             else:
                 days_elapsed = (current_time - start_timestamp) // 86400
-                window_end = start_timestamp + (days_elapsed + 1) * 86400 - grace_seconds
+                window_end = start_timestamp + (days_elapsed + 1) * 86400
                 if current_time <= window_end:
                     next_window_end = window_end
                 else:
                     # Move to next day
-                    next_window_end = start_timestamp + (days_elapsed + 2) * 86400 - grace_seconds
+                    next_window_end = start_timestamp + (days_elapsed + 2) * 86400
 
         return {
             "pool_id": pool_id,

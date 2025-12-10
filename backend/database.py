@@ -9,6 +9,12 @@ from typing import Optional, Dict, Any, List
 import logging
 from config import settings
 
+# Try to import Supabase/PostgREST error types
+try:
+    from postgrest.exceptions import APIError as PostgrestAPIError
+except ImportError:
+    PostgrestAPIError = None
+
 logger = logging.getLogger(__name__)
 
 # Global Supabase client
@@ -103,6 +109,43 @@ async def execute_query(
     
     except Exception as e:
         logger.error(f"Database query error: {e}", exc_info=True)
-        raise
+        
+        # Extract detailed error message from Supabase/PostgREST exceptions
+        error_msg = str(e)
+        
+        # Handle PostgREST APIError specifically
+        if PostgrestAPIError and isinstance(e, PostgrestAPIError):
+            if hasattr(e, 'message'):
+                error_msg = e.message
+            elif hasattr(e, 'details'):
+                error_msg = e.details
+            elif hasattr(e, 'hint'):
+                error_msg = f"{error_msg}. Hint: {e.hint}"
+        
+        # Check if it's a Supabase/PostgREST API error
+        if hasattr(e, 'message'):
+            error_msg = e.message
+        elif hasattr(e, 'args') and len(e.args) > 0:
+            # PostgREST errors often have the message in args[0]
+            if isinstance(e.args[0], dict):
+                error_msg = e.args[0].get('message', str(e.args[0]))
+            else:
+                error_msg = str(e.args[0])
+        
+        # Check for common database errors and provide helpful messages
+        error_str = error_msg.lower()
+        if 'column' in error_str and ('does not exist' in error_str or 'unknown column' in error_str):
+            error_msg = f"Database schema mismatch: {error_msg}. Please ensure all migrations have been run. Missing columns may need to be added via migration."
+        elif 'duplicate key' in error_str or 'unique constraint' in error_str:
+            error_msg = f"Duplicate entry: {error_msg}"
+        elif 'null value' in error_str or 'not null constraint' in error_str:
+            error_msg = f"Missing required field: {error_msg}"
+        elif 'foreign key' in error_str:
+            error_msg = f"Referenced record does not exist: {error_msg}"
+        
+        # Create a more informative exception
+        db_error = Exception(f"Database error: {error_msg}")
+        db_error.original_error = e
+        raise db_error
 
 
