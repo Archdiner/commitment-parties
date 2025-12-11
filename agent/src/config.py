@@ -47,7 +47,7 @@ class Settings:
     
     # Frontend / Actions URLs
     # Base URL for the web app pool pages (used in tweets for "view details" links)
-    APP_BASE_URL: str = os.getenv("APP_BASE_URL", "https://commitment-parties.vercel.app")
+    APP_BASE_URL: str = os.getenv("APP_BASE_URL", "https://commitmint.app")
     # Base URL for Solana Action endpoints (used as Blink targets in tweets)
     ACTION_BASE_URL: str = os.getenv("ACTION_BASE_URL", "https://commitment-backend.onrender.com/solana/actions")
     

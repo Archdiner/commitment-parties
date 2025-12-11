@@ -88,7 +88,7 @@ class SocialManager:
         # Event-level rate limiting (per pool, per event type)
         self.last_event_post_time: Dict[Tuple[int, SocialEventType], float] = {}
         # URL bases
-        self.app_base_url = getattr(settings, "APP_BASE_URL", "https://commitment-parties.vercel.app")
+        self.app_base_url = getattr(settings, "APP_BASE_URL", "https://commitmint.app")
         self.action_base_url = getattr(
             settings,
             "ACTION_BASE_URL",
@@ -264,23 +264,47 @@ class SocialManager:
             return text[:max_len]
         return text[: max_len - 3].rstrip() + "..."
 
-    def build_full_tweet(self, body: str, blink_url: str, app_url: str) -> str:
+    def _is_crypto_challenge(self, goal_type: str) -> bool:
+        """
+        Check if a goal_type is a crypto challenge (can use Blink action).
+        
+        Crypto challenges: hodl_token, DailyDCA, daily_dca
+        Non-crypto challenges: lifestyle_habit (screen time, GitHub commits, etc.)
+        """
+        goal_type_lower = goal_type.lower() if goal_type else ""
+        return goal_type_lower in ("hodl_token", "dailydca", "daily_dca")
+    
+    def build_full_tweet(self, body: str, blink_url: str, app_url: str, goal_type: Optional[str] = None) -> str:
         """
         Combine a tweet body with Blink and app links, respecting Twitter's limit.
         
-        We conservatively enforce 280 characters including both URLs.
+        For crypto challenges (hodl_token, DailyDCA), includes both Blink and app links.
+        For non-crypto challenges (lifestyle_habit), includes only app link.
+        
+        We conservatively enforce 280 characters including URLs.
         If needed, the body is truncated to make room for links.
         """
-        trailer = f"\n\n🔗 Join: {blink_url}\n🌐 Details: {app_url}"
+        # Only include Blink URL for crypto challenges
+        is_crypto = self._is_crypto_challenge(goal_type) if goal_type else True  # Default to True for backward compatibility
+        
+        if is_crypto:
+            trailer = f"\n\n🔗 Join: {blink_url}\n🌐 Details: {app_url}"
+        else:
+            # Non-crypto challenges: only app link
+            trailer = f"\n\n🌐 Join: {app_url}"
+        
         max_len = 280
         if len(body) + len(trailer) <= max_len:
             return body + trailer
         
-        # Try truncating body while keeping both links
+        # Try truncating body while keeping links
         available = max_len - len(trailer) - 3  # 3 for "..."
         if available <= 0:
-            # As a last resort, drop the app link and keep only the Blink
-            trailer = f"\n\n🔗 Join: {blink_url}"
+            # As a last resort, drop the Blink link and keep only the app link
+            if is_crypto:
+                trailer = f"\n\n🌐 Details: {app_url}"
+            else:
+                trailer = f"\n\n🌐 {app_url}"
             available = max_len - len(trailer) - 3
         truncated_body = self._truncate_body(body, max_len=available)
         return truncated_body + trailer
@@ -833,19 +857,14 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
             # Generate tweet content
             tweet_text = self.generate_tweet_content(pool, stats)
             
-            # Create Blink URL
+            # Create URLs
             pool_pubkey = pool.get("pool_pubkey")
             blink_url = self.create_blink(pool_id, pool_pubkey)
+            app_url = self.create_app_link(pool_id)
             
-            # Add Blink to tweet (Twitter will automatically convert to action button)
-            full_tweet = f"{tweet_text}\n\n🔗 Join: {blink_url}"
-            
-            # Ensure it fits Twitter's limit
-            if len(full_tweet) > 280:
-                # Truncate tweet text to make room for link
-                max_tweet_len = 280 - len(blink_url) - 10  # 10 chars for spacing/formatting
-                tweet_text = tweet_text[:max_tweet_len - 3] + "..."
-                full_tweet = f"{tweet_text}\n\n🔗 Join: {blink_url}"
+            # Build full tweet (conditionally includes Blink based on goal_type)
+            goal_type = pool.get("goal_type")
+            full_tweet = self.build_full_tweet(tweet_text, blink_url, app_url, goal_type)
             
             # Post to Twitter - use new account system if available
             logger.info(f"Posting update for pool {pool_id} to Twitter")
@@ -1176,7 +1195,8 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
             pool_pubkey = pool.get("pool_pubkey")
             blink_url = self.create_blink(task.pool_id, pool_pubkey)
             app_url = self.create_app_link(task.pool_id)
-            full_tweet = self.build_full_tweet(body, blink_url, app_url)
+            goal_type = pool.get("goal_type")
+            full_tweet = self.build_full_tweet(body, blink_url, app_url, goal_type)
             
             logger.info(
                 f"Posting {task.event_type.value} update for pool {task.pool_id} "

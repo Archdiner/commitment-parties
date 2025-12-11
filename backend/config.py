@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     
     # CORS (comma-separated string, will be split)
-    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:3001,https://commitment-parties.vercel.app,https://commitment-agent.vercel.app"
+    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:3001,https://commitment-parties.vercel.app,https://commitment-agent.vercel.app,https://commitmint.app"
     
     @property
     def cors_origins_list(self) -> List[str]:
@@ -62,7 +62,7 @@ class Settings(BaseSettings):
     TWITTER_ACCESS_TOKEN_SECRET: str = os.getenv("TWITTER_ACCESS_TOKEN_SECRET", "")
     
     # App URLs (for Twitter links)
-    APP_BASE_URL: str = os.getenv("APP_BASE_URL", "https://commitment-parties.vercel.app")
+    APP_BASE_URL: str = os.getenv("APP_BASE_URL", "https://commitmint.app")
     ACTION_BASE_URL: str = os.getenv("ACTION_BASE_URL", "https://commitment-backend.onrender.com/solana/actions")
     
     # Environment

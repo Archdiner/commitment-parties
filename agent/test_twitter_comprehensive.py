@@ -115,21 +115,37 @@ async def test_tweet_generation():
     assert len(generic_tweet) <= 280, "Tweet exceeds 280 characters"
     print("   ✅ Pass")
     
-    # Test new pool tweet
-    print("\n🆕 New Pool Tweet Generation:")
+    # Test new pool tweet (crypto challenge - should include Blink)
+    print("\n🆕 New Pool Tweet Generation (Crypto):")
     new_pool_tweet = social.generate_new_pool_tweet(test_pool, test_stats)
     blink_url = social.create_blink(pool_id, test_pool.get("pool_pubkey"))
     app_url = social.create_app_link(pool_id)
-    full_new_tweet = social.build_full_tweet(new_pool_tweet, blink_url, app_url)
+    goal_type = test_pool.get("goal_type", "daily_dca")
+    full_new_tweet = social.build_full_tweet(new_pool_tweet, blink_url, app_url, goal_type)
     print(f"   Length: {len(full_new_tweet)} chars (max 280)")
     print(f"   Content preview: {full_new_tweet[:150]}...")
     assert len(full_new_tweet) <= 280, "Tweet exceeds 280 characters"
+    assert "🔗 Join:" in full_new_tweet, "Crypto challenge should include Blink URL"
+    print("   ✅ Pass")
+    
+    # Test new pool tweet (non-crypto challenge - should NOT include Blink)
+    print("\n🆕 New Pool Tweet Generation (Non-Crypto):")
+    test_pool_lifestyle = test_pool.copy()
+    test_pool_lifestyle["goal_type"] = "lifestyle_habit"
+    test_pool_lifestyle["goal_metadata"] = {"habit_name": "Screen Time"}
+    new_pool_tweet_lifestyle = social.generate_new_pool_tweet(test_pool_lifestyle, test_stats)
+    full_new_tweet_lifestyle = social.build_full_tweet(new_pool_tweet_lifestyle, blink_url, app_url, "lifestyle_habit")
+    print(f"   Length: {len(full_new_tweet_lifestyle)} chars (max 280)")
+    print(f"   Content preview: {full_new_tweet_lifestyle[:150]}...")
+    assert len(full_new_tweet_lifestyle) <= 280, "Tweet exceeds 280 characters"
+    assert "🔗 Join:" not in full_new_tweet_lifestyle, "Non-crypto challenge should NOT include Blink URL"
+    assert "🌐 Join:" in full_new_tweet_lifestyle or "🌐 Details:" in full_new_tweet_lifestyle, "Non-crypto challenge should include app link"
     print("   ✅ Pass")
     
     # Test midway tweet
     print("\n⏳ Midway Tweet Generation:")
     midway_tweet = social.generate_midway_tweet(test_pool, test_stats)
-    full_midway_tweet = social.build_full_tweet(midway_tweet, blink_url, app_url)
+    full_midway_tweet = social.build_full_tweet(midway_tweet, blink_url, app_url, goal_type)
     print(f"   Length: {len(full_midway_tweet)} chars (max 280)")
     print(f"   Content preview: {full_midway_tweet[:150]}...")
     assert len(full_midway_tweet) <= 280, "Tweet exceeds 280 characters"
@@ -143,7 +159,7 @@ async def test_tweet_generation():
         {"wallet_address": "WinnerWallet333333333333333333333333333333", "final_reward": 1.0},
     ]
     completed_tweet = social.generate_completed_tweet(test_pool, test_stats, winners)
-    full_completed_tweet = social.build_full_tweet(completed_tweet, blink_url, app_url)
+    full_completed_tweet = social.build_full_tweet(completed_tweet, blink_url, app_url, goal_type)
     print(f"   Length: {len(full_completed_tweet)} chars (max 280)")
     print(f"   Content preview: {full_completed_tweet[:150]}...")
     assert len(full_completed_tweet) <= 280, "Tweet exceeds 280 characters"

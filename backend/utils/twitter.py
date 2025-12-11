@@ -33,7 +33,7 @@ class TwitterPoster:
         self.twitter_client = None
         
         # URL bases
-        self.app_base_url = getattr(settings, "APP_BASE_URL", "https://commitment-parties.vercel.app")
+        self.app_base_url = getattr(settings, "APP_BASE_URL", "https://commitmint.app")
         self.action_base_url = getattr(
             settings,
             "ACTION_BASE_URL",
@@ -219,19 +219,45 @@ class TwitterPoster:
         
         return self._truncate_body(base, max_len=220)
     
-    def build_full_tweet(self, body: str, blink_url: str, app_url: str) -> str:
-        """Combine tweet body with Blink and app links, respecting Twitter's limit"""
-        trailer = f"\n\n🔗 Join: {blink_url}\n🌐 Details: {app_url}"
+    def _is_crypto_challenge(self, goal_type: str) -> bool:
+        """
+        Check if a goal_type is a crypto challenge (can use Blink action).
+        
+        Crypto challenges: hodl_token, DailyDCA, daily_dca
+        Non-crypto challenges: lifestyle_habit (screen time, GitHub commits, etc.)
+        """
+        goal_type_lower = goal_type.lower() if goal_type else ""
+        return goal_type_lower in ("hodl_token", "dailydca", "daily_dca")
+    
+    def build_full_tweet(self, body: str, blink_url: str, app_url: str, goal_type: Optional[str] = None) -> str:
+        """
+        Combine tweet body with Blink and app links, respecting Twitter's limit.
+        
+        For crypto challenges (hodl_token, DailyDCA), includes both Blink and app links.
+        For non-crypto challenges (lifestyle_habit), includes only app link.
+        """
+        # Only include Blink URL for crypto challenges
+        is_crypto = self._is_crypto_challenge(goal_type) if goal_type else True  # Default to True for backward compatibility
+        
+        if is_crypto:
+            trailer = f"\n\n🔗 Join: {blink_url}\n🌐 Details: {app_url}"
+        else:
+            # Non-crypto challenges: only app link
+            trailer = f"\n\n🌐 Join: {app_url}"
+        
         max_len = 280
         
         if len(body) + len(trailer) <= max_len:
             return body + trailer
         
-        # Try truncating body while keeping both links
+        # Try truncating body while keeping links
         available = max_len - len(trailer) - 3
         if available <= 0:
-            # As a last resort, drop the app link and keep only the Blink
-            trailer = f"\n\n🔗 Join: {blink_url}"
+            # As a last resort, drop the Blink link and keep only the app link
+            if is_crypto:
+                trailer = f"\n\n🌐 Details: {app_url}"
+            else:
+                trailer = f"\n\n🌐 {app_url}"
             available = max_len - len(trailer) - 3
         
         truncated_body = self._truncate_body(body, max_len=available)
@@ -266,12 +292,13 @@ class TwitterPoster:
             # Generate tweet content
             tweet_body = self.generate_new_pool_tweet(pool)
             
-            # Create Blink URL
+            # Create URLs
             blink_url = self.create_blink(pool_id)
             app_url = self.create_app_link(pool_id)
             
-            # Build full tweet
-            full_tweet = self.build_full_tweet(tweet_body, blink_url, app_url)
+            # Build full tweet (conditionally includes Blink based on goal_type)
+            goal_type = pool.get("goal_type")
+            full_tweet = self.build_full_tweet(tweet_body, blink_url, app_url, goal_type)
             
             # Post to Twitter
             logger.info(f"Posting new pool tweet for pool {pool_id}")
