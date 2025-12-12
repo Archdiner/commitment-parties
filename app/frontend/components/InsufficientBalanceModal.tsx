@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { X, Copy, ExternalLink, RefreshCw, Wallet } from 'lucide-react';
+import { getCluster } from '@/lib/solana';
 
 interface InsufficientBalanceModalProps {
   isOpen: boolean;
@@ -25,11 +26,16 @@ export function InsufficientBalanceModal({
 
   if (!isOpen) return null;
 
+  const cluster = getCluster();
+  const isDevnet = cluster === 'devnet';
+  
   const currentSol = currentBalance / 1e9;
   const requiredSol = requiredBalance / 1e9;
   const neededSol = (requiredBalance - currentBalance) / 1e9;
 
   const faucetUrl = `https://faucet.solana.com?wallet=${walletAddress}`;
+  // TODO: On mainnet, this would link to on-ramp providers (Moonpay, Stripe, etc.)
+  // Example: const onRampUrl = `https://buy.moonpay.com/?apiKey=YOUR_KEY&walletAddress=${walletAddress}`;
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(walletAddress);
@@ -64,7 +70,9 @@ export function InsufficientBalanceModal({
           </div>
           <div>
             <h2 className="text-xl font-medium text-white">Insufficient Balance</h2>
-            <p className="text-xs text-gray-400">Get test SOL from the faucet</p>
+            <p className="text-xs text-gray-400">
+              {isDevnet ? 'Get test SOL from the faucet' : 'Add funds to your wallet'}
+            </p>
           </div>
         </div>
 
@@ -110,30 +118,52 @@ export function InsufficientBalanceModal({
           </div>
         </div>
 
-        {/* Instructions */}
-        <div className="mb-6 p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-          <p className="text-xs text-blue-300 leading-relaxed">
-            <strong>Step 1:</strong> Click the button below to open the Solana faucet (your address is already filled in)
-            <br />
-            <br />
-            <strong>Step 2:</strong> Complete the CAPTCHA and request SOL
-            <br />
-            <br />
-            <strong>Step 3:</strong> Come back here and click "Check Balance" to verify
-          </p>
-        </div>
+        {/* Instructions - Environment specific */}
+        {isDevnet ? (
+          <div className="mb-6 p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+            <p className="text-xs text-blue-300 leading-relaxed">
+              <strong>Step 1:</strong> Click the button below to open the Solana faucet (your address is already filled in)
+              <br />
+              <br />
+              <strong>Step 2:</strong> Complete the CAPTCHA and request SOL
+              <br />
+              <br />
+              <strong>Step 3:</strong> Come back here and click "Check Balance" to verify
+            </p>
+          </div>
+        ) : (
+          <div className="mb-6 p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-lg">
+            <p className="text-xs text-emerald-300 leading-relaxed">
+              <strong>On Mainnet:</strong> You'll need to add real SOL to your wallet.
+              <br />
+              <br />
+              Click below to use an on-ramp service (credit card, bank transfer, etc.) to purchase SOL and send it directly to your wallet.
+            </p>
+          </div>
+        )}
 
         {/* Actions */}
         <div className="space-y-2">
-          <a
-            href={faucetUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-emerald-500/20 border border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/30 rounded-lg transition-colors font-medium"
-          >
-            <ExternalLink className="w-4 h-4" />
-            Get Test SOL from Faucet
-          </a>
+          {isDevnet ? (
+            <a
+              href={faucetUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-emerald-500/20 border border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/30 rounded-lg transition-colors font-medium"
+            >
+              <ExternalLink className="w-4 h-4" />
+              Get Test SOL from Faucet
+            </a>
+          ) : (
+            // TODO: Replace with actual on-ramp integration (Moonpay, Stripe, etc.)
+            <div className="w-full px-4 py-3 bg-gray-500/20 border border-gray-500/50 text-gray-400 rounded-lg text-center text-sm">
+              On-ramp integration coming soon
+              {/* Example: <a href={onRampUrl} target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="w-4 h-4" />
+                Buy SOL with Moonpay
+              </a> */}
+            </div>
+          )}
 
           <button
             onClick={handleCheckBalance}
@@ -145,10 +175,12 @@ export function InsufficientBalanceModal({
           </button>
         </div>
 
-        {/* Note */}
-        <p className="mt-4 text-[10px] text-gray-500 text-center">
-          Note: Devnet faucets have rate limits. If you've already requested today, wait 24 hours or use an alternative faucet.
-        </p>
+        {/* Note - Environment specific */}
+        {isDevnet && (
+          <p className="mt-4 text-[10px] text-gray-500 text-center">
+            Note: Devnet faucets have rate limits. If you've already requested today, wait 24 hours or use an alternative faucet.
+          </p>
+        )}
       </div>
     </div>
   );

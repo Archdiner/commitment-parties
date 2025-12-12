@@ -143,12 +143,14 @@ export function useSolanaWallet(): SolanaWalletState {
         return { success: true, currentBalance };
       }
       
-      // Insufficient balance - return info for UI to show faucet modal
+      // Insufficient balance - return info for UI to show funding modal
       const neededSol = (requiredLamports - currentBalance) / 1e9;
+      const cluster = process.env.NEXT_PUBLIC_CLUSTER || 'devnet';
+      const fundingMethod = cluster === 'mainnet-beta' ? 'Add funds via on-ramp' : 'Get test SOL from faucet';
       return { 
         success: false, 
         currentBalance,
-        message: `Insufficient balance. You need ${neededSol.toFixed(4)} more SOL. Please use the faucet to get test SOL.` 
+        message: `Insufficient balance. You need ${neededSol.toFixed(4)} more SOL. ${fundingMethod}.` 
       };
     } catch (error: any) {
       console.error('Balance check failed:', error);
