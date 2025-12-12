@@ -19,17 +19,19 @@ router = APIRouter()
 
 
 @router.options("/join-pool")
-async def options_join_pool():
+async def options_join_pool(request: Request):
     """Handle CORS preflight requests for join-pool action"""
     from fastapi.responses import Response
-    return Response(
-        status_code=200,
-        headers={
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization, Content-Encoding, Accept-Encoding",
-        }
-    )
+    origin = request.headers.get("origin")
+    headers = {
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, Content-Encoding, Accept-Encoding",
+        "Access-Control-Max-Age": "3600",
+    }
+    if origin and origin in settings.cors_origins_list:
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Access-Control-Allow-Credentials"] = "true"
+    return Response(status_code=200, headers=headers)
 
 
 @router.get(
@@ -314,17 +316,20 @@ async def build_join_pool_tx(
 
 
 @router.options("/create-pool")
-async def options_create_pool():
+async def options_create_pool(request: Request):
     """Handle CORS preflight requests for create-pool action"""
     from fastapi.responses import Response
-    return Response(
-        status_code=200,
-        headers={
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization, Content-Encoding, Accept-Encoding",
-        }
-    )
+    origin = request.headers.get("origin")
+    headers = {
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, Content-Encoding, Accept-Encoding",
+        "Access-Control-Max-Age": "3600",
+    }
+    # Only set origin if it's in allowed origins (CORS middleware should handle this, but be explicit)
+    if origin and origin in settings.cors_origins_list:
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Access-Control-Allow-Credentials"] = "true"
+    return Response(status_code=200, headers=headers)
 
 
 @router.post(
@@ -418,17 +423,19 @@ async def build_create_pool_tx(request: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @router.options("/forfeit-pool")
-async def options_forfeit_pool():
+async def options_forfeit_pool(request: Request):
     """Handle CORS preflight requests for forfeit-pool action"""
     from fastapi.responses import Response
-    return Response(
-        status_code=200,
-        headers={
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization, Content-Encoding, Accept-Encoding",
-        }
-    )
+    origin = request.headers.get("origin")
+    headers = {
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, Content-Encoding, Accept-Encoding",
+        "Access-Control-Max-Age": "3600",
+    }
+    if origin and origin in settings.cors_origins_list:
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Access-Control-Allow-Credentials"] = "true"
+    return Response(status_code=200, headers=headers)
 
 
 @router.get(
