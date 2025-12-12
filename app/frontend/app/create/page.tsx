@@ -211,7 +211,7 @@ export default function CreatePool() {
       } else {
         alert("Please connect your wallet first (top right).");
       }
-      return;
+        return;
     }
     
     // Validate form first

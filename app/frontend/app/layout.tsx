@@ -33,12 +33,12 @@ export default function RootLayout({
         suppressHydrationWarning
       >
         <PrivyProvider>
-          <Navbar />
-          <HelpBar />
-          <main className="flex-1">
-            {children}
-          </main>
-          <Footer />
+        <Navbar />
+        <HelpBar />
+        <main className="flex-1">
+          {children}
+        </main>
+        <Footer />
         </PrivyProvider>
       </body>
     </html>

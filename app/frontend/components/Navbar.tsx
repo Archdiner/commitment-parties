@@ -20,7 +20,7 @@ export const Navbar = () => {
   } = useWallet();
   
   const isLoading = !isReady;
-  
+
   const { linkGithub, user: privyUser } = usePrivy();
   
   // Check if GitHub is linked via Privy
@@ -35,12 +35,12 @@ export const Navbar = () => {
       login();
       return;
     }
-    
+
     if (isGitHubConnected) {
       // Already connected, could add unlink option here
       return;
     }
-    
+
     try {
       await linkGithub();
     } catch (error: any) {
@@ -96,38 +96,38 @@ export const Navbar = () => {
         </Link>
 
         <div className="hidden md:flex items-center gap-8">
-          {navLinks.map((link) => (
-            <Link 
-              key={link.name}
-              href={link.href}
-              className={`text-sm uppercase tracking-widest transition-all hover:text-emerald-400 ${
-                pathname === link.href ? 'text-white' : 'text-gray-500'
-              }`}
-            >
-              {link.name}
-            </Link>
-          ))}
+           {navLinks.map((link) => (
+               <Link 
+                  key={link.name}
+                  href={link.href}
+                  className={`text-sm uppercase tracking-widest transition-all hover:text-emerald-400 ${
+                    pathname === link.href ? 'text-white' : 'text-gray-500'
+                  }`}
+               >
+                  {link.name}
+               </Link>
+           ))}
         </div>
 
         <div className="flex items-center gap-3">
           {/* Create Challenge - only show when authenticated */}
           {isAuthenticated && (
-            <Link href="/create" className="hidden md:flex items-center gap-2 text-sm uppercase tracking-widest text-emerald-500 hover:text-white transition-colors">
+          <Link href="/create" className="hidden md:flex items-center gap-2 text-sm uppercase tracking-widest text-emerald-500 hover:text-white transition-colors">
               <Plus className="w-4 h-4" /> Create
-            </Link>
+          </Link>
           )}
           
           {/* GitHub Connection - only show when authenticated */}
           {isAuthenticated && (
-            <button 
-              onClick={handleConnectGitHub}
+          <button 
+            onClick={handleConnectGitHub}
               className={`text-sm border px-3 py-2 uppercase tracking-wide transition-all flex items-center gap-2 ${
-                isGitHubConnected 
-                  ? 'border-emerald-500/50 text-emerald-400 bg-emerald-500/5' 
+              isGitHubConnected 
+                ? 'border-emerald-500/50 text-emerald-400 bg-emerald-500/5' 
                   : 'border-white/20 text-white hover:bg-white hover:text-black'
-              }`}
-            >
-              <Github className="w-4 h-4" />
+            }`}
+          >
+            <Github className="w-4 h-4" />
               <span className="hidden sm:inline">
                 {isGitHubConnected ? `@${githubUsername}` : "GitHub"}
               </span>
@@ -176,15 +176,15 @@ export const Navbar = () => {
                 title="Sign out"
               >
                 <LogOut className="w-4 h-4" />
-              </button>
+          </button>
             </div>
           ) : (
-            <button 
+          <button 
               onClick={login}
               className="font-mono text-sm border border-emerald-500/50 bg-emerald-500/10 px-4 py-2 uppercase tracking-wide text-emerald-400 hover:bg-emerald-500 hover:text-black transition-all flex items-center gap-2"
             >
               Sign In
-            </button>
+          </button>
           )}
         </div>
       </div>

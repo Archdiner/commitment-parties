@@ -110,7 +110,7 @@ export async function requestAirdrop(
         }
         
         console.log(`Airdrop successful: ${signature}`);
-        return signature;
+  return signature;
       } catch (error: any) {
         const errorMessage = error?.message || error?.toString() || 'Unknown error';
         errors.push(`[${rpcUrl}] ${errorMessage}`);
