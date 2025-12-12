@@ -900,7 +900,7 @@ export default function CreatePool() {
                   <div>
                     <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">Crypto Mode</label>
                     <div className="grid grid-cols-2 gap-3">
-                      {['HODL', 'DCA'].map(mode => {
+                      {(['HODL', 'DCA'] as const).map((mode) => {
                         const isActive = formData.cryptoMode === mode;
                         return (
                           <button
@@ -1160,7 +1160,7 @@ export default function CreatePool() {
                   <div>
                     <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">Social Mode</label>
                     <div className="grid grid-cols-2 gap-3">
-                      {['GitHub', 'Screen-time'].map(mode => {
+                      {(['GitHub', 'Screen-time'] as const).map((mode) => {
                         const isActive = formData.socialMode === mode;
                         return (
                           <button
