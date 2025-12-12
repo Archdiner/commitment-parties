@@ -39,13 +39,76 @@ export function getCluster(): 'devnet' | 'mainnet-beta' {
 
 /**
  * Request devnet SOL airdrop (for testing only)
+ * @param walletAddress - Wallet address to airdrop to
+ * @param amount - Amount in SOL (will be converted to lamports)
+ * @returns Transaction signature
  */
 export async function requestAirdrop(walletAddress: string, amount: number = 2): Promise<string> {
   const connection = getConnection();
   const publicKey = new PublicKey(walletAddress);
-  const signature = await connection.requestAirdrop(publicKey, amount * 1e9);
-  await connection.confirmTransaction(signature, 'confirmed');
-  return signature;
+  
+  // Validate amount (max 2 SOL per request on devnet)
+  const solAmount = Math.min(amount, 2);
+  const lamports = Math.floor(solAmount * 1e9);
+  
+  if (lamports <= 0 || lamports > 2e9) {
+    throw new Error(`Invalid airdrop amount: ${solAmount} SOL (must be between 0 and 2 SOL)`);
+  }
+  
+  try {
+    // Request airdrop
+    const signature = await connection.requestAirdrop(publicKey, lamports);
+    
+    // Wait for confirmation with timeout
+    const confirmation = await Promise.race([
+      connection.confirmTransaction(signature, 'confirmed'),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Airdrop confirmation timeout')), 30000)
+      )
+    ]) as any;
+    
+    if (confirmation?.value?.err) {
+      const errorMsg = JSON.stringify(confirmation.value.err);
+      throw new Error(`Airdrop transaction failed: ${errorMsg}`);
+    }
+    
+    return signature;
+  } catch (error: any) {
+    // Extract error message from various error formats
+    let errorMessage = error?.message || error?.toString() || 'Unknown error';
+    
+    // Check for rate limiting (429 or specific rate limit messages)
+    if (
+      errorMessage.includes('429') ||
+      errorMessage.includes('rate limit') ||
+      errorMessage.includes('too many requests') ||
+      errorMessage.includes('429 Too Many Requests')
+    ) {
+      throw new Error('Airdrop rate limited. Please wait 60 seconds and try again, or use https://faucet.solana.com');
+    }
+    
+    // Check for internal server errors from RPC
+    if (
+      errorMessage.includes('Internal error') ||
+      errorMessage.includes('internal error') ||
+      errorMessage.includes('500') ||
+      error?.code === -32603
+    ) {
+      throw new Error('Devnet airdrop temporarily unavailable. Please try again in a moment or use https://faucet.solana.com');
+    }
+    
+    // Check for invalid request errors
+    if (
+      errorMessage.includes('invalid request') ||
+      errorMessage.includes('Invalid') ||
+      error?.code === -32602
+    ) {
+      throw new Error(`Invalid airdrop request: ${errorMessage}`);
+    }
+    
+    // Re-throw with better context
+    throw new Error(`Airdrop failed: ${errorMessage}`);
+  }
 }
 
 /**
