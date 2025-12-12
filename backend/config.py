@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     
     # CORS (comma-separated string, will be split)
+    # Include both with and without www subdomain for all production domains
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:3001,https://commitment-parties.vercel.app,https://commitment-agent.vercel.app,https://commitmint.app,https://www.commitmint.app"
     
     @property

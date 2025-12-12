@@ -436,43 +436,59 @@ export default function CreatePool() {
             const timeout = retries === 0 ? 30000 : 45000; // 30s first, 45s retries
             const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-            createResp = await fetch(`${apiUrl}/solana/actions/create-pool`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(createBody),
-              signal: controller.signal,
-            });
+            try {
+              createResp = await fetch(`${apiUrl}/solana/actions/create-pool`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(createBody),
+                signal: controller.signal,
+              });
 
-            clearTimeout(timeoutId);
-            break; // Success, exit retry loop
-          } catch (err: any) {
-            if (err.name === 'AbortError') {
-              if (retries < maxRetries) {
-                retries++;
-                console.warn(`Request timeout (attempt ${retries}/${maxRetries + 1}), retrying... Backend may be waking up.`);
-                await new Promise(resolve => setTimeout(resolve, 2000 * retries)); // Exponential backoff
-                continue;
+              clearTimeout(timeoutId);
+              
+              // Check if response is ok before breaking
+              if (createResp.ok) {
+                break; // Success, exit retry loop
               } else {
-                throw new Error('Backend is taking too long to respond. It may be waking up from sleep. Please try again in a moment.');
+                // HTTP error - read error message but don't retry on 4xx
+                const errorData = await createResp.json().catch(() => ({ detail: `HTTP ${createResp.status}: ${createResp.statusText}` }));
+                if (createResp.status >= 400 && createResp.status < 500) {
+                  // Client error - don't retry
+                  throw new Error(errorData.detail || errorData.error || `HTTP ${createResp.status}: ${createResp.statusText}`);
+                }
+                // Server error - retry
+                throw new Error(errorData.detail || errorData.error || `HTTP ${createResp.status}: ${createResp.statusText}`);
               }
+            } catch (fetchErr: any) {
+              clearTimeout(timeoutId);
+              if (fetchErr.name === 'AbortError') {
+                if (retries < maxRetries) {
+                  retries++;
+                  console.warn(`Request timeout (attempt ${retries}/${maxRetries + 1}), retrying... Backend may be waking up.`);
+                  await new Promise(resolve => setTimeout(resolve, 2000 * retries)); // Exponential backoff
+                  continue;
+                } else {
+                  throw new Error('Backend is taking too long to respond. It may be waking up from sleep. Please try again in a moment.');
+                }
+              }
+              // Check for CORS/network errors
+              if (fetchErr.message?.includes('Failed to fetch') || fetchErr.message?.includes('NetworkError') || fetchErr.message?.includes('CORS')) {
+                if (retries < maxRetries) {
+                  retries++;
+                  console.warn(`Network/CORS error (attempt ${retries}/${maxRetries + 1}), retrying...`, fetchErr.message);
+                  await new Promise(resolve => setTimeout(resolve, 2000 * retries));
+                  continue;
+                }
+              }
+              throw fetchErr; // Re-throw if not retryable
             }
-            // For other errors, check if it's a network error and retry
-            if (retries < maxRetries && (err.message?.includes('fetch') || err.message?.includes('network'))) {
-              retries++;
-              console.warn(`Network error (attempt ${retries}/${maxRetries + 1}), retrying...`, err.message);
-              await new Promise(resolve => setTimeout(resolve, 2000 * retries));
-              continue;
-            }
-            throw err; // Re-throw if not retryable
+          } catch (err: any) {
+            // Outer catch for any other errors
+            throw err;
           }
         }
 
-        if (!createResp!.ok) {
-          const errData = await createResp!.json().catch(() => ({}));
-          const errorMsg = errData.detail || errData.error || `HTTP ${createResp!.status}: ${createResp!.statusText}`;
-          throw new Error(errorMsg || 'Failed to build create-pool transaction');
-        }
-
+        // Response is already verified in the try block, safe to parse
         const { transaction: txB64 } = await createResp!.json();
 
         const tx = Transaction.from(Buffer.from(txB64, 'base64'));

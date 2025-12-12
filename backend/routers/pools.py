@@ -102,12 +102,7 @@ async def list_pools(
         # Filter by status if provided
         if status:
             results = [r for r in results if r.get("status") == status]
-        else:
-            # Default: only active/pending
-            results = [
-                r for r in results 
-                if r.get("status") in ["pending", "active"]
-            ]
+        # If no status filter, return all pools (frontend handles filtering)
         
         # Filter by public/private visibility and exclude pools user already joined
         if wallet:
