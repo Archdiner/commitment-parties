@@ -26,12 +26,18 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     
     # CORS (comma-separated string, will be split)
-    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:3001,https://commitment-parties.vercel.app,https://commitment-agent.vercel.app,https://commitmint.app"
+    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:3001,https://commitment-parties.vercel.app,https://commitment-agent.vercel.app,https://commitmint.app,https://www.commitmint.app"
     
     @property
     def cors_origins_list(self) -> List[str]:
         """Parse CORS_ORIGINS string into list"""
-        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+        origins = [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+        # Log for debugging (remove trailing slashes)
+        origins = [origin.rstrip('/') for origin in origins]
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"CORS allowed origins: {origins}")
+        return origins
     
     # Database (Supabase)
     DATABASE_URL: str = os.getenv("DATABASE_URL", "")

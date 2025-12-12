@@ -519,9 +519,10 @@ export default function CreatePool() {
         let errorMessage = "Failed to create pool.";
         
         // Check for CORS errors specifically
+        const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'unknown';
         if (error?.message?.includes('CORS') || error?.message?.includes('cors') || 
             error?.message?.includes('blocked') || error?.message?.includes('Failed to fetch')) {
-          errorMessage = "CORS Error: Backend is not configured to allow requests from this domain. Please update CORS_ORIGINS in Render to include: https://commitment-parties.vercel.app";
+          errorMessage = `CORS Error: Backend is not configured to allow requests from this domain (${currentOrigin}). Please update CORS_ORIGINS in Render to include: ${currentOrigin}. Make sure the backend has restarted after updating the environment variable.`;
         }
         // Check wallet-specific error codes first (before generic message check)
         else if (error?.code === 4001) {
