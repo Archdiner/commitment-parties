@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, Loader2, Users, Clock, ShieldCheck, Coins } from 'lucide-react';
 import { InfoIcon } from '@/components/ui/Tooltip';
+import { InsufficientBalanceModal } from '@/components/InsufficientBalanceModal';
 import {
   getPool,
   PoolResponse,
@@ -53,6 +54,9 @@ export default function PoolDetailPage() {
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState(false);
   const [joinStatus, setJoinStatus] = useState<string>('');
+  const [showBalanceModal, setShowBalanceModal] = useState(false);
+  const [currentBalance, setCurrentBalance] = useState<number>(0);
+  const [requiredBalance, setRequiredBalance] = useState<number>(0);
 
   // Use the Privy-powered wallet hook with embedded wallet support
   const { 
@@ -63,6 +67,7 @@ export default function PoolDetailPage() {
     login,
     signAndSendTransaction,
     ensureBalance,
+    getBalance,
   } = useWallet();
   
   const walletLoading = !isReady;
@@ -109,14 +114,20 @@ export default function PoolDetailPage() {
       
       // Calculate required balance (stake + buffer for tx fees)
       const stakeAmountLamports = Math.floor(pool.stake_amount * 1e9);
-      const requiredBalance = stakeAmountLamports + 15_000_000; // +0.015 SOL for fees
+      const requiredBalanceLamports = stakeAmountLamports + 15_000_000; // +0.015 SOL for fees
       
-      // Check and ensure balance (airdrop if needed on devnet)
+      // Check balance
       setJoinStatus('Checking balance...');
-      const balanceResult = await ensureBalance(requiredBalance);
+      const balanceResult = await ensureBalance(requiredBalanceLamports);
       
       if (!balanceResult.success) {
-        throw new Error(balanceResult.message || 'Could not ensure sufficient balance');
+        // Show modal for insufficient balance
+        setCurrentBalance(balanceResult.currentBalance || 0);
+        setRequiredBalance(requiredBalanceLamports);
+        setShowBalanceModal(true);
+        setJoining(false);
+        setJoinStatus('');
+        return;
       }
 
       // Pre-check: For HODL challenges, verify wallet has required token balance
@@ -247,8 +258,36 @@ export default function PoolDetailPage() {
     return 'Join Challenge';
   };
 
+  const handleCheckBalance = async () => {
+    if (!pool || !walletAddress) return;
+    
+    const stakeAmountLamports = Math.floor(pool.stake_amount * 1e9);
+    const requiredBalanceLamports = stakeAmountLamports + 15_000_000;
+    
+    try {
+      const newBalance = await getBalance();
+      setCurrentBalance(newBalance);
+      
+      if (newBalance >= requiredBalanceLamports) {
+        setShowBalanceModal(false);
+        // Retry join automatically
+        handleJoin();
+      }
+    } catch (error) {
+      console.error('Failed to check balance:', error);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#050505] text-white pt-24 px-6 pb-20">
+      <InsufficientBalanceModal
+        isOpen={showBalanceModal}
+        onClose={() => setShowBalanceModal(false)}
+        walletAddress={walletAddress || ''}
+        currentBalance={currentBalance}
+        requiredBalance={requiredBalance}
+        onCheckBalance={handleCheckBalance}
+      />
       <div className="max-w-4xl mx-auto">
         <div className="flex items-center gap-3 mb-8">
           <Link

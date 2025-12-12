@@ -10,6 +10,7 @@ import { InfoIcon } from '@/components/ui/Tooltip';
 import { confirmPoolCreation } from '@/lib/api';
 import { useWallet } from '@/hooks/useWallet';
 import { usePrivy } from '@privy-io/react-auth';
+import { InsufficientBalanceModal } from '@/components/InsufficientBalanceModal';
 import { derivePoolPDA, solToLamports } from '@/lib/solana';
 import { Transaction } from '@solana/web3.js';
 import { POPULAR_TOKENS, getTokenByMint, type TokenInfo } from '@/lib/tokens';
@@ -17,6 +18,9 @@ import { POPULAR_TOKENS, getTokenByMint, type TokenInfo } from '@/lib/tokens';
 export default function CreatePool() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [showBalanceModal, setShowBalanceModal] = useState(false);
+  const [currentBalance, setCurrentBalance] = useState<number>(0);
+  const [requiredBalance, setRequiredBalance] = useState<number>(0);
   
   // Use the new Privy-powered wallet hook
   const {
@@ -27,6 +31,7 @@ export default function CreatePool() {
     login,
     signAndSendTransaction,
     ensureBalance,
+    getBalance,
   } = useWallet();
   
   // Check GitHub connection via Privy (works for any login method)
@@ -391,12 +396,17 @@ export default function CreatePool() {
         const distributionMode = 'competitive';
         const winnerPercent = 100;
 
-        // Ensure wallet has enough balance for transaction fees + potential stake
-        const requiredBalance = stakeLamports + 20_000_000; // Stake + tx fees
-        const balanceResult = await ensureBalance(requiredBalance);
+        // Check wallet has enough balance for transaction fees + potential stake
+        const requiredBalanceLamports = stakeLamports + 20_000_000; // Stake + tx fees
+        const balanceResult = await ensureBalance(requiredBalanceLamports);
         
         if (!balanceResult.success) {
-          throw new Error(balanceResult.message || 'Could not ensure sufficient balance');
+          // Show modal for insufficient balance
+          setCurrentBalance(balanceResult.currentBalance || 0);
+          setRequiredBalance(requiredBalanceLamports);
+          setShowBalanceModal(true);
+          setLoading(false);
+          return;
         }
 
         // --- Build transaction via backend Solana Actions (create-pool) ---
@@ -547,8 +557,33 @@ export default function CreatePool() {
     }
   };
 
+  const handleCheckBalance = async () => {
+    if (!walletAddress) return;
+    
+    try {
+      const newBalance = await getBalance();
+      setCurrentBalance(newBalance);
+      
+      if (newBalance >= requiredBalance) {
+        setShowBalanceModal(false);
+        // Retry create automatically
+        handleDeploy();
+      }
+    } catch (error) {
+      console.error('Failed to check balance:', error);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#050505] text-white pt-24 px-6 pb-20">
+      <InsufficientBalanceModal
+        isOpen={showBalanceModal}
+        onClose={() => setShowBalanceModal(false)}
+        walletAddress={walletAddress || ''}
+        currentBalance={currentBalance}
+        requiredBalance={requiredBalance}
+        onCheckBalance={handleCheckBalance}
+      />
       <div className="max-w-2xl mx-auto">
          <Link href="/pools" className="flex items-center gap-2 text-gray-500 hover:text-white mb-8 text-xs uppercase tracking-widest transition-colors">
             <ChevronRight className="w-3 h-3 rotate-180" /> Cancel

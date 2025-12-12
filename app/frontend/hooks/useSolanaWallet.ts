@@ -28,7 +28,7 @@ export interface SolanaWalletState {
   
   // Solana operations
   getBalance: () => Promise<number>;
-  ensureBalance: (requiredLamports: number) => Promise<{ success: boolean; message?: string }>;
+  ensureBalance: (requiredLamports: number) => Promise<{ success: boolean; message?: string; currentBalance?: number }>;
   signAndSendTransaction: (tx: Transaction) => Promise<string>;
 }
 
@@ -130,83 +130,32 @@ export function useSolanaWallet(): SolanaWalletState {
     }
   }, [activeWallet?.address]);
   
-  // Ensure minimum balance (airdrop on devnet)
-  const ensureBalance = useCallback(async (requiredLamports: number): Promise<{ success: boolean; message?: string }> => {
+  // Check balance (no automatic airdrop - users use faucet manually)
+  const ensureBalance = useCallback(async (requiredLamports: number): Promise<{ success: boolean; message?: string; currentBalance?: number }> => {
     if (!activeWallet?.address) {
       return { success: false, message: 'No wallet available' };
-    }
-    
-    // Only attempt airdrop on devnet
-    const cluster = process.env.NEXT_PUBLIC_CLUSTER || 'devnet';
-    if (cluster !== 'devnet') {
-      return { 
-        success: false, 
-        message: 'Airdrops are only available on devnet. Please ensure you have sufficient balance.' 
-      };
     }
     
     try {
       const currentBalance = await getBalance();
       
       if (currentBalance >= requiredLamports) {
-        return { success: true };
+        return { success: true, currentBalance };
       }
       
-      // Calculate needed amount (with buffer for tx fees)
-      const neededLamports = requiredLamports - currentBalance + 10_000_000; // Add 0.01 SOL buffer
-      const neededSol = neededLamports / 1e9;
-      
-      // Request in chunks (max 2 SOL per request, daily limit is 24 SOL)
-      // Try requesting exactly what's needed, capped at 2 SOL
-      const airdropAmountSol = Math.min(Math.max(neededSol, 0.1), 2);
-      
-      console.log(
-        `Balance insufficient. Current: ${(currentBalance / 1e9).toFixed(4)} SOL, ` +
-        `Required: ${(requiredLamports / 1e9).toFixed(4)} SOL. ` +
-        `Requesting ${airdropAmountSol} SOL airdrop...`
-      );
-      
-      try {
-        const signature = await requestAirdrop(activeWallet.address, airdropAmountSol, 3);
-        console.log(`Airdrop transaction confirmed: ${signature}`);
-        
-        // Wait for balance to update (give it a few seconds)
-        let newBalance = await getBalance();
-        let retries = 0;
-        while (newBalance < requiredLamports && retries < 5) {
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          newBalance = await getBalance();
-          retries++;
-        }
-        
-        if (newBalance >= requiredLamports) {
-          return { 
-            success: true, 
-            message: `Airdropped ${airdropAmountSol} SOL successfully. New balance: ${(newBalance / 1e9).toFixed(4)} SOL` 
-          };
-        }
-        
-        // Balance still insufficient - might need another airdrop (but respect daily limits)
-        const stillNeeded = (requiredLamports - newBalance) / 1e9;
-        return { 
-          success: false, 
-          message: `Airdrop completed but balance still insufficient. ` +
-                   `Current: ${(newBalance / 1e9).toFixed(4)} SOL, ` +
-                   `Need: ${(requiredLamports / 1e9).toFixed(4)} SOL. ` +
-                   `Please use https://faucet.solana.com to get more test SOL.` 
-        };
-      } catch (airdropError: any) {
-        // Re-throw to be caught by outer catch
-        throw airdropError;
-      }
+      // Insufficient balance - return info for UI to show faucet modal
+      const neededSol = (requiredLamports - currentBalance) / 1e9;
+      return { 
+        success: false, 
+        currentBalance,
+        message: `Insufficient balance. You need ${neededSol.toFixed(4)} more SOL. Please use the faucet to get test SOL.` 
+      };
     } catch (error: any) {
-      console.error('Airdrop failed:', error);
-      
-      // Extract error message
-      const errorMsg = error?.message || error?.toString() || 'Unknown error';
-      
-      // Return the detailed error message from requestAirdrop
-      return { success: false, message: errorMsg };
+      console.error('Balance check failed:', error);
+      return { 
+        success: false, 
+        message: `Failed to check balance: ${error?.message || 'Unknown error'}` 
+      };
     }
   }, [activeWallet?.address, getBalance]);
   
