@@ -45,9 +45,9 @@ export default function CreatePool() {
   const [formData, setFormData] = useState({
     name: '',
     descriptionText: '',
-    category: 'Crypto', // "Crypto" | "Social"
-    cryptoMode: 'HODL', // "HODL" | "DCA"
-    socialMode: 'GitHub', // "GitHub" | "Screen-time"
+    category: 'Crypto' as 'Crypto' | 'Lifestyle', // "Crypto" | "Lifestyle"
+    cryptoMode: 'HODL' as 'HODL' | 'DCA', // "HODL" | "DCA"
+    socialMode: 'GitHub' as 'GitHub' | 'Screen-time', // "GitHub" | "Screen-time"
     duration: '14 Days',
     customDuration: '',
     stake: '0.5',
@@ -411,11 +411,8 @@ export default function CreatePool() {
 
         // --- Build transaction via backend Solana Actions (create-pool) ---
         // Use Render backend URL as default if env var is not set
+        // In Next.js, NEXT_PUBLIC_* env vars are available in the browser at build time
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://commitment-backend.onrender.com';
-        
-        if (!apiUrl) {
-          throw new Error('API URL is not configured. Please set NEXT_PUBLIC_API_URL environment variable.');
-        }
 
         const createBody = {
           account: creatorPubkey,
@@ -444,7 +441,15 @@ export default function CreatePool() {
             const timeoutId = setTimeout(() => controller.abort(), timeout);
 
             try {
-              const response = await fetch(`${apiUrl}/solana/actions/create-pool`, {
+              // Ensure apiUrl is valid
+              if (!apiUrl || typeof apiUrl !== 'string') {
+                throw new Error(`Invalid API URL: ${apiUrl}`);
+              }
+              
+              const fetchUrl = `${apiUrl}/solana/actions/create-pool`;
+              console.log('Fetching from:', fetchUrl);
+              
+              const response = await fetch(fetchUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(createBody),
@@ -560,45 +565,54 @@ export default function CreatePool() {
         router.push('/pools');
         
     } catch (error: any) {
-        console.error('Pool creation error:', error);
-        let errorMessage = "Failed to create pool.";
-        
-        // Check for CORS errors specifically
-        const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'unknown';
-        if (error?.message?.includes('CORS') || error?.message?.includes('cors') || 
-            error?.message?.includes('blocked') || error?.message?.includes('Failed to fetch')) {
-          errorMessage = `CORS Error: Backend is not configured to allow requests from this domain (${currentOrigin}). Please update CORS_ORIGINS in Render to include: ${currentOrigin}. Make sure the backend has restarted after updating the environment variable.`;
+        try {
+          console.error('Pool creation error:', error);
+          let errorMessage = "Failed to create pool.";
+          
+          // Check for CORS errors specifically
+          const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'unknown';
+          if (error?.message?.includes('CORS') || error?.message?.includes('cors') || 
+              error?.message?.includes('blocked') || error?.message?.includes('Failed to fetch')) {
+            errorMessage = `CORS Error: Backend is not configured to allow requests from this domain (${currentOrigin}). Please update CORS_ORIGINS in Render to include: ${currentOrigin}. Make sure the backend has restarted after updating the environment variable.`;
+          }
+          // Check wallet-specific error codes first (before generic message check)
+          else if (error?.code === 4001) {
+            errorMessage = "Transaction was rejected by user.";
+          } else if (error?.code === -32002) {
+            errorMessage = "Transaction already pending. Please check your wallet.";
+          }
+          // Extract detailed error information
+          else if (error?.data?.detail) {
+            errorMessage = error.data.detail;
+          } else if (error?.data?.error) {
+            errorMessage = error.data.error;
+          } else if (error?.detail) {
+            errorMessage = error.detail;
+          } else if (error?.name === 'ApiError') {
+            errorMessage = error.message || "Backend API error. Make sure the backend server is running.";
+          } else if (error?.message) {
+            errorMessage = error.message;
+          }
+          
+          // Show full error details in console
+          const currentApiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://commitment-backend.onrender.com';
+          console.error('Full error details:', {
+            error,
+            status: error?.status,
+            data: error?.data,
+            message: error?.message,
+            apiUrl: currentApiUrl,
+            stack: error?.stack,
+            name: error?.name
+          });
+          
+          alert(`Error: ${errorMessage}\n\nStatus: ${error?.status || 'Unknown'}\n\nCheck the browser console for more details.`);
+        } catch (alertError: any) {
+          // If even the error handling fails, log to console and show a basic message
+          console.error('Error in error handler:', alertError);
+          console.error('Original error:', error);
+          alert('An unexpected error occurred. Please check the browser console for details.');
         }
-        // Check wallet-specific error codes first (before generic message check)
-        else if (error?.code === 4001) {
-          errorMessage = "Transaction was rejected by user.";
-        } else if (error?.code === -32002) {
-          errorMessage = "Transaction already pending. Please check your wallet.";
-        }
-        // Extract detailed error information
-        else if (error?.data?.detail) {
-          errorMessage = error.data.detail;
-        } else if (error?.data?.error) {
-          errorMessage = error.data.error;
-        } else if (error?.detail) {
-          errorMessage = error.detail;
-        } else if (error?.name === 'ApiError') {
-          errorMessage = error.message || "Backend API error. Make sure the backend server is running.";
-        } else if (error?.message) {
-          errorMessage = error.message;
-        }
-        
-        // Show full error details in console
-        const currentApiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://commitment-backend.onrender.com';
-        console.error('Full error details:', {
-          error,
-          status: error?.status,
-          data: error?.data,
-          message: error?.message,
-          apiUrl: currentApiUrl
-        });
-        
-        alert(`Error: ${errorMessage}\n\nStatus: ${error?.status || 'Unknown'}\n\nCheck the browser console for more details.`);
     } finally {
         setLoading(false);
     }
@@ -689,7 +703,7 @@ export default function CreatePool() {
                         className="w-full bg-transparent border-b border-white/20 py-3 px-4 text-sm text-white placeholder-gray-800 focus:outline-none focus:border-emerald-500 transition-colors"
                     >
                        <option>Crypto</option>
-                       <option>Social</option>
+                       <option>Lifestyle</option>
                     </select>
                   </div>
                   <div>
