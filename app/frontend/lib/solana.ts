@@ -38,77 +38,144 @@ export function getCluster(): 'devnet' | 'mainnet-beta' {
 }
 
 /**
- * Request devnet SOL airdrop (for testing only)
+ * Alternative RPC endpoints for devnet (fallback if primary fails)
+ */
+const DEVNET_RPC_ENDPOINTS = [
+  'https://api.devnet.solana.com',
+  'https://solana-devnet-rpc.allthatnode.com',
+  'https://rpc.ankr.com/solana_devnet',
+];
+
+/**
+ * Request devnet SOL airdrop with retry logic and fallback RPC endpoints
  * @param walletAddress - Wallet address to airdrop to
  * @param amount - Amount in SOL (will be converted to lamports)
+ * @param maxRetries - Maximum number of retry attempts (default: 3)
  * @returns Transaction signature
  */
-export async function requestAirdrop(walletAddress: string, amount: number = 2): Promise<string> {
-  const connection = getConnection();
+export async function requestAirdrop(
+  walletAddress: string, 
+  amount: number = 2,
+  maxRetries: number = 3
+): Promise<string> {
+  // Only allow airdrops on devnet
+  const cluster = getCluster();
+  if (cluster !== 'devnet') {
+    throw new Error(
+      'Airdrops are only available on devnet. ' +
+      'Please switch to devnet or manually fund your wallet.'
+    );
+  }
+  
   const publicKey = new PublicKey(walletAddress);
   
-  // Validate amount (max 2 SOL per request on devnet)
-  const solAmount = Math.min(amount, 2);
+  // Validate amount (max 2 SOL per request on devnet, daily limit is 24 SOL)
+  const solAmount = Math.min(Math.max(amount, 0.1), 2); // Min 0.1, max 2 SOL
   const lamports = Math.floor(solAmount * 1e9);
   
   if (lamports <= 0 || lamports > 2e9) {
-    throw new Error(`Invalid airdrop amount: ${solAmount} SOL (must be between 0 and 2 SOL)`);
+    throw new Error(`Invalid airdrop amount: ${solAmount} SOL (must be between 0.1 and 2 SOL)`);
   }
   
-  try {
-    // Request airdrop
-    const signature = await connection.requestAirdrop(publicKey, lamports);
-    
-    // Wait for confirmation with timeout
-    const confirmation = await Promise.race([
-      connection.confirmTransaction(signature, 'confirmed'),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Airdrop confirmation timeout')), 30000)
-      )
-    ]) as any;
-    
-    if (confirmation?.value?.err) {
-      const errorMsg = JSON.stringify(confirmation.value.err);
-      throw new Error(`Airdrop transaction failed: ${errorMsg}`);
+  // Try each RPC endpoint with retries
+  const errors: string[] = [];
+  
+  for (const rpcUrl of DEVNET_RPC_ENDPOINTS) {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const connection = new Connection(rpcUrl, 'confirmed');
+        
+        // Exponential backoff: 1s, 2s, 4s
+        if (attempt > 0) {
+          const delay = Math.pow(2, attempt - 1) * 1000;
+          console.log(`Airdrop retry ${attempt}/${maxRetries - 1} after ${delay}ms delay (RPC: ${rpcUrl})...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+        
+        // Request airdrop
+        console.log(`Requesting ${solAmount} SOL airdrop via ${rpcUrl}...`);
+        const signature = await connection.requestAirdrop(publicKey, lamports);
+        
+        // Wait for confirmation with timeout (30s)
+        const confirmation = await Promise.race([
+          connection.confirmTransaction(signature, 'confirmed'),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Airdrop confirmation timeout')), 30000)
+          )
+        ]) as any;
+        
+        if (confirmation?.value?.err) {
+          const errorMsg = JSON.stringify(confirmation.value.err);
+          throw new Error(`Airdrop transaction failed: ${errorMsg}`);
+        }
+        
+        console.log(`Airdrop successful: ${signature}`);
+        return signature;
+      } catch (error: any) {
+        const errorMessage = error?.message || error?.toString() || 'Unknown error';
+        errors.push(`[${rpcUrl}] ${errorMessage}`);
+        
+        // Check if this is a rate limit error - don't retry immediately
+        if (
+          errorMessage.includes('429') ||
+          errorMessage.includes('rate limit') ||
+          errorMessage.includes('too many requests') ||
+          errorMessage.includes('429 Too Many Requests') ||
+          error?.code === 429
+        ) {
+          // Rate limited - try next RPC endpoint or throw with helpful message
+          console.warn(`Rate limited on ${rpcUrl}, trying next endpoint...`);
+          break; // Break retry loop, try next RPC
+        }
+        
+        // Check for other retryable errors
+        const isRetryable = 
+          errorMessage.includes('Internal error') ||
+          errorMessage.includes('internal error') ||
+          errorMessage.includes('500') ||
+          errorMessage.includes('timeout') ||
+          errorMessage.includes('network') ||
+          errorMessage.includes('ECONNREFUSED') ||
+          error?.code === -32603 ||
+          error?.code === -32002; // Transaction already in progress
+        
+        if (!isRetryable || attempt === maxRetries - 1) {
+          // Non-retryable error or last attempt - try next RPC endpoint
+          break;
+        }
+        
+        // Continue to next retry
+      }
     }
-    
-    return signature;
-  } catch (error: any) {
-    // Extract error message from various error formats
-    let errorMessage = error?.message || error?.toString() || 'Unknown error';
-    
-    // Check for rate limiting (429 or specific rate limit messages)
-    if (
-      errorMessage.includes('429') ||
-      errorMessage.includes('rate limit') ||
-      errorMessage.includes('too many requests') ||
-      errorMessage.includes('429 Too Many Requests')
-    ) {
-      throw new Error('Airdrop rate limited. Please wait 60 seconds and try again, or use https://faucet.solana.com');
-    }
-    
-    // Check for internal server errors from RPC
-    if (
-      errorMessage.includes('Internal error') ||
-      errorMessage.includes('internal error') ||
-      errorMessage.includes('500') ||
-      error?.code === -32603
-    ) {
-      throw new Error('Devnet airdrop temporarily unavailable. Please try again in a moment or use https://faucet.solana.com');
-    }
-    
-    // Check for invalid request errors
-    if (
-      errorMessage.includes('invalid request') ||
-      errorMessage.includes('Invalid') ||
-      error?.code === -32602
-    ) {
-      throw new Error(`Invalid airdrop request: ${errorMessage}`);
-    }
-    
-    // Re-throw with better context
-    throw new Error(`Airdrop failed: ${errorMessage}`);
   }
+  
+  // All attempts failed - provide helpful error message
+  const allErrors = errors.join('; ');
+  
+  // Check if all failures were rate limits
+  if (allErrors.toLowerCase().includes('rate limit') || allErrors.includes('429')) {
+    throw new Error(
+      'Airdrop rate limited on all endpoints. ' +
+      'Devnet has a daily limit of 24 SOL per wallet. ' +
+      'Please wait 24 hours or use an alternative faucet: https://faucet.solana.com'
+    );
+  }
+  
+  // Check if all failures were internal errors
+  if (allErrors.toLowerCase().includes('internal error')) {
+    throw new Error(
+      'Devnet airdrop temporarily unavailable on all endpoints. ' +
+      'This can happen due to high demand. ' +
+      'Please try again in a few minutes or use: https://faucet.solana.com'
+    );
+  }
+  
+  // Generic error with all details
+  throw new Error(
+    `Airdrop failed after ${maxRetries} attempts on ${DEVNET_RPC_ENDPOINTS.length} endpoints. ` +
+    `Errors: ${allErrors}. ` +
+    `Please try again later or use: https://faucet.solana.com`
+  );
 }
 
 /**

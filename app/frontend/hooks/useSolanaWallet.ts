@@ -136,6 +136,15 @@ export function useSolanaWallet(): SolanaWalletState {
       return { success: false, message: 'No wallet available' };
     }
     
+    // Only attempt airdrop on devnet
+    const cluster = process.env.NEXT_PUBLIC_CLUSTER || 'devnet';
+    if (cluster !== 'devnet') {
+      return { 
+        success: false, 
+        message: 'Airdrops are only available on devnet. Please ensure you have sufficient balance.' 
+      };
+    }
+    
     try {
       const currentBalance = await getBalance();
       
@@ -143,28 +152,48 @@ export function useSolanaWallet(): SolanaWalletState {
         return { success: true };
       }
       
-      const needed = requiredLamports - currentBalance + 10_000_000; // Add buffer for tx fees
-      const airdropAmountSol = Math.min(Math.ceil(needed / 1e9) + 1, 2); // Max 2 SOL per request
+      // Calculate needed amount (with buffer for tx fees)
+      const neededLamports = requiredLamports - currentBalance + 10_000_000; // Add 0.01 SOL buffer
+      const neededSol = neededLamports / 1e9;
       
-      console.log(`Requesting airdrop of ${airdropAmountSol} SOL to ${activeWallet.address}...`);
+      // Request in chunks (max 2 SOL per request, daily limit is 24 SOL)
+      // Try requesting exactly what's needed, capped at 2 SOL
+      const airdropAmountSol = Math.min(Math.max(neededSol, 0.1), 2);
+      
+      console.log(
+        `Balance insufficient. Current: ${(currentBalance / 1e9).toFixed(4)} SOL, ` +
+        `Required: ${(requiredLamports / 1e9).toFixed(4)} SOL. ` +
+        `Requesting ${airdropAmountSol} SOL airdrop...`
+      );
       
       try {
-        const signature = await requestAirdrop(activeWallet.address, airdropAmountSol);
-        console.log(`Airdrop transaction: ${signature}`);
+        const signature = await requestAirdrop(activeWallet.address, airdropAmountSol, 3);
+        console.log(`Airdrop transaction confirmed: ${signature}`);
         
-        // Wait a bit for balance to update
-        await new Promise(resolve => setTimeout(resolve, 3000));
-        
-        // Check balance after airdrop
-        const newBalance = await getBalance();
-        if (newBalance >= requiredLamports) {
-          return { success: true, message: `Airdropped ${airdropAmountSol} SOL successfully` };
+        // Wait for balance to update (give it a few seconds)
+        let newBalance = await getBalance();
+        let retries = 0;
+        while (newBalance < requiredLamports && retries < 5) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          newBalance = await getBalance();
+          retries++;
         }
         
-        // Balance still insufficient - might need more or airdrop didn't fully process
+        if (newBalance >= requiredLamports) {
+          return { 
+            success: true, 
+            message: `Airdropped ${airdropAmountSol} SOL successfully. New balance: ${(newBalance / 1e9).toFixed(4)} SOL` 
+          };
+        }
+        
+        // Balance still insufficient - might need another airdrop (but respect daily limits)
+        const stillNeeded = (requiredLamports - newBalance) / 1e9;
         return { 
           success: false, 
-          message: `Airdrop completed but balance still insufficient (${(newBalance / 1e9).toFixed(4)} SOL). Try again in a moment.` 
+          message: `Airdrop completed but balance still insufficient. ` +
+                   `Current: ${(newBalance / 1e9).toFixed(4)} SOL, ` +
+                   `Need: ${(requiredLamports / 1e9).toFixed(4)} SOL. ` +
+                   `Please use https://faucet.solana.com to get more test SOL.` 
         };
       } catch (airdropError: any) {
         // Re-throw to be caught by outer catch
@@ -176,22 +205,7 @@ export function useSolanaWallet(): SolanaWalletState {
       // Extract error message
       const errorMsg = error?.message || error?.toString() || 'Unknown error';
       
-      // Check for specific error types
-      if (errorMsg.includes('rate limit') || errorMsg.includes('429')) {
-        return { 
-          success: false, 
-          message: 'Airdrop rate limited. Wait 60 seconds and try again, or use https://faucet.solana.com' 
-        };
-      }
-      
-      if (errorMsg.includes('temporarily unavailable') || errorMsg.includes('Internal error')) {
-        return { 
-          success: false, 
-          message: 'Devnet airdrop temporarily unavailable. Please try again in a moment or use https://faucet.solana.com' 
-        };
-      }
-      
-      // Return the error message from requestAirdrop
+      // Return the detailed error message from requestAirdrop
       return { success: false, message: errorMsg };
     }
   }, [activeWallet?.address, getBalance]);
