@@ -5,14 +5,16 @@ import Link from 'next/link';
 import { ChevronDown, Check, Smartphone, ArrowRight, Users, TrendingDown, X } from 'lucide-react';
 import { InfoIcon } from '@/components/ui/Tooltip';
 import { getUserParticipations, UserParticipation, getPoolStats, getParticipantVerifications, triggerGitHubVerification, verifyScreenTime, forfeitPool } from '@/lib/api';
-import { getPersistedWalletAddress } from '@/lib/wallet';
+import { useWallet } from '@/hooks/useWallet';
 import { SectionLabel } from '@/components/ui/SectionLabel';
 import { Stat } from '@/components/ui/Stat';
 import { getConnection } from '@/lib/solana';
 
 export default function Dashboard() {
   const [loading, setLoading] = useState(true);
-  const [walletAddress, setWalletAddress] = useState<string | null>(null);
+  
+  // Use the new Privy-powered wallet hook
+  const { walletAddress, isReady, isAuthenticated, login } = useWallet();
   const [activeChallenges, setActiveChallenges] = useState<any[]>([]);
   const [participationsData, setParticipationsData] = useState<UserParticipation[]>([]);
   const [selectedChallengeId, setSelectedChallengeId] = useState<number | null>(null);
@@ -46,15 +48,13 @@ export default function Dashboard() {
   }>>([]);
 
   useEffect(() => {
-    const address = getPersistedWalletAddress();
-    setWalletAddress(address);
-    
-    if (address) {
-      fetchData(address);
-    } else {
+    // Fetch data when wallet address is available and ready
+    if (walletAddress && isReady) {
+      fetchData(walletAddress);
+    } else if (isReady && !walletAddress) {
       setLoading(false);
     }
-  }, []);
+  }, [walletAddress, isReady]);
 
   const fetchData = async (address: string) => {
     try {
@@ -509,26 +509,40 @@ export default function Dashboard() {
     }
   };
 
-  if (!walletAddress) {
+  if (!isReady) {
+    return (
+      <div className="min-h-screen bg-[#050505] text-white pt-32 px-6 flex items-center justify-center">
+        <div className="animate-pulse text-emerald-500 text-xs uppercase tracking-widest">Loading...</div>
+      </div>
+    );
+  }
+  
+  if (!isAuthenticated || !walletAddress) {
     return (
       <div className="min-h-screen bg-[#050505] text-white pt-32 px-6 flex flex-col items-center justify-center text-center max-w-2xl mx-auto">
-        <SectionLabel>Connect Your Wallet</SectionLabel>
+        <SectionLabel>Sign In</SectionLabel>
         <h1 className="text-4xl font-light mb-6">Get Started</h1>
         <p className="text-gray-400 mb-6 leading-relaxed">
-          To see your challenges and track your progress, you need to connect a wallet. 
-          Think of it like logging into your account.
+          To see your challenges and track your progress, you need to sign in. 
+          A wallet will be created automatically for you.
         </p>
         <div className="p-6 border border-white/10 bg-white/[0.02] rounded-xl text-left mb-8">
           <div className="flex items-start gap-3 text-sm text-gray-400">
-            <InfoIcon content="Install the free Phantom wallet app (available for Chrome, iOS, or Android). It's like a digital wallet for your commitment money - completely free and takes 2 minutes to set up. Click 'Connect Wallet' in the top-right corner to get started." />
+            <InfoIcon content="Sign in with your email or connect a wallet. A Solana wallet will be created automatically when you sign in, so you can participate in challenges right away." />
             <div>
-              <p className="font-medium text-gray-300 mb-2">Don't have a wallet?</p>
+              <p className="font-medium text-gray-300 mb-2">Ready to get started?</p>
               <p className="leading-relaxed mb-3">
-                Install the free Phantom wallet app. Click "Connect Wallet" in the top-right corner to get started.
+                Click "Sign In" in the top-right corner. A wallet will be created automatically for you.
               </p>
             </div>
           </div>
         </div>
+        <button
+          onClick={login}
+          className="px-6 py-3 text-sm font-medium tracking-widest uppercase border border-emerald-500/50 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500 hover:text-black transition-all"
+        >
+          Sign In
+        </button>
       </div>
     );
   }

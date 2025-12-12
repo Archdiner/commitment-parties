@@ -1,127 +1,68 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Plus, Github } from 'lucide-react';
-import { getPersistedWalletAddress, persistWalletAddress, clearPersistedWalletAddress, getPersistedGitHubUsername, persistGitHubUsername } from '@/lib/wallet';
-import { getGitHubUsername, initiateGitHubOAuth } from '@/lib/api';
+import { Plus, Github, Wallet, LogOut, Loader2, User } from 'lucide-react';
+import { useWallet } from '@/hooks/useWallet';
+import { usePrivy } from '@privy-io/react-auth';
 
 export const Navbar = () => {
   const pathname = usePathname();
-  const [isConnected, setIsConnected] = useState(false);
-  const [walletAddress, setWalletAddress] = useState('');
-  const [isGitHubConnected, setIsGitHubConnected] = useState(false);
-  const [githubUsername, setGithubUsername] = useState<string | null>(null);
-  const [connectingGitHub, setConnectingGitHub] = useState(false);
-
-  const checkGitHubConnection = async (wallet: string) => {
-    try {
-      const result = await getGitHubUsername(wallet);
-      if (result.verified_github_username) {
-        setIsGitHubConnected(true);
-        setGithubUsername(result.verified_github_username);
-        persistGitHubUsername(result.verified_github_username);
-      }
-    } catch (err) {
-      console.error('Error checking GitHub connection:', err);
-    }
-  };
-
-  useEffect(() => {
-    const saved = getPersistedWalletAddress();
-    if (saved) {
-      setIsConnected(true);
-      setWalletAddress(saved);
-      // Check GitHub connection status
-      checkGitHubConnection(saved);
-    }
-    
-    // Also check if GitHub username is in localStorage
-    const savedGithub = getPersistedGitHubUsername();
-    if (savedGithub) {
-      setIsGitHubConnected(true);
-      setGithubUsername(savedGithub);
-    }
-
-    // Listen for storage changes (e.g., GitHub connection in another tab)
-    const handleStorage = () => {
-      const updatedWallet = getPersistedWalletAddress();
-      if (updatedWallet && updatedWallet !== walletAddress) {
-        setWalletAddress(updatedWallet);
-        setIsConnected(true);
-        checkGitHubConnection(updatedWallet);
-      }
-      
-      const updatedGithub = getPersistedGitHubUsername();
-      if (updatedGithub && updatedGithub !== githubUsername) {
-        setIsGitHubConnected(true);
-        setGithubUsername(updatedGithub);
-      } else if (!updatedGithub && isGitHubConnected) {
-        setIsGitHubConnected(false);
-        setGithubUsername(null);
-      }
-    };
-    
-    window.addEventListener('storage', handleStorage);
-    
-    return () => {
-      window.removeEventListener('storage', handleStorage);
-    };
-  }, [walletAddress, githubUsername, isGitHubConnected]);
-
-  const handleConnect = async () => {
-    if (isConnected) {
-      setIsConnected(false);
-      setWalletAddress('');
-      clearPersistedWalletAddress();
-      return;
-    }
-
-    try {
-      const { solana } = window as typeof window & {
-        solana?: {
-          connect: () => Promise<{ publicKey: { toString: () => string } }>;
-        };
-      };
-      if (!solana) {
-        alert("Please install Phantom Wallet.");
-        return;
-      }
-      const response = await solana.connect();
-      const pubKey = response.publicKey.toString();
-      setWalletAddress(pubKey);
-      setIsConnected(true);
-      persistWalletAddress(pubKey);
-      // Check GitHub connection after wallet connection
-      checkGitHubConnection(pubKey);
-    } catch (err) {
-      console.error(err);
-    }
-  };
+  const { 
+    isAuthenticated, 
+    isReady, 
+    walletAddress, 
+    walletType,
+    user,
+    login, 
+    logout 
+  } = useWallet();
+  
+  const isLoading = !isReady;
+  
+  const { linkGithub, user: privyUser } = usePrivy();
+  
+  // Check if GitHub is linked via Privy
+  const githubAccount = privyUser?.linkedAccounts?.find(
+    (account: any) => account.type === 'github_oauth'
+  );
+  const isGitHubConnected = !!githubAccount;
+  const githubUsername = (githubAccount as any)?.username;
 
   const handleConnectGitHub = async () => {
-    if (!walletAddress) {
-      alert("Please connect your wallet first.");
+    if (!isAuthenticated) {
+      login();
       return;
     }
-
+    
     if (isGitHubConnected) {
-      // Disconnect GitHub (just clear local state, backend keeps the verification)
-      setIsGitHubConnected(false);
-      setGithubUsername(null);
+      // Already connected, could add unlink option here
       return;
     }
-
-    setConnectingGitHub(true);
+    
     try {
-      const result = await initiateGitHubOAuth(walletAddress);
-      // Redirect to GitHub OAuth
-      window.location.href = result.auth_url;
-    } catch (err: any) {
-      console.error('Error initiating GitHub OAuth:', err);
-      alert(`Failed to connect GitHub: ${err.message || 'Unknown error'}`);
-      setConnectingGitHub(false);
+      await linkGithub();
+    } catch (error: any) {
+      console.error('Failed to link GitHub:', error);
+      
+      // Check for specific error messages
+      const errorMessage = error?.message || error?.toString() || 'Unknown error';
+      
+      if (errorMessage.includes('not allowed') || errorMessage.includes('not enabled')) {
+        alert(
+          'GitHub login is not enabled in your Privy dashboard.\n\n' +
+          'To enable it:\n' +
+          '1. Go to https://dashboard.privy.io/\n' +
+          '2. Select your app\n' +
+          '3. Go to "Auth" → "Login Methods"\n' +
+          '4. Enable "GitHub"\n' +
+          '5. Configure your GitHub OAuth app credentials\n\n' +
+          'You\'ll need to create a GitHub OAuth app at https://github.com/settings/developers'
+        );
+      } else {
+        alert(`Failed to connect GitHub: ${errorMessage}`);
+      }
     }
   };
 
@@ -130,6 +71,18 @@ export const Navbar = () => {
     { name: 'Challenges', href: '/pools' },
     { name: 'Dashboard', href: '/dashboard' },
   ];
+
+  const formatAddress = (addr: string) => 
+    `${addr.slice(0, 4)}...${addr.slice(-4)}`;
+
+  // Get display name for user
+  const getDisplayName = () => {
+    if (user?.username) return `@${user.username}`;
+    if (user?.name) return user.name.split(' ')[0]; // First name only
+    if (user?.email) return user.email.split('@')[0]; // Part before @
+    if (walletAddress) return formatAddress(walletAddress);
+    return 'Account';
+  };
 
   return (
     <nav className="fixed top-0 w-full z-50 bg-[#050505]/90 backdrop-blur-md border-b border-white/5">
@@ -143,45 +96,96 @@ export const Navbar = () => {
         </Link>
 
         <div className="hidden md:flex items-center gap-8">
-           {navLinks.map((link) => (
-               <Link 
-                  key={link.name}
-                  href={link.href}
-                  className={`text-sm uppercase tracking-widest transition-all hover:text-emerald-400 ${
-                    pathname === link.href ? 'text-white' : 'text-gray-500'
-                  }`}
-               >
-                  {link.name}
-               </Link>
-           ))}
+          {navLinks.map((link) => (
+            <Link 
+              key={link.name}
+              href={link.href}
+              className={`text-sm uppercase tracking-widest transition-all hover:text-emerald-400 ${
+                pathname === link.href ? 'text-white' : 'text-gray-500'
+              }`}
+            >
+              {link.name}
+            </Link>
+          ))}
         </div>
 
-        <div className="flex items-center gap-4">
-          <Link href="/create" className="hidden md:flex items-center gap-2 text-sm uppercase tracking-widest text-emerald-500 hover:text-white transition-colors">
-            <Plus className="w-4 h-4" /> Create Challenge
-          </Link>
-          <button 
-            onClick={handleConnectGitHub}
-            disabled={connectingGitHub || !isConnected}
-            className={`text-sm border px-4 py-2 uppercase tracking-wide transition-all flex items-center gap-2 ${
-              isGitHubConnected 
-                ? 'border-emerald-500/50 text-emerald-400 bg-emerald-500/5' 
-                : 'border-white/20 text-white hover:bg-white hover:text-black disabled:opacity-50 disabled:cursor-not-allowed'
-            }`}
-          >
-            <Github className="w-4 h-4" />
-            {connectingGitHub ? 'Connecting...' : isGitHubConnected ? `@${githubUsername}` : "Connect GitHub"}
-          </button>
-          <button 
-            onClick={handleConnect}
-            className={`font-mono text-sm border px-4 py-2 uppercase tracking-wide transition-all ${
-              isConnected 
-                ? 'border-emerald-500/50 text-emerald-400 bg-emerald-500/5' 
-                : 'border-white/20 text-white hover:bg-white hover:text-black'
-            }`}
-          >
-            {isConnected ? `${walletAddress.slice(0, 4)}...${walletAddress.slice(-4)}` : "Connect Wallet"}
-          </button>
+        <div className="flex items-center gap-3">
+          {/* Create Challenge - only show when authenticated */}
+          {isAuthenticated && (
+            <Link href="/create" className="hidden md:flex items-center gap-2 text-sm uppercase tracking-widest text-emerald-500 hover:text-white transition-colors">
+              <Plus className="w-4 h-4" /> Create
+            </Link>
+          )}
+          
+          {/* GitHub Connection - only show when authenticated */}
+          {isAuthenticated && (
+            <button 
+              onClick={handleConnectGitHub}
+              className={`text-sm border px-3 py-2 uppercase tracking-wide transition-all flex items-center gap-2 ${
+                isGitHubConnected 
+                  ? 'border-emerald-500/50 text-emerald-400 bg-emerald-500/5' 
+                  : 'border-white/20 text-white hover:bg-white hover:text-black'
+              }`}
+            >
+              <Github className="w-4 h-4" />
+              <span className="hidden sm:inline">
+                {isGitHubConnected ? `@${githubUsername}` : "GitHub"}
+              </span>
+            </button>
+          )}
+          
+          {/* Auth Button */}
+          {isLoading ? (
+            <button 
+              disabled
+              className="font-mono text-sm border border-white/20 px-4 py-2 uppercase tracking-wide flex items-center gap-2"
+            >
+              <Loader2 className="w-4 h-4 animate-spin" />
+            </button>
+          ) : isAuthenticated ? (
+            <div className="flex items-center gap-2">
+              {/* User/Wallet Info */}
+              <div className={`text-sm border px-3 py-2 flex items-center gap-2 ${
+                walletAddress
+                  ? walletType === 'embedded' 
+                    ? 'border-purple-500/50 text-purple-400 bg-purple-500/5' 
+                    : 'border-emerald-500/50 text-emerald-400 bg-emerald-500/5'
+                  : 'border-blue-500/50 text-blue-400 bg-blue-500/5'
+              }`}>
+                {walletAddress ? (
+                  walletType === 'embedded' ? <User className="w-4 h-4" /> : <Wallet className="w-4 h-4" />
+                ) : (
+                  <User className="w-4 h-4" />
+                )}
+                <span className="hidden sm:inline">
+                  {walletAddress ? (
+                    <span className="font-mono">{formatAddress(walletAddress)}</span>
+                  ) : (
+                    <span>{getDisplayName()}</span>
+                  )}
+                </span>
+                {walletAddress && walletType === 'embedded' && (
+                  <span className="hidden lg:inline text-[10px] text-purple-300/70">(auto)</span>
+                )}
+              </div>
+              
+              {/* Logout Button */}
+              <button
+                onClick={logout}
+                className="text-sm border border-white/20 px-2.5 py-2 hover:bg-white hover:text-black transition-all"
+                title="Sign out"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
+            <button 
+              onClick={login}
+              className="font-mono text-sm border border-emerald-500/50 bg-emerald-500/10 px-4 py-2 uppercase tracking-wide text-emerald-400 hover:bg-emerald-500 hover:text-black transition-all flex items-center gap-2"
+            >
+              Sign In
+            </button>
+          )}
         </div>
       </div>
     </nav>

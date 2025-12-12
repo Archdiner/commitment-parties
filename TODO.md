@@ -67,39 +67,62 @@ Essential features to ship. Keep it simple, keep it working.
 
 ---
 
-## 3. Privy + MoonPay Integration
+## 3. Privy Integration (Hackathon Version)
 
-**Goal**: Let non-crypto users sign up and join challenges directly with credit card (no pre-purchasing SOL).
+**Goal**: Let non-crypto users sign up and join challenges without needing to understand wallets. For hackathon/devnet, use airdrops instead of real payments.
 
-### Privy Setup (Authentication)
-- [ ] **Install Privy SDK**
-  - Add `@privy-io/react-auth` to frontend
-  - Configure Privy provider in app layout
-  - Get Privy app ID from dashboard
+See `docs/PRIVY_INTEGRATION_PLAN.md` for detailed implementation guide.
 
-- [ ] **Replace wallet-only auth**
-  - Add email/password sign-up option
-  - Keep wallet connection for crypto users
-  - Update backend to verify Privy tokens
-  - Auto-generate embedded wallet for Privy users (handles transaction signing)
+### Phase 1: Setup (~1.5 hours)
+- [ ] **Install dependencies**
+  ```bash
+  npm install @privy-io/react-auth @solana/wallet-adapter-react @solana/wallet-adapter-wallets
+  ```
+- [ ] **Get Privy API keys**
+  - Create app at https://dashboard.privy.io/
+  - Enable: Email, Google, Twitter, Wallet login methods
+  - Enable: Solana embedded wallets on Devnet
+  - Add `NEXT_PUBLIC_PRIVY_APP_ID` to `.env.local`
 
-### MoonPay Setup (Direct Payment Flow)
-- [ ] **Integrate MoonPay widget for direct challenge payment**
-  - When user clicks "Join Challenge" without enough SOL:
-    - Show MoonPay widget with exact stake amount needed
-    - MoonPay processes credit card → deposits SOL to user's Privy embedded wallet
-    - Automatically sign and submit join transaction after payment
-    - User is joined seamlessly (one flow, no separate "buy SOL" step)
-  - Same flow for challenge creation (if they need SOL to create)
+### Phase 2: Provider & Hook (~2.5 hours)
+- [ ] **Create `components/providers/PrivyProvider.tsx`**
+  - Configure login methods (email/social + wallet)
+  - Configure embedded wallets for Solana devnet
+  - Configure external wallet support (Phantom, etc.)
 
-- [ ] **Handle payment flow**
-  - Check Privy wallet balance before showing join/create buttons
-  - If insufficient: show MoonPay widget with exact amount
-  - After MoonPay payment completes: auto-submit the transaction
-  - Handle MoonPay webhook for payment confirmation
-  - Show clear loading states: "Processing payment..." → "Joining challenge..."
+- [ ] **Create `hooks/useWallet.ts`**
+  - Unified interface for both wallet types
+  - `ensureBalance()` - auto-airdrop on devnet if user lacks SOL
+  - `sendTransaction()` - works with both embedded and external wallets
 
-**Why this matters**: Users can join challenges with credit card in one click. No crypto knowledge needed. This is the key differentiator for mainstream adoption.
+### Phase 3: UI Updates (~3 hours)
+- [ ] **Update Navbar**
+  - Replace Phantom-only connect with Privy login
+  - Show wallet type badge (embedded vs external)
+  - GitHub linking via Privy
+
+- [ ] **Update Pool Join Flow**
+  - Check balance before join
+  - Auto-airdrop if needed (devnet)
+  - Show loading state: "Getting test SOL..." → "Joining..."
+  - Handle both wallet types seamlessly
+
+- [ ] **Update Create Challenge Flow**
+  - Same airdrop flow if needed
+
+### Phase 4: Testing (~2 hours)
+- [ ] Test email signup → embedded wallet → airdrop → join
+- [ ] Test Phantom connect → join (existing flow still works)
+- [ ] Test GitHub linking via Privy
+- [ ] Test on mobile
+
+**Why this matters**: Non-crypto users can sign up with email, get a wallet auto-created, and join challenges immediately. The airdrop handles the "no SOL" problem for the hackathon demo.
+
+### Future: MoonPay for Mainnet
+When going to production with real money:
+- Replace `ensureBalance()` airdrop with MoonPay widget
+- Add network detection (devnet = airdrop, mainnet = MoonPay)
+- Handle MoonPay webhooks for payment confirmation
 
 ---
 
@@ -107,7 +130,7 @@ Essential features to ship. Keep it simple, keep it working.
 
 1. **Testing (#1)** - Do this first. Can't ship broken features.
 2. **Recruitment System (#2)** - Core feature you requested. Do this next.
-3. **Privy + MoonPay (#3)** - Important for growth, but can ship without it initially.
+3. **Privy (#3)** - Makes the app accessible to non-crypto users. Perfect for hackathon demos.
 
 ---
 
@@ -115,7 +138,7 @@ Essential features to ship. Keep it simple, keep it working.
 
 - **Recruitment system**: The 24h delay after filling makes sense - gives people time to prepare. The 1 week max prevents dead challenges. The 5-50 range ensures quality without being too restrictive.
 
-- **Privy + MoonPay**: This is a standard pattern. Privy handles auth + embedded wallets, MoonPay handles fiat-to-crypto. The key is making it seamless: user clicks "Join" → MoonPay widget appears → payment → auto-join. No separate "buy SOL first" step. This is what makes it accessible to non-crypto users.
+- **Privy (Hackathon)**: For devnet/hackathon, skip MoonPay entirely. Use Privy for auth + embedded wallets, and devnet airdrops for funding. User clicks "Join" → system airdrops test SOL → auto-join. Seamless experience without real money. MoonPay can be added later for mainnet.
 
 - **Testing**: Don't overthink this. Just manually test the happy path and fix what breaks. Add automated tests later if needed.
 

@@ -7,18 +7,34 @@ import { ChevronRight, Zap, ChevronDown } from 'lucide-react';
 import { ButtonPrimary } from '@/components/ui/ButtonPrimary';
 import { SectionLabel } from '@/components/ui/SectionLabel';
 import { InfoIcon } from '@/components/ui/Tooltip';
-import { confirmPoolCreation, getGitHubUsername } from '@/lib/api';
-import { getPersistedWalletAddress, getPersistedGitHubUsername } from '@/lib/wallet';
-import { derivePoolPDA, getConnection, solToLamports } from '@/lib/solana';
+import { confirmPoolCreation } from '@/lib/api';
+import { useWallet } from '@/hooks/useWallet';
+import { usePrivy } from '@privy-io/react-auth';
+import { derivePoolPDA, solToLamports } from '@/lib/solana';
 import { Transaction } from '@solana/web3.js';
 import { POPULAR_TOKENS, getTokenByMint, type TokenInfo } from '@/lib/tokens';
 
 export default function CreatePool() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
-  const [walletAddress, setWalletAddress] = useState<string | null>(null);
-  const [isGitHubConnected, setIsGitHubConnected] = useState(false);
-  const [checkingGitHub, setCheckingGitHub] = useState(true);
+  
+  // Use the new Privy-powered wallet hook
+  const {
+    isAuthenticated,
+    isReady,
+    walletAddress,
+    walletType,
+    login,
+    signAndSendTransaction,
+    ensureBalance,
+  } = useWallet();
+  
+  // Check GitHub connection via Privy (works for any login method)
+  const { user: privyUser } = usePrivy();
+  const githubAccount = privyUser?.linkedAccounts?.find(
+    (account: any) => account.type === 'github_oauth'
+  );
+  const isGitHubConnected = !!githubAccount;
   
   // Form State
   const [formData, setFormData] = useState({
@@ -98,47 +114,8 @@ export default function CreatePool() {
 
   const potentialProfit = calculatePotentialProfit();
 
-  useEffect(() => {
-    // Initial load from persisted storage
-    const address = getPersistedWalletAddress();
-    setWalletAddress(address);
-
-    // Check GitHub connection
-    const checkGitHub = async () => {
-      if (address) {
-        try {
-          const result = await getGitHubUsername(address);
-          setIsGitHubConnected(!!result.verified_github_username);
-        } catch (err) {
-          console.error('Error checking GitHub connection:', err);
-        }
-      }
-      // Also check localStorage
-      const savedGithub = getPersistedGitHubUsername();
-      if (savedGithub) {
-        setIsGitHubConnected(true);
-      }
-      setCheckingGitHub(false);
-    };
-    checkGitHub();
-
-    // Also listen for storage changes so connecting in Navbar while this
-    // page is open will update the local state.
-    if (typeof window !== 'undefined') {
-      const handleStorage = () => {
-        const updated = getPersistedWalletAddress();
-        setWalletAddress(updated);
-        // Re-check GitHub when wallet changes
-        if (updated) {
-          checkGitHub();
-        } else {
-          setIsGitHubConnected(false);
-        }
-      };
-      window.addEventListener('storage', handleStorage);
-      return () => window.removeEventListener('storage', handleStorage);
-    }
-  }, []);
+  // Determine if GitHub is required for current challenge type
+  const requiresGitHub = formData.category === 'Lifestyle' && formData.socialMode === 'GitHub';
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -227,11 +204,14 @@ export default function CreatePool() {
   };
 
   const handleDeploy = async () => {
-    // Always read latest wallet from storage (Navbar may have updated it)
-    const currentWallet = getPersistedWalletAddress();
-    if (!currentWallet) {
+    // If not authenticated, prompt login
+    if (!isAuthenticated || !walletAddress) {
+      if (!isAuthenticated) {
+        login();
+      } else {
         alert("Please connect your wallet first (top right).");
-        return;
+      }
+      return;
     }
     
     // Validate form first
@@ -401,28 +381,8 @@ export default function CreatePool() {
         const now = Math.floor(Date.now() / 1000);
         const end = now + (durationDays * 86400);
 
-        // --- On-chain: build and send create_pool transaction ---
-        const connection = getConnection();
-
-        // Phantom / Solana provider
-        const anyWindow = typeof window !== 'undefined' ? (window as any) : null;
-        const provider =
-          (anyWindow?.phantom && anyWindow.phantom.solana) ||
-          anyWindow?.solana ||
-          null;
-
-        if (!provider) {
-          alert("Wallet provider not available. Please install or open your Solana wallet and try again.");
-          setLoading(false);
-          return;
-        }
-
-        // Ensure wallet is connected and we have a public key
-        if (!provider.publicKey) {
-          await provider.connect();
-        }
-
-        const creatorPubkey = provider.publicKey;
+        // Use wallet address from hook (embedded or external)
+        const creatorPubkey = walletAddress;
         const stakeLamports = solToLamports(stakeAmount);
         const minParticipants = minParticipantsForBackend;
         // Use a valid base58 charity address (configurable via env, fallback to system program ID)
@@ -431,10 +391,18 @@ export default function CreatePool() {
         const distributionMode = 'competitive';
         const winnerPercent = 100;
 
+        // Ensure wallet has enough balance for transaction fees + potential stake
+        const requiredBalance = stakeLamports + 20_000_000; // Stake + tx fees
+        const balanceResult = await ensureBalance(requiredBalance);
+        
+        if (!balanceResult.success) {
+          throw new Error(balanceResult.message || 'Could not ensure sufficient balance');
+        }
+
         // --- Build transaction via backend Solana Actions (create-pool) ---
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
         const createBody = {
-          account: creatorPubkey.toBase58(),
+          account: creatorPubkey,
           pool_id: randomId,
           goal_type: goalType,
           goal_params: goalParamsForOnchain,
@@ -499,31 +467,8 @@ export default function CreatePool() {
 
         const tx = Transaction.from(Buffer.from(txB64, 'base64'));
 
-        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
-        tx.recentBlockhash = blockhash;
-        tx.feePayer = creatorPubkey;
-
-        let txSignature: string;
-        if (typeof provider.sendTransaction === 'function') {
-          txSignature = await provider.sendTransaction(tx, connection, {
-            skipPreflight: false,
-            maxRetries: 3,
-            preflightCommitment: 'confirmed',
-          });
-        } else if (typeof provider.signTransaction === 'function') {
-          const signed = await provider.signTransaction(tx);
-          txSignature = await connection.sendRawTransaction(signed.serialize(), {
-            skipPreflight: false,
-            maxRetries: 3,
-          });
-        } else {
-          throw new Error('Connected wallet does not support sending transactions.');
-        }
-
-        await connection.confirmTransaction(
-          { signature: txSignature, blockhash, lastValidBlockHeight },
-          'confirmed'
-        );
+        // Sign and send transaction using Privy wallet (embedded or external)
+        const txSignature = await signAndSendTransaction(tx);
 
         // --- Backend: confirm pool creation with transaction_signature ---
         const recruitment_period_hours = recruitmentHours;
@@ -537,7 +482,7 @@ export default function CreatePool() {
             pool_id: randomId,
           pool_pubkey: poolPubkey,
           transaction_signature: txSignature,
-          creator_wallet: currentWallet,
+          creator_wallet: walletAddress,
           name: formData.name || "Untitled Challenge",
           description: descriptionText,
           goal_type: goalType,
@@ -1425,27 +1370,41 @@ export default function CreatePool() {
                    </div>
                  </div>
                )}
-               {!walletAddress && (
+               {!isAuthenticated && (
                  <div className="mb-6 p-4 border border-amber-500/30 bg-amber-500/5 rounded-lg">
                    <div className="flex items-start gap-3 text-xs text-amber-400">
-                     <InfoIcon content="You need to connect a wallet (like Phantom) in the top-right corner before creating a challenge. This is like connecting your bank account - it's where your commitment money comes from." />
+                     <InfoIcon content="Sign in with your email or connect a wallet to create a challenge. A wallet will be created automatically for you when you sign in." />
                      <div>
-                       <p className="font-medium mb-1">Connect Your Wallet First</p>
+                       <p className="font-medium mb-1">Sign In First</p>
                        <p className="text-amber-300/80 leading-relaxed">
-                         Click "Connect Wallet" in the top-right corner to get started.
+                         Click "Sign In" in the top-right corner to get started. A wallet will be created automatically.
                        </p>
                      </div>
                    </div>
                  </div>
                )}
-               {walletAddress && !checkingGitHub && !isGitHubConnected && (
+               {isAuthenticated && !walletAddress && (
                  <div className="mb-6 p-4 border border-amber-500/30 bg-amber-500/5 rounded-lg">
                    <div className="flex items-start gap-3 text-xs text-amber-400">
-                     <InfoIcon content="You need to connect your GitHub account to create coding challenges. This ensures only real developers can create challenges and prevents abuse." />
+                     <InfoIcon content="Your wallet is being set up. Please wait a moment..." />
+                     <div>
+                       <p className="font-medium mb-1">Setting Up Your Wallet</p>
+                       <p className="text-amber-300/80 leading-relaxed">
+                         Your wallet is being created. Please wait a moment...
+                       </p>
+                     </div>
+                   </div>
+                 </div>
+               )}
+               {/* Only show GitHub warning if creating a GitHub challenge */}
+               {requiresGitHub && walletAddress && !isGitHubConnected && (
+                 <div className="mb-6 p-4 border border-amber-500/30 bg-amber-500/5 rounded-lg">
+                   <div className="flex items-start gap-3 text-xs text-amber-400">
+                     <InfoIcon content="You need to connect your GitHub account to create GitHub commit challenges. This allows our AI agent to verify commits. You can connect GitHub in the top-right corner - it works even if you signed up with email!" />
                      <div>
                        <p className="font-medium mb-1">Connect Your GitHub Account</p>
                        <p className="text-amber-300/80 leading-relaxed">
-                         Click "Connect GitHub" in the top-right corner next to your wallet address to connect your GitHub account.
+                         GitHub challenges require connecting your GitHub account so we can verify commits. Click "Connect GitHub" in the top-right corner to connect your account. This works even if you signed up with email or wallet!
                        </p>
                      </div>
                    </div>
@@ -1455,7 +1414,13 @@ export default function CreatePool() {
                  <ButtonPrimary 
                    className="w-full" 
                    onClick={handleDeploy}
-                   disabled={loading || !walletAddress || !isGitHubConnected || checkingGitHub}
+                   disabled={
+                     loading || 
+                     !isAuthenticated || 
+                     !walletAddress || 
+                     (requiresGitHub && !isGitHubConnected) || 
+                     !isReady
+                   }
                  >
                    {loading ? <span className="animate-pulse">Creating Challenge...</span> : "Create Challenge"}
                  </ButtonPrimary>

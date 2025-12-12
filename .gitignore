@@ -7,6 +7,11 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# npm lock files (optional - some teams prefer to commit these for consistency)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
 # Virtual environments
 venv/
 env/

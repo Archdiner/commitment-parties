@@ -298,9 +298,18 @@ async def github_oauth_callback(
             
         except Exception as db_err:
             logger.error(f"Error updating user record: {db_err}", exc_info=True)
+            error_str = str(db_err).lower()
+            # Check if it's a missing column error
+            if "column" in error_str and "does not exist" in error_str:
+                detail = (
+                    f"Database schema error: {str(db_err)}. "
+                    "Please run the migration: backend/sql/migration_add_github_username.sql"
+                )
+            else:
+                detail = f"Verification succeeded but failed to update database: {str(db_err)}"
             raise HTTPException(
                 status_code=500,
-                detail=f"Verification succeeded but failed to update database: {str(db_err)}"
+                detail=detail
             )
     
     except HTTPException:

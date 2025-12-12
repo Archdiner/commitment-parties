@@ -3,14 +3,14 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, Loader2, Users, Clock, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Loader2, Users, Clock, ShieldCheck, Coins } from 'lucide-react';
 import { InfoIcon } from '@/components/ui/Tooltip';
 import {
   getPool,
   PoolResponse,
   confirmPoolJoin,
 } from '@/lib/api';
-import { getPersistedWalletAddress } from '@/lib/wallet';
+import { useWallet } from '@/hooks/useWallet';
 import { getConnection, getTokenBalance } from '@/lib/solana';
 import { Transaction } from '@solana/web3.js';
 import { getTokenByMint } from '@/lib/tokens';
@@ -24,7 +24,6 @@ async function buildJoinPoolTransaction(
   wallet: string
 ): Promise<{ transaction: string; message: string }> {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-  // Backend expects pool_id as query parameter, not in body
   const response = await fetch(`${apiUrl}/solana/actions/join-pool?pool_id=${poolId}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -51,17 +50,27 @@ export default function PoolDetailPage() {
   const params = useParams();
   const router = useRouter();
   const [pool, setPool] = useState<PoolResponse | null>(null);
-  const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState(false);
+  const [joinStatus, setJoinStatus] = useState<string>('');
+
+  // Use the Privy-powered wallet hook with embedded wallet support
+  const { 
+    isAuthenticated, 
+    isReady,
+    walletAddress, 
+    walletType,
+    login,
+    signAndSendTransaction,
+    ensureBalance,
+  } = useWallet();
+  
+  const walletLoading = !isReady;
 
   const poolIdParam = params?.poolId;
   const poolId = typeof poolIdParam === 'string' ? parseInt(poolIdParam, 10) : NaN;
 
   useEffect(() => {
-    const address = getPersistedWalletAddress();
-    setWalletAddress(address);
-
     if (!isNaN(poolId)) {
       (async () => {
         try {
@@ -81,23 +90,45 @@ export default function PoolDetailPage() {
   const handleJoin = async () => {
     if (!pool || isNaN(poolId)) return;
 
-    const currentWallet = getPersistedWalletAddress();
-    if (!currentWallet) {
-      alert('Please connect your wallet first (top right).');
+    // If not authenticated, prompt login
+    if (!isAuthenticated) {
+      login();
+      return;
+    }
+    
+    // If no wallet address available yet, prompt login again
+    if (!walletAddress) {
+      login();
       return;
     }
 
     setJoining(true);
+    setJoinStatus('');
+    
     try {
-      // Pre-check: For HODL challenges, verify wallet has required token balance BEFORE building transaction
+      
+      // Calculate required balance (stake + buffer for tx fees)
+      const stakeAmountLamports = Math.floor(pool.stake_amount * 1e9);
+      const requiredBalance = stakeAmountLamports + 15_000_000; // +0.015 SOL for fees
+      
+      // Check and ensure balance (airdrop if needed on devnet)
+      setJoinStatus('Checking balance...');
+      const balanceResult = await ensureBalance(requiredBalance);
+      
+      if (!balanceResult.success) {
+        throw new Error(balanceResult.message || 'Could not ensure sufficient balance');
+      }
+
+      // Pre-check: For HODL challenges, verify wallet has required token balance
       if (pool.goal_type === 'hodl_token') {
+        setJoinStatus('Checking token balance...');
         const goalMetadata = (pool.goal_metadata || {}) as any;
         const tokenMint = goalMetadata.token_mint;
         const minBalance = goalMetadata.min_balance;
 
         if (tokenMint && minBalance !== undefined) {
           try {
-            const currentBalance = await getTokenBalance(currentWallet, tokenMint);
+            const currentBalance = await getTokenBalance(walletAddress, tokenMint);
             const minBalanceNum = typeof minBalance === 'number' ? minBalance : parseInt(minBalance, 10);
 
             if (currentBalance < minBalanceNum) {
@@ -106,90 +137,40 @@ export default function PoolDetailPage() {
               const minBalanceTokens = minBalanceNum / (10 ** tokenDecimals);
               const tokenSymbol = tokenInfo?.symbol || 'tokens';
               
-              alert(
-                `You must already hold at least ${minBalanceTokens.toLocaleString(undefined, { maximumFractionDigits: 9 })} ${tokenSymbol} in your wallet to join this HODL challenge. ` +
-                `Your current balance is insufficient.`
+              throw new Error(
+                `You need at least ${minBalanceTokens.toLocaleString(undefined, { maximumFractionDigits: 9 })} ${tokenSymbol} to join this HODL challenge.`
               );
-              setJoining(false);
-              return;
             }
           } catch (error: any) {
-            console.error('Error checking token balance:', error);
-            // Don't block the join if balance check fails - let backend handle it
-            // But warn the user
-            console.warn('Could not verify token balance. Proceeding, but join may be rejected if balance is insufficient.');
+            if (error.message?.includes('need at least')) {
+              throw error;
+            }
+            console.warn('Could not verify token balance:', error);
           }
         }
       }
 
-      // Build transaction via Solana Actions backend
-      const { transaction: txB64 } = await buildJoinPoolTransaction(poolId, currentWallet);
-
-      const connection = getConnection();
-
-      // Phantom provider
-      if (typeof window === 'undefined') {
-        throw new Error('Window is not available.');
-      }
-      const anyWindow = window as typeof window & {
-        phantom?: { solana?: any };
-        solana?: any;
-      };
-      const provider =
-        (anyWindow.phantom && anyWindow.phantom.solana) ||
-        anyWindow.solana ||
-        null;
-
-      if (!provider) {
-        alert('Please install Phantom Wallet to join this pool.');
-        setJoining(false);
-        return;
-      }
-
-      if (!provider.publicKey) {
-        await provider.connect();
-      }
-
-      const providerWallet = provider.publicKey?.toBase58?.();
-      if (providerWallet && providerWallet !== currentWallet) {
-        alert('Connected Phantom wallet does not match the selected wallet. Please reconnect.');
-        setJoining(false);
-        return;
-      }
-
+      // Build transaction via backend
+      setJoinStatus('Building transaction...');
+      const { transaction: txB64 } = await buildJoinPoolTransaction(poolId, walletAddress);
       const tx = Transaction.from(Buffer.from(txB64, 'base64'));
 
-      // Use provider's sendTransaction if available, otherwise sign+send manually
-      let signature: string;
-      if (typeof provider.sendTransaction === 'function') {
-        signature = await provider.sendTransaction(tx, connection, {
-          skipPreflight: false,
-          maxRetries: 3,
-          preflightCommitment: 'confirmed',
-        });
-      } else if (typeof provider.signTransaction === 'function') {
-        const signed = await provider.signTransaction(tx);
-        signature = await connection.sendRawTransaction(signed.serialize(), {
-          skipPreflight: false,
-          maxRetries: 3,
-        });
-      } else {
-        throw new Error('Connected wallet does not support sending transactions.');
-      }
-
-      await connection.confirmTransaction(signature, 'confirmed');
+      // Sign and send transaction using Privy wallet (embedded or external)
+      setJoinStatus('Please approve the transaction...');
+      const signature = await signAndSendTransaction(tx);
 
       // Confirm join with backend (updates participant count, DB)
+      setJoinStatus('Confirming...');
       await confirmPoolJoin(poolId, {
         transaction_signature: signature,
-        participant_wallet: currentWallet,
+        participant_wallet: walletAddress,
       });
 
+      // Success!
       router.push('/dashboard');
     } catch (err: any) {
       console.error('Failed to join pool:', err);
       
-      // Extract error message properly
       let errorMessage = 'Failed to join pool. Please try again.';
       
       if (err instanceof Error) {
@@ -198,29 +179,23 @@ export default function PoolDetailPage() {
         errorMessage = err;
       } else if (err?.message) {
         errorMessage = err.message;
-      } else if (err?.detail) {
-        errorMessage = err.detail;
-      } else if (err?.error) {
-        errorMessage = err.error;
-      } else if (typeof err === 'object' && err !== null) {
-        // Try to stringify the error object for debugging
-        errorMessage = JSON.stringify(err);
       }
       
-      // Check for wallet-specific error codes
-      if (err?.code === 4001) {
-        errorMessage = 'Transaction was rejected by user.';
-      } else if (err?.code === -32002) {
-        errorMessage = 'Transaction already pending. Please check your wallet.';
+      // Handle common error cases
+      if (errorMessage.includes('cancelled') || errorMessage.includes('rejected')) {
+        errorMessage = 'Transaction cancelled.';
+      } else if (errorMessage.includes('rate') || errorMessage.includes('429')) {
+        errorMessage = 'Rate limited. Please wait a minute and try again.';
       }
       
       alert(errorMessage);
     } finally {
       setJoining(false);
+      setJoinStatus('');
     }
   };
 
-  if (loading) {
+  if (loading || walletLoading) {
     return (
       <div className="min-h-screen bg-[#050505] text-white pt-32 px-6 flex items-center justify-center">
         <Loader2 className="w-6 h-6 animate-spin text-emerald-500" />
@@ -249,13 +224,28 @@ export default function PoolDetailPage() {
   const tokenMint: string | undefined = goalMetadata.token_mint;
   const tokenInfo = tokenMint ? getTokenByMint(tokenMint) : undefined;
   const hodlMinBalanceRaw: number | undefined = goalMetadata.min_balance;
-  // Use token decimals for proper conversion (USDC has 6, SOL has 9, etc.)
   const tokenDecimals = tokenInfo?.decimals ?? 9;
   const hodlMinBalanceTokens =
     typeof hodlMinBalanceRaw === 'number' ? hodlMinBalanceRaw / (10 ** tokenDecimals) : undefined;
   const dcaTradesPerDay: number | undefined = goalMetadata.min_trades_per_day;
   const minCommitsPerDay: number | undefined = goalMetadata.min_commits_per_day;
   const minTotalLinesPerDay: number | undefined = goalMetadata.min_total_lines_per_day;
+
+  // Determine button text based on state
+  const getButtonContent = () => {
+    if (joining) {
+      return (
+        <>
+          <Loader2 className="w-4 h-4 animate-spin" />
+          {joinStatus || 'Joining...'}
+        </>
+      );
+    }
+    if (!isAuthenticated) {
+      return 'Sign In to Join';
+    }
+    return 'Join Challenge';
+  };
 
   return (
     <div className="min-h-screen bg-[#050505] text-white pt-24 px-6 pb-20">
@@ -338,7 +328,6 @@ export default function PoolDetailPage() {
                     HODL Requirement
                   </div>
                   
-                  {/* Token Display with Icon */}
                   {tokenInfo && (
                     <div className="flex items-center gap-3 p-3 bg-white/5 rounded-lg border border-white/10">
                       {tokenInfo.iconUrl ? (
@@ -434,7 +423,6 @@ export default function PoolDetailPage() {
                     Daily DCA Requirement
                   </div>
                   
-                  {/* Token Display with Icon */}
                   {tokenInfo && (
                     <div className="flex items-center gap-3 p-3 bg-white/5 rounded-lg border border-white/10">
                       {tokenInfo.iconUrl ? (
@@ -563,35 +551,28 @@ export default function PoolDetailPage() {
                       disabled={joining || spotsRemaining <= 0 || pool.status !== 'pending'}
                       className="flex-1 h-11 border border-emerald-500 text-xs uppercase tracking-widest font-medium rounded-full flex items-center justify-center gap-2 bg-emerald-500/10 hover:bg-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      {joining ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          Joining...
-                        </>
-                      ) : (
-                        <>Join Challenge</>
-                      )}
+                      {getButtonContent()}
                     </button>
                     <InfoIcon content="Click to join this challenge. You'll be asked to approve a transaction in your wallet. This locks your stake until the challenge ends. Make sure you're ready to commit!" />
                   </div>
-                  <p className="text-[10px] text-gray-600 mt-3 text-center leading-relaxed">
-                    You'll be asked to approve a transaction in your wallet. This locks your stake until the challenge ends.
-                  </p>
-                </>
-              )}
-
-              {!walletAddress && (
-                <div className="mt-4 p-3 border border-amber-500/30 bg-amber-500/5 rounded-lg">
-                  <div className="flex items-start gap-2 text-[10px] text-amber-400">
-                    <InfoIcon content="Click 'Connect Wallet' in the top-right corner. If you don't have a wallet, install the free Phantom app (like a digital wallet for your commitment money)." />
-                    <div>
-                      <p className="font-medium mb-1">Need a Wallet?</p>
-                      <p className="text-amber-300/80 leading-relaxed">
-                        Connect your wallet in the top-right corner to join challenges.
-                      </p>
+                  
+                  {/* Helpful message for non-authenticated users */}
+                  {!isAuthenticated && (
+                    <p className="text-[10px] text-emerald-400/70 mt-3 text-center leading-relaxed">
+                      Sign in with email or connect your wallet to join.
+                    </p>
+                  )}
+                  
+                  {/* Info about test SOL for authenticated users */}
+                  {isAuthenticated && (
+                    <div className="mt-3 p-2 border border-emerald-500/20 bg-emerald-500/5 rounded-lg">
+                      <div className="flex items-center gap-2 text-[10px] text-emerald-300">
+                        <Coins className="w-3 h-3" />
+                        <span>Test SOL will be added automatically (devnet)</span>
+                      </div>
                     </div>
-                  </div>
-                </div>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -600,5 +581,3 @@ export default function PoolDetailPage() {
     </div>
   );
 }
-
-
