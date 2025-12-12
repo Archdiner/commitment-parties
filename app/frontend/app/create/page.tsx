@@ -444,7 +444,7 @@ export default function CreatePool() {
             const timeoutId = setTimeout(() => controller.abort(), timeout);
 
             try {
-              createResp = await fetch(`${apiUrl}/solana/actions/create-pool`, {
+              const response = await fetch(`${apiUrl}/solana/actions/create-pool`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(createBody),
@@ -453,18 +453,21 @@ export default function CreatePool() {
 
               clearTimeout(timeoutId);
               
+              // Assign to createResp for use outside the loop
+              createResp = response;
+              
               // Check if response is ok before breaking
-              if (createResp.ok) {
+              if (response.ok) {
                 break; // Success, exit retry loop
               } else {
                 // HTTP error - read error message but don't retry on 4xx
-                const errorData = await createResp.json().catch(() => ({ detail: `HTTP ${createResp.status}: ${createResp.statusText}` }));
-                if (createResp.status >= 400 && createResp.status < 500) {
+                const errorData = await response.json().catch(() => ({ detail: `HTTP ${response.status}: ${response.statusText}` }));
+                if (response.status >= 400 && response.status < 500) {
                   // Client error - don't retry
-                  throw new Error(errorData.detail || errorData.error || `HTTP ${createResp.status}: ${createResp.statusText}`);
+                  throw new Error(errorData.detail || errorData.error || `HTTP ${response.status}: ${response.statusText}`);
                 }
                 // Server error - retry
-                throw new Error(errorData.detail || errorData.error || `HTTP ${createResp.status}: ${createResp.statusText}`);
+                throw new Error(errorData.detail || errorData.error || `HTTP ${response.status}: ${response.statusText}`);
               }
             } catch (fetchErr: any) {
               clearTimeout(timeoutId);

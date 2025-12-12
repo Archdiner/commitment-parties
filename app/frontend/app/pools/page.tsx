@@ -41,6 +41,11 @@ export default function PoolsPage() {
   }, []);
 
   const filteredPools = pools.filter(p => {
+    // Skip invalid pools
+    if (!p || !p.pool_id || !p.goal_type) {
+      return false;
+    }
+    
     // First filter by status: default to only show recruiting (pending) challenges
     if (!showAllChallenges && p.status !== 'pending') {
       return false;
