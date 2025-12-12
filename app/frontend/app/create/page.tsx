@@ -696,10 +696,15 @@ export default function CreatePool() {
                     <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">Category</label>
                     <select 
                         value={formData.category}
-                        onChange={(e) => setFormData({
-                          ...formData,
-                          category: e.target.value,
-                        })}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          if (value === 'Crypto' || value === 'Lifestyle') {
+                            setFormData({
+                              ...formData,
+                              category: value,
+                            });
+                          }
+                        }}
                         className="w-full bg-transparent border-b border-white/20 py-3 px-4 text-sm text-white placeholder-gray-800 focus:outline-none focus:border-emerald-500 transition-colors"
                     >
                        <option>Crypto</option>
