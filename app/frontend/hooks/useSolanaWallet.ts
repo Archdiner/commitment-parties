@@ -112,8 +112,8 @@ export function useSolanaWallet(): SolanaWalletState {
     if (!user) return null;
     return {
       email: user.email?.address,
-      name: user.google?.name,
-      username: user.twitter?.username,
+      name: user.google?.name || undefined,
+      username: user.twitter?.username || undefined,
     };
   }, [user]);
   
