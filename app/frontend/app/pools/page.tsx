@@ -11,16 +11,28 @@ import { getTokenByMint } from '@/lib/tokens';
 export default function PoolsPage() {
   const [pools, setPools] = useState<PoolResponse[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState('ALL');
   const [showAllChallenges, setShowAllChallenges] = useState(false); // Default: only show recruiting
 
   useEffect(() => {
     async function loadPools() {
       try {
+        setError(null);
+        setLoading(true);
         const data = await getPools();
-        setPools(data);
-      } catch (err) {
-        console.error(err);
+        // Ensure data is an array
+        if (Array.isArray(data)) {
+          setPools(data);
+        } else {
+          console.error('Invalid pools data format:', data);
+          setError('Invalid data format received from server');
+          setPools([]);
+        }
+      } catch (err: any) {
+        console.error('Failed to load pools:', err);
+        setError(err?.message || 'Failed to load pools. Please try again.');
+        setPools([]);
       } finally {
         setLoading(false);
       }
@@ -90,6 +102,17 @@ export default function PoolsPage() {
             <div className="space-y-4">
                 {[1,2,3].map(i => <div key={i} className="h-32 bg-white/[0.02] border border-white/5 animate-pulse" />)}
             </div>
+        ) : error ? (
+            <div className="text-center py-20">
+              <p className="text-red-400 mb-4">Error loading pools</p>
+              <p className="text-sm text-gray-500 mb-8">{error}</p>
+              <button 
+                onClick={() => window.location.reload()} 
+                className="px-4 py-2 bg-emerald-500/20 border border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/30 transition-colors"
+              >
+                Retry
+              </button>
+            </div>
         ) : filteredPools.length === 0 ? (
             <div className="text-center py-20">
               <p className="text-gray-500 mb-4">No challenges found</p>
@@ -101,8 +124,13 @@ export default function PoolsPage() {
         ) : (
             <div className="grid grid-cols-1 gap-4">
             {filteredPools.map((pool) => {
-              const poolType = pool.goal_type.includes('Lifestyle') || pool.goal_type === 'lifestyle_habit' ? 'LIFESTYLE' : 'CRYPTO';
-              const status = pool.status === 'active' ? 'ACTIVE' : (pool.status === 'pending' ? 'RECRUITING' : pool.status.toUpperCase());
+              // Safely access pool properties with defaults
+              if (!pool || !pool.pool_id) {
+                return null; // Skip invalid pools
+              }
+              
+              const poolType = pool.goal_type?.includes('Lifestyle') || pool.goal_type === 'lifestyle_habit' ? 'LIFESTYLE' : 'CRYPTO';
+              const status = pool.status === 'active' ? 'ACTIVE' : (pool.status === 'pending' ? 'RECRUITING' : (pool.status || 'UNKNOWN').toUpperCase());
               const goalMetadata = (pool.goal_metadata || {}) as any;
               
               // Determine challenge type
@@ -213,17 +241,17 @@ export default function PoolsPage() {
                   <div className="grid grid-cols-3 gap-8 border-l border-white/5 pl-8 md:w-1/3">
                     <div>
                       <div className="text-[9px] uppercase tracking-wider text-gray-500 mb-1">Stake</div>
-                      <div className="font-mono text-sm mb-1">{pool.stake_amount} SOL</div>
+                      <div className="font-mono text-sm mb-1">{pool.stake_amount || 0} SOL</div>
                       <div className="text-[9px] text-gray-600">To join</div>
                     </div>
                     <div>
                       <div className="text-[9px] uppercase tracking-wider text-gray-500 mb-1">Duration</div>
-                      <div className="font-mono text-sm mb-1">{pool.duration_days} Days</div>
+                      <div className="font-mono text-sm mb-1">{pool.duration_days || 0} Days</div>
                       <div className="text-[9px] text-gray-600">Challenge length</div>
                     </div>
                     <div>
                       <div className="text-[9px] uppercase tracking-wider text-gray-500 mb-1">Capacity</div>
-                      <div className="font-mono text-sm mb-1">{pool.participant_count}/{pool.max_participants}</div>
+                      <div className="font-mono text-sm mb-1">{(pool.participant_count || 0)}/{(pool.max_participants || 0)}</div>
                       <div className="text-[9px] text-gray-600">Joined / Max</div>
                     </div>
                   </div>

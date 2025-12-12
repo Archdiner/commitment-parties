@@ -550,7 +550,10 @@ export default function CreatePool() {
           require_min_participants,
         });
         
-        // Success
+        // Small delay to ensure pool is available in database before redirecting
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Success - redirect to pools page
         router.push('/pools');
         
     } catch (error: any) {

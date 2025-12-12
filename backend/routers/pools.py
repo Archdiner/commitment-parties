@@ -153,7 +153,19 @@ async def list_pools(
         # Apply offset and limit
         results = results[offset:offset + limit]
         
-        return [PoolResponse(**result) for result in results]
+        # Ensure all required fields are present with defaults
+        def ensure_pool_fields(pool_dict: dict) -> dict:
+            """Ensure all required PoolResponse fields have values"""
+            pool_dict.setdefault("participant_count", pool_dict.get("participant_count", 0))
+            pool_dict.setdefault("total_staked", pool_dict.get("total_staked", 0.0))
+            pool_dict.setdefault("yield_earned", pool_dict.get("yield_earned", 0.0))
+            pool_dict.setdefault("distribution_mode", pool_dict.get("distribution_mode", "competitive"))
+            pool_dict.setdefault("split_percentage_winners", pool_dict.get("split_percentage_winners", 100))
+            pool_dict.setdefault("status", pool_dict.get("status", "pending"))
+            pool_dict.setdefault("is_public", pool_dict.get("is_public", True))
+            return pool_dict
+        
+        return [PoolResponse(**ensure_pool_fields(result)) for result in results]
     
     except Exception as e:
         logger.error(f"Error listing pools: {e}", exc_info=True)
@@ -453,6 +465,15 @@ async def confirm_pool_creation(pool_data: PoolConfirmRequest) -> PoolResponse:
         pool_id = created_pool.get("pool_id")
         
         logger.info(f"Confirmed pool creation {pool_id} with signature {pool_data.transaction_signature}")
+        
+        # Ensure all required fields are present
+        created_pool.setdefault("participant_count", 0)
+        created_pool.setdefault("total_staked", 0.0)
+        created_pool.setdefault("yield_earned", 0.0)
+        created_pool.setdefault("distribution_mode", "competitive")
+        created_pool.setdefault("split_percentage_winners", 100)
+        created_pool.setdefault("status", "pending")
+        created_pool.setdefault("is_public", True)
         
         # Trigger Twitter post for new pool (non-blocking background task)
         try:

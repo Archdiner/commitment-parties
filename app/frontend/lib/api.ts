@@ -424,7 +424,9 @@ export async function getPools(params?: {
   if (params?.wallet) queryParams.append('wallet', params.wallet);
   
   const query = queryParams.toString();
-  return fetchApi<PoolResponse[]>(`/api/pools${query ? `?${query}` : ''}`);
+  // Add trailing slash to match FastAPI route definition and avoid 307 redirects
+  const endpoint = query ? `/api/pools/?${query}` : '/api/pools/';
+  return fetchApi<PoolResponse[]>(endpoint);
 }
 
 /**
