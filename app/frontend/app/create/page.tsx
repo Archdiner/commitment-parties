@@ -410,7 +410,13 @@ export default function CreatePool() {
         }
 
         // --- Build transaction via backend Solana Actions (create-pool) ---
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+        // Use Render backend URL as default if env var is not set
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://commitment-backend.onrender.com';
+        
+        if (!apiUrl) {
+          throw new Error('API URL is not configured. Please set NEXT_PUBLIC_API_URL environment variable.');
+        }
+
         const createBody = {
           account: creatorPubkey,
           pool_id: randomId,
@@ -426,9 +432,10 @@ export default function CreatePool() {
         };
 
         // Use fetch with timeout and retry for Render cold starts
-        let createResp: Response;
+        let createResp: Response | undefined;
         let retries = 0;
         const maxRetries = 2;
+        let lastError: Error | null = null;
         
         while (retries <= maxRetries) {
           try {
@@ -461,6 +468,8 @@ export default function CreatePool() {
               }
             } catch (fetchErr: any) {
               clearTimeout(timeoutId);
+              lastError = fetchErr;
+              
               if (fetchErr.name === 'AbortError') {
                 if (retries < maxRetries) {
                   retries++;
@@ -478,18 +487,32 @@ export default function CreatePool() {
                   console.warn(`Network/CORS error (attempt ${retries}/${maxRetries + 1}), retrying...`, fetchErr.message);
                   await new Promise(resolve => setTimeout(resolve, 2000 * retries));
                   continue;
+                } else {
+                  // Final attempt failed - provide helpful error message
+                  const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'unknown';
+                  throw new Error(`Failed to connect to backend API. This could be a CORS issue or the backend is down. API URL: ${apiUrl}, Origin: ${currentOrigin}. Please check that NEXT_PUBLIC_API_URL is set correctly.`);
                 }
               }
               throw fetchErr; // Re-throw if not retryable
             }
           } catch (err: any) {
             // Outer catch for any other errors
-            throw err;
+            lastError = err;
+            if (retries >= maxRetries) {
+              throw err;
+            }
+            retries++;
+            await new Promise(resolve => setTimeout(resolve, 2000 * retries));
           }
         }
 
+        // Verify we have a response before parsing
+        if (!createResp) {
+          throw lastError || new Error('Failed to get response from backend after retries');
+        }
+
         // Response is already verified in the try block, safe to parse
-        const { transaction: txB64 } = await createResp!.json();
+        const { transaction: txB64 } = await createResp.json();
 
         const tx = Transaction.from(Buffer.from(txB64, 'base64'));
 
@@ -560,12 +583,13 @@ export default function CreatePool() {
         }
         
         // Show full error details in console
+        const currentApiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://commitment-backend.onrender.com';
         console.error('Full error details:', {
           error,
           status: error?.status,
           data: error?.data,
           message: error?.message,
-          apiUrl: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+          apiUrl: currentApiUrl
         });
         
         alert(`Error: ${errorMessage}\n\nStatus: ${error?.status || 'Unknown'}\n\nCheck the browser console for more details.`);

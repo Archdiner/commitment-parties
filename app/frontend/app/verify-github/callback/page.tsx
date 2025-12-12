@@ -37,7 +37,8 @@ function CallbackContent() {
 
       try {
         // Call backend callback endpoint
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+        // Use Render backend URL as default if env var is not set
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://commitment-backend.onrender.com';
         const response = await fetch(
           `${apiUrl}/api/users/github/oauth/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`
         );

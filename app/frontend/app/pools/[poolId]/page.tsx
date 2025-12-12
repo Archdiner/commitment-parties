@@ -24,7 +24,8 @@ async function buildJoinPoolTransaction(
   poolId: number,
   wallet: string
 ): Promise<{ transaction: string; message: string }> {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  // Use Render backend URL as default if env var is not set
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://commitment-backend.onrender.com';
   const response = await fetch(`${apiUrl}/solana/actions/join-pool?pool_id=${poolId}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

@@ -4,7 +4,18 @@
  * Includes Mock Mode for demo purposes
  */
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+// Determine API URL with production fallback
+// Note: We check window at runtime since it's not available at module load time
+function getApiUrl(): string {
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
+  // Default to Render backend
+  return 'https://commitment-backend.onrender.com';
+}
+
+// Get API URL at runtime (not at module load time)
+const API_URL = typeof window !== 'undefined' ? getApiUrl() : (process.env.NEXT_PUBLIC_API_URL || 'https://commitment-backend.onrender.com');
 
 // Enable mock mode via environment variable (NEXT_PUBLIC_USE_MOCK_DATA=true)
 const USE_MOCK_DATA = process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true'; 
@@ -201,7 +212,9 @@ async function fetchApi<T>(
      return getMockResponse<T>(endpoint, options);
   }
 
-  const url = `${API_URL}${endpoint}`;
+  // Get API URL at runtime to handle production fallback
+  const apiUrl = typeof window !== 'undefined' ? getApiUrl() : API_URL;
+  const url = `${apiUrl}${endpoint}`;
   
   const defaultHeaders: HeadersInit = {
     'Content-Type': 'application/json',
@@ -757,12 +770,12 @@ export async function verifyScreenTime(
   wallet: string,
   file: File
 ): Promise<{ verified: boolean; message: string; day?: number; screen_time_hours?: number; reason?: string }> {
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  const apiUrl = typeof window !== 'undefined' ? getApiUrl() : API_URL;
   const formData = new FormData();
   formData.append('file', file);
 
   const response = await fetch(
-    `${API_URL}/api/pools/${poolId}/participants/${wallet}/verify-screen-time`,
+    `${apiUrl}/api/pools/${poolId}/participants/${wallet}/verify-screen-time`,
     {
       method: 'POST',
       body: formData,
