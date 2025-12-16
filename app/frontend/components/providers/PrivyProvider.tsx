@@ -54,12 +54,6 @@ export function PrivyProvider({ children }: Props) {
             // Explicitly DO NOT configure 'solana:mainnet' - this prevents the error
           },
         },
-        
-        // Set default chain to devnet (works for both EVM and Solana)
-        defaultChain: 'solana:devnet',
-        
-        // Restrict supported chains to only devnet (works for both EVM and Solana)
-        supportedChains: ['solana:devnet'],
       }}
     >
       {children}
