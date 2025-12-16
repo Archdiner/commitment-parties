@@ -45,7 +45,7 @@ export default function CreatePool() {
   const [formData, setFormData] = useState({
     name: '',
     descriptionText: '',
-    category: 'Crypto' as 'Crypto' | 'Lifestyle', // "Crypto" | "Lifestyle"
+    category: 'Crypto', // "Crypto" | "Social"
     cryptoMode: 'HODL' as 'HODL' | 'DCA', // "HODL" | "DCA"
     socialMode: 'GitHub' as 'GitHub' | 'Screen-time', // "GitHub" | "Screen-time"
     duration: '14 Days',
@@ -120,7 +120,7 @@ export default function CreatePool() {
   const potentialProfit = calculatePotentialProfit();
 
   // Determine if GitHub is required for current challenge type
-  const requiresGitHub = formData.category === 'Lifestyle' && formData.socialMode === 'GitHub';
+  const requiresGitHub = formData.category === 'Social' && formData.socialMode === 'GitHub';
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -186,7 +186,7 @@ export default function CreatePool() {
           errors.dcaTradesPerDay = true;
         }
       }
-    } else if (formData.category === 'Lifestyle') {
+    } else if (formData.category === 'Social') {
       if (formData.socialMode === 'GitHub') {
         const commitsPerDay = parseInt(formData.githubCommitsPerDay || '0', 10);
         if (isNaN(commitsPerDay) || commitsPerDay < 1 || commitsPerDay > 50) {
@@ -429,10 +429,9 @@ export default function CreatePool() {
         };
 
         // Use fetch with timeout and retry for Render cold starts
-        let createResp: Response | undefined;
+        let createResp: Response;
         let retries = 0;
         const maxRetries = 2;
-        let lastError: Error | null = null;
         
         while (retries <= maxRetries) {
           try {
@@ -440,87 +439,44 @@ export default function CreatePool() {
             const timeout = retries === 0 ? 30000 : 45000; // 30s first, 45s retries
             const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-            try {
-              // Ensure apiUrl is valid
-              if (!apiUrl || typeof apiUrl !== 'string') {
-                throw new Error(`Invalid API URL: ${apiUrl}`);
-              }
-              
-              const fetchUrl = `${apiUrl}/solana/actions/create-pool`;
-              console.log('Fetching from:', fetchUrl);
-              
-              const response = await fetch(fetchUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(createBody),
-                signal: controller.signal,
-              });
+            createResp = await fetch(`${apiUrl}/solana/actions/create-pool`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(createBody),
+              signal: controller.signal,
+            });
 
-              clearTimeout(timeoutId);
-              
-              // Assign to createResp for use outside the loop
-              createResp = response;
-              
-              // Check if response is ok before breaking
-              if (response.ok) {
-                break; // Success, exit retry loop
-              } else {
-                // HTTP error - read error message but don't retry on 4xx
-                const errorData = await response.json().catch(() => ({ detail: `HTTP ${response.status}: ${response.statusText}` }));
-                if (response.status >= 400 && response.status < 500) {
-                  // Client error - don't retry
-                  throw new Error(errorData.detail || errorData.error || `HTTP ${response.status}: ${response.statusText}`);
-                }
-                // Server error - retry
-                throw new Error(errorData.detail || errorData.error || `HTTP ${response.status}: ${response.statusText}`);
-              }
-            } catch (fetchErr: any) {
-              clearTimeout(timeoutId);
-              lastError = fetchErr;
-              
-              if (fetchErr.name === 'AbortError') {
-                if (retries < maxRetries) {
-                  retries++;
-                  console.warn(`Request timeout (attempt ${retries}/${maxRetries + 1}), retrying... Backend may be waking up.`);
-                  await new Promise(resolve => setTimeout(resolve, 2000 * retries)); // Exponential backoff
-                  continue;
-                } else {
-                  throw new Error('Backend is taking too long to respond. It may be waking up from sleep. Please try again in a moment.');
-                }
-              }
-              // Check for CORS/network errors
-              if (fetchErr.message?.includes('Failed to fetch') || fetchErr.message?.includes('NetworkError') || fetchErr.message?.includes('CORS')) {
-                if (retries < maxRetries) {
-                  retries++;
-                  console.warn(`Network/CORS error (attempt ${retries}/${maxRetries + 1}), retrying...`, fetchErr.message);
-                  await new Promise(resolve => setTimeout(resolve, 2000 * retries));
-                  continue;
-                } else {
-                  // Final attempt failed - provide helpful error message
-                  const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'unknown';
-                  throw new Error(`Failed to connect to backend API. This could be a CORS issue or the backend is down. API URL: ${apiUrl}, Origin: ${currentOrigin}. Please check that NEXT_PUBLIC_API_URL is set correctly.`);
-                }
-              }
-              throw fetchErr; // Re-throw if not retryable
-            }
+            clearTimeout(timeoutId);
+            break; // Success, exit retry loop
           } catch (err: any) {
-            // Outer catch for any other errors
-            lastError = err;
-            if (retries >= maxRetries) {
-              throw err;
+            if (err.name === 'AbortError') {
+              if (retries < maxRetries) {
+                retries++;
+                console.warn(`Request timeout (attempt ${retries}/${maxRetries + 1}), retrying... Backend may be waking up.`);
+                await new Promise(resolve => setTimeout(resolve, 2000 * retries)); // Exponential backoff
+                continue;
+              } else {
+                throw new Error('Backend is taking too long to respond. It may be waking up from sleep. Please try again in a moment.');
+              }
             }
-            retries++;
-            await new Promise(resolve => setTimeout(resolve, 2000 * retries));
+            // For other errors, check if it's a network error and retry
+            if (retries < maxRetries && (err.message?.includes('fetch') || err.message?.includes('network'))) {
+              retries++;
+              console.warn(`Network error (attempt ${retries}/${maxRetries + 1}), retrying...`, err.message);
+              await new Promise(resolve => setTimeout(resolve, 2000 * retries));
+              continue;
+            }
+            throw err; // Re-throw if not retryable
           }
         }
 
-        // Verify we have a response before parsing
-        if (!createResp) {
-          throw lastError || new Error('Failed to get response from backend after retries');
+        if (!createResp!.ok) {
+          const errData = await createResp!.json().catch(() => ({}));
+          const errorMsg = errData.detail || errData.error || `HTTP ${createResp!.status}: ${createResp!.statusText}`;
+          throw new Error(errorMsg || 'Failed to build create-pool transaction');
         }
 
-        // Response is already verified in the try block, safe to parse
-        const { transaction: txB64 } = await createResp.json();
+        const { transaction: txB64 } = await createResp!.json();
 
         const tx = Transaction.from(Buffer.from(txB64, 'base64'));
 
@@ -558,61 +514,47 @@ export default function CreatePool() {
           require_min_participants,
         });
         
-        // Small delay to ensure pool is available in database before redirecting
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // Success - redirect to pools page
+        // Success
         router.push('/pools');
         
     } catch (error: any) {
-        try {
-          console.error('Pool creation error:', error);
-          let errorMessage = "Failed to create pool.";
-          
-          // Check for CORS errors specifically
-          const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'unknown';
-          if (error?.message?.includes('CORS') || error?.message?.includes('cors') || 
-              error?.message?.includes('blocked') || error?.message?.includes('Failed to fetch')) {
-            errorMessage = `CORS Error: Backend is not configured to allow requests from this domain (${currentOrigin}). Please update CORS_ORIGINS in Render to include: ${currentOrigin}. Make sure the backend has restarted after updating the environment variable.`;
-          }
-          // Check wallet-specific error codes first (before generic message check)
-          else if (error?.code === 4001) {
-            errorMessage = "Transaction was rejected by user.";
-          } else if (error?.code === -32002) {
-            errorMessage = "Transaction already pending. Please check your wallet.";
-          }
-          // Extract detailed error information
-          else if (error?.data?.detail) {
-            errorMessage = error.data.detail;
-          } else if (error?.data?.error) {
-            errorMessage = error.data.error;
-          } else if (error?.detail) {
-            errorMessage = error.detail;
-          } else if (error?.name === 'ApiError') {
-            errorMessage = error.message || "Backend API error. Make sure the backend server is running.";
-          } else if (error?.message) {
-            errorMessage = error.message;
-          }
-          
-          // Show full error details in console
-          const currentApiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://commitment-backend.onrender.com';
-          console.error('Full error details:', {
-            error,
-            status: error?.status,
-            data: error?.data,
-            message: error?.message,
-            apiUrl: currentApiUrl,
-            stack: error?.stack,
-            name: error?.name
-          });
-          
-          alert(`Error: ${errorMessage}\n\nStatus: ${error?.status || 'Unknown'}\n\nCheck the browser console for more details.`);
-        } catch (alertError: any) {
-          // If even the error handling fails, log to console and show a basic message
-          console.error('Error in error handler:', alertError);
-          console.error('Original error:', error);
-          alert('An unexpected error occurred. Please check the browser console for details.');
+        console.error('Pool creation error:', error);
+        let errorMessage = "Failed to create pool.";
+        
+        // Check for CORS errors specifically
+        if (error?.message?.includes('CORS') || error?.message?.includes('cors') || 
+            error?.message?.includes('blocked') || error?.message?.includes('Failed to fetch')) {
+          errorMessage = "CORS Error: Backend is not configured to allow requests from this domain. Please update CORS_ORIGINS in Render to include: https://commitment-parties.vercel.app";
         }
+        // Check wallet-specific error codes first (before generic message check)
+        else if (error?.code === 4001) {
+          errorMessage = "Transaction was rejected by user.";
+        } else if (error?.code === -32002) {
+          errorMessage = "Transaction already pending. Please check your wallet.";
+        }
+        // Extract detailed error information
+        else if (error?.data?.detail) {
+          errorMessage = error.data.detail;
+        } else if (error?.data?.error) {
+          errorMessage = error.data.error;
+        } else if (error?.detail) {
+          errorMessage = error.detail;
+        } else if (error?.name === 'ApiError') {
+          errorMessage = error.message || "Backend API error. Make sure the backend server is running.";
+        } else if (error?.message) {
+          errorMessage = error.message;
+        }
+        
+        // Show full error details in console
+        console.error('Full error details:', {
+          error,
+          status: error?.status,
+          data: error?.data,
+          message: error?.message,
+          apiUrl: process.env.NEXT_PUBLIC_API_URL || 'https://commitment-backend.onrender.com'
+        });
+        
+        alert(`Error: ${errorMessage}\n\nStatus: ${error?.status || 'Unknown'}\n\nCheck the browser console for more details.`);
     } finally {
         setLoading(false);
     }
@@ -696,19 +638,14 @@ export default function CreatePool() {
                     <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">Category</label>
                     <select 
                         value={formData.category}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          if (value === 'Crypto' || value === 'Lifestyle') {
-                            setFormData({
-                              ...formData,
-                              category: value,
-                            });
-                          }
-                        }}
+                        onChange={(e) => setFormData({
+                          ...formData,
+                          category: e.target.value as 'Crypto' | 'Social',
+                        })}
                         className="w-full bg-transparent border-b border-white/20 py-3 px-4 text-sm text-white placeholder-gray-800 focus:outline-none focus:border-emerald-500 transition-colors"
                     >
                        <option>Crypto</option>
-                       <option>Lifestyle</option>
+                       <option>Social</option>
                     </select>
                   </div>
                   <div>
