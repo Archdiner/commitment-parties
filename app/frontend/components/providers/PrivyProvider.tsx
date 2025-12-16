@@ -43,19 +43,19 @@ export function PrivyProvider({ children }: Props) {
         },
         
         // Configure Solana RPC endpoints
-        // Privy internally defaults to mainnet, so we need to configure it
-        // BUT we point mainnet to devnet endpoints so everything uses devnet
+        // Privy internally defaults to mainnet during initialization, so we need to configure it
+        // Your app's actual network is controlled by getConnection() and NEXT_PUBLIC_SOLANA_RPC (devnet)
         solana: {
           rpcs: {
             'solana:devnet': {
-              rpc: createSolanaRpc(solanaRpcUrl),
-              rpcSubscriptions: createSolanaRpcSubscriptions(solanaWssUrl),
+              rpc: createSolanaRpc('https://api.devnet.solana.com'),
+              rpcSubscriptions: createSolanaRpcSubscriptions('wss://api.devnet.solana.com'),
             },
-            // Privy defaults to mainnet internally, so configure it but point to devnet
-            // This prevents "No RPC configuration found for chain solana:mainnet" error
+            // Privy needs mainnet configured to prevent errors, but your app still uses devnet
+            // because getConnection() uses NEXT_PUBLIC_SOLANA_RPC which is devnet
             'solana:mainnet': {
-              rpc: createSolanaRpc(solanaRpcUrl), // Point to devnet RPC
-              rpcSubscriptions: createSolanaRpcSubscriptions(solanaWssUrl), // Point to devnet WSS
+              rpc: createSolanaRpc('https://api.mainnet-beta.solana.com'),
+              rpcSubscriptions: createSolanaRpcSubscriptions('wss://api.mainnet-beta.solana.com'),
             },
           },
         },
