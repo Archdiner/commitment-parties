@@ -37,23 +37,29 @@ export function PrivyProvider({ children }: Props) {
         
         // Embedded wallet config for SOLANA - auto-create for all users
         embeddedWallets: {
-          // This creates Solana embedded wallets
           solana: {
             createOnLogin: 'all-users',
           },
         },
         
         // Configure Solana RPC endpoints - ONLY devnet (required for embedded wallets)
-        // Only configuring devnet ensures Privy won't try to use mainnet
+        // By only configuring devnet in rpcs, Privy will only use devnet
+        // If mainnet is not configured here, Privy cannot access it
         solana: {
           rpcs: {
-            // Only configure devnet, NOT mainnet
             'solana:devnet': {
               rpc: createSolanaRpc(solanaRpcUrl),
               rpcSubscriptions: createSolanaRpcSubscriptions(solanaWssUrl),
             },
+            // Explicitly DO NOT configure 'solana:mainnet' - this prevents the error
           },
         },
+        
+        // Set default chain to devnet (works for both EVM and Solana)
+        defaultChain: 'solana:devnet',
+        
+        // Restrict supported chains to only devnet (works for both EVM and Solana)
+        supportedChains: ['solana:devnet'],
       }}
     >
       {children}
