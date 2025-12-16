@@ -42,16 +42,21 @@ export function PrivyProvider({ children }: Props) {
           },
         },
         
-        // Configure Solana RPC endpoints - ONLY devnet (required for embedded wallets)
-        // By only configuring devnet in rpcs, Privy will only use devnet
-        // If mainnet is not configured here, Privy cannot access it
+        // Configure Solana RPC endpoints
+        // Privy internally defaults to mainnet, so we need to configure it
+        // BUT we point mainnet to devnet endpoints so everything uses devnet
         solana: {
           rpcs: {
             'solana:devnet': {
               rpc: createSolanaRpc(solanaRpcUrl),
               rpcSubscriptions: createSolanaRpcSubscriptions(solanaWssUrl),
             },
-            // Explicitly DO NOT configure 'solana:mainnet' - this prevents the error
+            // Privy defaults to mainnet internally, so configure it but point to devnet
+            // This prevents "No RPC configuration found for chain solana:mainnet" error
+            'solana:mainnet': {
+              rpc: createSolanaRpc(solanaRpcUrl), // Point to devnet RPC
+              rpcSubscriptions: createSolanaRpcSubscriptions(solanaWssUrl), // Point to devnet WSS
+            },
           },
         },
       }}
