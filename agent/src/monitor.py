@@ -1075,8 +1075,6 @@ Respond with only "yes" or "no"."""
                     legacy_count = sum(1 for p in dca_pools if p.get("goal_type", "").lower() in ("dailydca", "dca_trade"))
                     lifestyle_dca_count = len(dca_pools) - legacy_count
                     logger.info(f"Found {len(dca_pools)} active DCA pools ({legacy_count} legacy format, {lifestyle_dca_count} lifestyle_habit format)")
-                else:
-                    logger.info("Found %d active DCA pools", len(dca_pools))
 
                     for pool in dca_pools:
                         try:
