@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useMemo, useState, useEffect } from 'react';
-import { usePrivy } from '@privy-io/react-auth';
+import { usePrivy, useConnectWallet } from '@privy-io/react-auth';
 import { useWallets, useSignTransaction } from '@privy-io/react-auth/solana';
 import { Transaction, PublicKey } from '@solana/web3.js';
 import { getConnection, requestAirdrop } from '@/lib/solana';
@@ -37,6 +37,7 @@ export interface SolanaWalletState {
   // Actions
   login: () => void;
   logout: () => Promise<void>;
+  connectWallet: () => Promise<void>;
   
   // Solana operations
   getBalance: () => Promise<number>;
@@ -46,6 +47,7 @@ export interface SolanaWalletState {
 
 export function useSolanaWallet(): SolanaWalletState {
   const { ready, authenticated, user, login: privyLogin, logout: privyLogout } = usePrivy();
+  const { connectWallet: privyConnectWallet } = useConnectWallet();
   const { wallets, ready: walletsReady } = useWallets();
   const { signTransaction } = useSignTransaction();
   
@@ -292,6 +294,16 @@ export function useSolanaWallet(): SolanaWalletState {
     throw new Error('No signing method available');
   }, [activeWallet, signTransaction]);
   
+  // Connect external wallet (for users who signed up with email/Google and want to use existing wallet)
+  const connectWallet = useCallback(async (): Promise<void> => {
+    try {
+      await privyConnectWallet({ walletChainType: 'solana-only' });
+    } catch (error: any) {
+      console.error('Failed to connect wallet:', error);
+      throw new Error(error?.message || 'Failed to connect wallet');
+    }
+  }, [privyConnectWallet]);
+  
   return {
     isAuthenticated: authenticated,
     isReady: ready && walletsReady,
@@ -300,6 +312,7 @@ export function useSolanaWallet(): SolanaWalletState {
     walletType: activeWallet?.type || null,
     login: privyLogin,
     logout: privyLogout,
+    connectWallet,
     getBalance,
     ensureBalance,
     signAndSendTransaction,

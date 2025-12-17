@@ -3,9 +3,10 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Plus, Github, Wallet, LogOut, Loader2, User } from 'lucide-react';
+import { Plus, Github, Wallet, LogOut, Loader2, User, Link2 } from 'lucide-react';
 import { useWallet } from '@/hooks/useWallet';
 import { usePrivy } from '@privy-io/react-auth';
+import { useWallets } from '@privy-io/react-auth/solana';
 
 export const Navbar = () => {
   const pathname = usePathname();
@@ -16,12 +17,23 @@ export const Navbar = () => {
     walletType,
     user,
     login, 
-    logout 
+    logout,
+    connectWallet
   } = useWallet();
   
   const isLoading = !isReady;
 
   const { linkGithub, user: privyUser } = usePrivy();
+  const { wallets, ready: walletsReady } = useWallets();
+  
+  // Check if user has external wallets connected (not embedded)
+  // Only check when wallets are ready to avoid false positives during loading
+  const hasExternalWallet = walletsReady && wallets?.some((w: any) => w.walletClientType && w.walletClientType !== 'privy') || false;
+  const hasEmbeddedWallet = walletsReady && wallets?.some((w: any) => w.walletClientType === 'privy') || false;
+  
+  // Show connect wallet button if user has embedded wallet but no external wallet
+  // Also check walletType as a fallback to ensure we're showing the button at the right time
+  const showConnectWalletButton = isAuthenticated && isReady && hasEmbeddedWallet && !hasExternalWallet && (walletType === 'embedded' || (!walletType && hasEmbeddedWallet));
   
   // Check if GitHub is linked via Privy
   const githubAccount = privyUser?.linkedAccounts?.find(
@@ -63,6 +75,21 @@ export const Navbar = () => {
       } else {
         alert(`Failed to connect GitHub: ${errorMessage}`);
       }
+    }
+  };
+
+  const handleConnectWallet = async () => {
+    if (!isAuthenticated) {
+      login();
+      return;
+    }
+
+    try {
+      await connectWallet();
+    } catch (error: any) {
+      console.error('Failed to connect wallet:', error);
+      const errorMessage = error?.message || error?.toString() || 'Unknown error';
+      alert(`Failed to connect wallet: ${errorMessage}`);
     }
   };
 
@@ -115,6 +142,18 @@ export const Navbar = () => {
           <Link href="/create" className="hidden md:flex items-center gap-2 text-sm uppercase tracking-widest text-emerald-500 hover:text-white transition-colors">
               <Plus className="w-4 h-4" /> Create
           </Link>
+          )}
+          
+          {/* Connect External Wallet - show when user has embedded wallet but no external wallet */}
+          {showConnectWalletButton && (
+            <button 
+              onClick={handleConnectWallet}
+              className="text-sm border border-emerald-500/50 bg-emerald-500/10 px-3 py-2 uppercase tracking-wide text-emerald-400 hover:bg-emerald-500 hover:text-black transition-all flex items-center gap-2"
+              title="Connect your existing Solana wallet (Phantom, Solflare, etc.)"
+            >
+              <Link2 className="w-4 h-4" />
+              <span className="hidden sm:inline">Connect Wallet</span>
+            </button>
           )}
           
           {/* GitHub Connection - only show when authenticated */}
