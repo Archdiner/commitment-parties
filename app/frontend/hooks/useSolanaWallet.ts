@@ -168,30 +168,34 @@ export function useSolanaWallet(): SolanaWalletState {
     }
     
     const connection = getConnection();
-    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
-    tx.recentBlockhash = blockhash;
-    tx.feePayer = new PublicKey(activeWallet.address);
     
     // Use Privy embedded wallet signing
     if (activeWallet.type === 'embedded' && activeWallet.wallet) {
       try {
+        // Don't modify the transaction - it comes pre-built from backend
+        // Just serialize it and sign
         const serializedMessage = tx.serializeMessage();
         
         const { signedTransaction } = await signTransaction({
           transaction: serializedMessage,
           wallet: activeWallet.wallet,
+          chain: 'solana:devnet', // Explicitly specify devnet chain
         });
+        
+        // Get blockhash from the transaction (already set by backend)
+        const blockhash = tx.recentBlockhash;
+        if (!blockhash) {
+          throw new Error('Transaction missing blockhash');
+        }
         
         const signature = await connection.sendRawTransaction(signedTransaction, {
           skipPreflight: false,
           maxRetries: 3,
         });
         
-        await connection.confirmTransaction({
-          signature,
-          blockhash,
-          lastValidBlockHeight,
-        }, 'confirmed');
+        // Get confirmation commitment level
+        const commitment = 'confirmed';
+        await connection.confirmTransaction(signature, commitment);
         
         return signature;
       } catch (error: any) {
@@ -223,11 +227,8 @@ export function useSolanaWallet(): SolanaWalletState {
           throw new Error('Wallet does not support transactions');
         }
         
-        await connection.confirmTransaction({
-          signature,
-          blockhash,
-          lastValidBlockHeight,
-        }, 'confirmed');
+        // Confirm transaction
+        await connection.confirmTransaction(signature, 'confirmed');
         
         return signature;
       } catch (error: any) {
