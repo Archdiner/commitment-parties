@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useState, useEffect } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { useWallets, useSignTransaction } from '@privy-io/react-auth/solana';
-import { Transaction, PublicKey } from '@solana/web3.js';
+import { Transaction, PublicKey, VersionedTransaction, TransactionMessage } from '@solana/web3.js';
 import { getConnection, requestAirdrop } from '@/lib/solana';
 
 export interface SolanaWalletState {
@@ -172,22 +172,39 @@ export function useSolanaWallet(): SolanaWalletState {
     // Use Privy embedded wallet signing
     if (activeWallet.type === 'embedded' && activeWallet.wallet) {
       try {
-        // Don't modify the transaction - it comes pre-built from backend
-        // Just serialize it and sign
-        const serializedMessage = tx.serializeMessage();
+        // Privy's signTransaction works best with VersionedTransaction
+        // Convert the legacy Transaction from backend to VersionedTransaction
+        const walletPubkey = new PublicKey(activeWallet.address);
+        
+        // Ensure feePayer matches (should already be set by backend)
+        if (!tx.feePayer) {
+          tx.feePayer = walletPubkey;
+        }
+        
+        // Ensure blockhash is set (should already be set by backend)
+        if (!tx.recentBlockhash) {
+          const { blockhash } = await connection.getLatestBlockhash('confirmed');
+          tx.recentBlockhash = blockhash;
+        }
+        
+        // Convert legacy Transaction to VersionedTransaction format
+        // Privy's signTransaction expects the serialized message bytes from a VersionedTransaction
+        const messageV0 = new TransactionMessage({
+          payerKey: tx.feePayer,
+          recentBlockhash: tx.recentBlockhash!,
+          instructions: tx.instructions,
+        }).compileToV0Message();
+        
+        // Serialize the VersionedTransaction message to get the bytes Privy expects
+        const messageBytes = messageV0.serialize();
         
         const { signedTransaction } = await signTransaction({
-          transaction: serializedMessage,
+          transaction: messageBytes,
           wallet: activeWallet.wallet,
           chain: 'solana:devnet', // Explicitly specify devnet chain
         });
         
-        // Get blockhash from the transaction (already set by backend)
-        const blockhash = tx.recentBlockhash;
-        if (!blockhash) {
-          throw new Error('Transaction missing blockhash');
-        }
-        
+        // signedTransaction is a Uint8Array ready to send
         const signature = await connection.sendRawTransaction(signedTransaction, {
           skipPreflight: false,
           maxRetries: 3,
