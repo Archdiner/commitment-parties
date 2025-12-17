@@ -1,6 +1,7 @@
 'use client';
 
 import { PrivyProvider as PrivyAuthProvider } from '@privy-io/react-auth';
+import { toSolanaWalletConnectors } from '@privy-io/react-auth/solana';
 import { createSolanaRpc, createSolanaRpcSubscriptions } from '@solana/kit';
 import { ReactNode } from 'react';
 
@@ -33,6 +34,14 @@ export function PrivyProvider({ children }: Props) {
           theme: 'dark',
           accentColor: '#10b981', // emerald-500
           showWalletLoginFirst: false, // Show email/social first for non-crypto users
+          walletChainType: 'solana-only', // Only show Solana wallets (works on devnet)
+        },
+        
+        // External wallet config for SOLANA - allows users to connect existing wallets
+        externalWallets: {
+          solana: {
+            connectors: toSolanaWalletConnectors(), // Detects Phantom, Solflare, Backpack, etc.
+          },
         },
         
         // Embedded wallet config for SOLANA - auto-create for all users

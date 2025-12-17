@@ -86,27 +86,37 @@ export function useSolanaWallet(): SolanaWalletState {
   
   // Get the best wallet to use
   const activeWallet = useMemo(() => {
-    // First check for Privy embedded wallets
     if (walletsReady && wallets && wallets.length > 0) {
-      // Find the Privy embedded wallet (has walletClientType: 'privy')
-      const privyWallet = wallets.find((w: any) => w.walletClientType === 'privy');
-      if (privyWallet) {
+      // Prioritize external wallets connected through Privy (Phantom, Solflare, etc.)
+      // External wallets have walletClientType that is NOT 'privy'
+      const externalPrivyWallet = wallets.find((w: any) => w.walletClientType && w.walletClientType !== 'privy');
+      if (externalPrivyWallet) {
         return {
-          address: privyWallet.address,
-          type: 'embedded' as const,
-          wallet: privyWallet,
+          address: externalPrivyWallet.address,
+          type: 'external' as const,
+          wallet: externalPrivyWallet, // Privy-managed external wallet, can use signTransaction
         };
       }
       
-      // Otherwise use first available Privy wallet
+      // Fall back to Privy embedded wallet (has walletClientType: 'privy')
+      const privyEmbeddedWallet = wallets.find((w: any) => w.walletClientType === 'privy');
+      if (privyEmbeddedWallet) {
+        return {
+          address: privyEmbeddedWallet.address,
+          type: 'embedded' as const,
+          wallet: privyEmbeddedWallet,
+        };
+      }
+      
+      // Use first available Privy wallet as fallback
       return {
         address: wallets[0].address,
-        type: 'embedded' as const,
+        type: wallets[0].walletClientType === 'privy' ? 'embedded' as const : 'external' as const,
         wallet: wallets[0],
       };
     }
     
-    // Fall back to external Phantom wallet
+    // Fall back to external Phantom wallet detected directly (not through Privy)
     if (externalWallet) {
       return {
         address: externalWallet.address,
@@ -181,8 +191,8 @@ export function useSolanaWallet(): SolanaWalletState {
     
     const connection = getConnection();
     
-    // Use Privy embedded wallet signing
-    if (activeWallet.type === 'embedded' && activeWallet.wallet) {
+    // Use Privy wallet signing (works for both embedded and external wallets connected through Privy)
+    if (activeWallet.wallet && (activeWallet.type === 'embedded' || activeWallet.type === 'external')) {
       try {
         // The backend sends a fully-formed Transaction with:
         // - Instructions (with all account keys, program ID, instruction data)
@@ -223,7 +233,7 @@ export function useSolanaWallet(): SolanaWalletState {
         const { signedTransaction } = await signTransaction({
           transaction: transaction,
           wallet: activeWallet.wallet,
-          chain: 'solana:devnet', // Explicitly specify devnet chain
+          chain: 'solana:devnet', // Explicitly specify devnet chain (works for both embedded and external Privy wallets)
         });
         
         // signedTransaction is a Uint8Array ready to send
@@ -243,8 +253,9 @@ export function useSolanaWallet(): SolanaWalletState {
       }
     }
     
-    // Use external wallet (Phantom)
-    if (activeWallet.type === 'external' && (activeWallet as any).provider) {
+    // Use external wallet detected directly (Phantom not connected through Privy)
+    // Note: External wallets connected through Privy are handled above
+    if (activeWallet.type === 'external' && (activeWallet as any).provider && !activeWallet.wallet) {
       const provider = (activeWallet as any).provider;
       
       try {
