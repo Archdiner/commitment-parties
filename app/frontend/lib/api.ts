@@ -4,7 +4,25 @@
  * Includes Mock Mode for demo purposes
  */
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://commitment-backend.onrender.com';
+// Ensure API URL always uses HTTPS (fixes mixed content errors)
+const getApiUrl = () => {
+  const url = process.env.NEXT_PUBLIC_API_URL || 'https://commitment-backend.onrender.com';
+  // Force HTTPS if URL starts with http:// (fixes mixed content errors)
+  if (url.startsWith('http://')) {
+    return url.replace('http://', 'https://');
+  }
+  return url;
+};
+
+const API_URL = getApiUrl();
+
+// Export utility function for use in other files
+export function ensureHttpsUrl(url: string): string {
+  if (url.startsWith('http://')) {
+    return url.replace('http://', 'https://');
+  }
+  return url;
+}
 
 // Enable mock mode via environment variable (NEXT_PUBLIC_USE_MOCK_DATA=true)
 const USE_MOCK_DATA = process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true'; 

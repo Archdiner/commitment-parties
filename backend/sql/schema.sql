@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS pools (
     stake_amount DECIMAL(10, 4) NOT NULL,
     duration_days INTEGER NOT NULL,
     max_participants INTEGER NOT NULL,
+    min_participants INTEGER DEFAULT 1,
     participant_count INTEGER DEFAULT 0,
     
     -- Distribution configuration
@@ -63,7 +64,9 @@ CREATE TABLE IF NOT EXISTS pools (
     
     -- Constraints
     CONSTRAINT check_split_percentage 
-        CHECK (split_percentage_winners >= 0 AND split_percentage_winners <= 100)
+        CHECK (split_percentage_winners >= 0 AND split_percentage_winners <= 100),
+    CONSTRAINT check_participant_range
+        CHECK (min_participants >= 1 AND min_participants <= max_participants)
 );
 
 

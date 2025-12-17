@@ -450,7 +450,11 @@ export default function CreatePool() {
         // --- Build transaction via backend Solana Actions (create-pool) ---
         // Use Render backend URL as default if env var is not set
         // In Next.js, NEXT_PUBLIC_* env vars are available in the browser at build time
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://commitment-backend.onrender.com';
+        // Ensure HTTPS to avoid mixed content errors
+        let apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://commitment-backend.onrender.com';
+        if (apiUrl.startsWith('http://')) {
+          apiUrl = apiUrl.replace('http://', 'https://');
+        }
 
         const createBody = {
           account: creatorPubkey,
@@ -589,7 +593,10 @@ export default function CreatePool() {
           status: error?.status,
           data: error?.data,
           message: error?.message,
-          apiUrl: process.env.NEXT_PUBLIC_API_URL || 'https://commitment-backend.onrender.com'
+          apiUrl: (() => {
+            const url = process.env.NEXT_PUBLIC_API_URL || 'https://commitment-backend.onrender.com';
+            return url.startsWith('http://') ? url.replace('http://', 'https://') : url;
+          })()
         });
         
         alert(`Error: ${errorMessage}\n\nStatus: ${error?.status || 'Unknown'}\n\nCheck the browser console for more details.`);
