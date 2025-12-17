@@ -437,15 +437,39 @@ async def confirm_pool_creation(pool_data: PoolConfirmRequest) -> PoolResponse:
         
         # Set defaults for recruitment system fields (these exist in migration_add_pool_fields.sql)
         # These fields are used by the recruitment system feature branch
-        min_participants = pool_dict.get("min_participants", 1)
+        
+        # Get values - ensure we have valid integers
+        min_participants = pool_dict.get("min_participants")
         max_participants = pool_dict.get("max_participants")
         
-        # CRITICAL: Ensure min_participants <= max_participants (database constraint)
+        # Ensure max_participants is valid
+        if max_participants is None:
+            logger.error("max_participants is missing from pool_dict")
+            raise HTTPException(status_code=400, detail="max_participants is required")
+        
+        # Convert to int if needed
+        try:
+            max_participants = int(max_participants)
+        except (ValueError, TypeError):
+            logger.error(f"Invalid max_participants value: {max_participants}")
+            raise HTTPException(status_code=400, detail=f"Invalid max_participants: {max_participants}")
+        
+        # Get min_participants or default to 1
+        if min_participants is None:
+            min_participants = 1
+        else:
+            try:
+                min_participants = int(min_participants)
+            except (ValueError, TypeError):
+                logger.warning(f"Invalid min_participants value: {min_participants}, defaulting to 1")
+                min_participants = 1
+        
+        # CRITICAL: Ensure min_participants <= max_participants (database constraint check_participant_range)
         # If min_participants is greater than max_participants, set it to 1 (minimum valid value)
         if min_participants > max_participants:
             logger.warning(
                 f"min_participants ({min_participants}) > max_participants ({max_participants}). "
-                f"Setting min_participants to 1 to satisfy database constraint."
+                f"Setting min_participants to 1 to satisfy database constraint check_participant_range."
             )
             min_participants = 1
         
@@ -453,7 +477,11 @@ async def confirm_pool_creation(pool_data: PoolConfirmRequest) -> PoolResponse:
         if min_participants < 1:
             min_participants = 1
         
+        # Log final values for debugging
+        logger.info(f"Pool creation: min_participants={min_participants}, max_participants={max_participants}")
+        
         pool_dict["min_participants"] = min_participants
+        pool_dict["max_participants"] = max_participants  # Ensure this is set correctly
         pool_dict.setdefault("recruitment_period_hours", 24)  # Default 24 hours
         pool_dict.setdefault("require_min_participants", False)  # Default false
         # scheduled_start_time is calculated above and kept (nullable, so None is fine)

@@ -239,22 +239,46 @@ export default function CreatePool() {
           : parseInt(formData.duration.split(' ')[0]);
         
         const stakeAmount = parseFloat(formData.stake);
-        const maxParticipants = parseInt(formData.maxParticipants);
+        
+        // Parse and validate max participants
+        let maxParticipants = parseInt(formData.maxParticipants, 10);
+        if (isNaN(maxParticipants) || maxParticipants < 1) {
+          alert("Max participants must be at least 1. Setting to 1.");
+          maxParticipants = 1;
+          setLoading(false);
+          return;
+        }
+        if (maxParticipants > 100) {
+          alert("Max participants cannot exceed 100. Setting to 100.");
+          maxParticipants = 100;
+          setLoading(false);
+          return;
+        }
+        
         const recruitmentHours = parseInt(formData.recruitmentPeriodHours);
         const requireMinParticipants = formData.requireMinParticipants;
         
         // Calculate minParticipantsForBackend - ensure it's always <= maxParticipants
         let minParticipantsForBackend = requireMinParticipants
-          ? parseInt(formData.minParticipants)
+          ? parseInt(formData.minParticipants, 10)
           : 1;
         
-        // CRITICAL: Ensure min_participants <= max_participants (database constraint)
+        // Validate minParticipants
+        if (isNaN(minParticipantsForBackend) || minParticipantsForBackend < 1) {
+          minParticipantsForBackend = 1;
+        }
+        
+        // CRITICAL: Ensure min_participants <= max_participants (database constraint check_participant_range)
         if (minParticipantsForBackend > maxParticipants) {
+          console.warn(`min_participants (${minParticipantsForBackend}) > max_participants (${maxParticipants}). Adjusting to 1.`);
           minParticipantsForBackend = 1; // Default to 1 if invalid
           if (requireMinParticipants) {
-            alert("Minimum participants cannot be greater than max participants. Setting to 1.");
+            alert(`Minimum participants (${formData.minParticipants}) cannot be greater than max participants (${maxParticipants}). Setting minimum to 1.`);
           }
         }
+        
+        // Log final values for debugging
+        console.log(`Pool creation values: min_participants=${minParticipantsForBackend}, max_participants=${maxParticipants}`);
 
         // Additional validation aligned with backend constraints
         if (durationDays < 1 || durationDays > 30) {
