@@ -1183,8 +1183,6 @@ Respond with only "yes" or "no"."""
                     logger.info("No active HODL pools found")
                 else:
                     logger.info(f"Found {len(pools)} active HODL pools")
-                else:
-                    logger.info(f"Found {len(pools)} active HODL pools")
                     
                     for pool in pools:
                         try:
