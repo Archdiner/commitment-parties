@@ -168,7 +168,11 @@ export default function CreatePool() {
     // Validate min participants if required
     if (formData.requireMinParticipants) {
       const minParticipants = parseInt(formData.minParticipants);
-      if (isNaN(minParticipants) || minParticipants < 1 || minParticipants > maxParticipants) {
+      if (isNaN(minParticipants) || minParticipants < 1) {
+        errors.minParticipants = true;
+      }
+      // CRITICAL: min_participants must be <= max_participants (database constraint)
+      if (minParticipants > maxParticipants) {
         errors.minParticipants = true;
       }
     }
@@ -238,9 +242,19 @@ export default function CreatePool() {
         const maxParticipants = parseInt(formData.maxParticipants);
         const recruitmentHours = parseInt(formData.recruitmentPeriodHours);
         const requireMinParticipants = formData.requireMinParticipants;
-        const minParticipantsForBackend = requireMinParticipants
+        
+        // Calculate minParticipantsForBackend - ensure it's always <= maxParticipants
+        let minParticipantsForBackend = requireMinParticipants
           ? parseInt(formData.minParticipants)
           : 1;
+        
+        // CRITICAL: Ensure min_participants <= max_participants (database constraint)
+        if (minParticipantsForBackend > maxParticipants) {
+          minParticipantsForBackend = 1; // Default to 1 if invalid
+          if (requireMinParticipants) {
+            alert("Minimum participants cannot be greater than max participants. Setting to 1.");
+          }
+        }
 
         // Additional validation aligned with backend constraints
         if (durationDays < 1 || durationDays > 30) {
@@ -1355,7 +1369,11 @@ export default function CreatePool() {
                         if (isNaN(minParts) || minParts < 1) {
                           setFormData({...formData, minParticipants: '1'});
                         } else if (!isNaN(maxParts) && minParts > maxParts) {
+                          // CRITICAL: Ensure min_participants <= max_participants (database constraint)
                           setFormData({...formData, minParticipants: formData.maxParticipants});
+                          if (validationErrors.minParticipants) {
+                            setValidationErrors({...validationErrors, minParticipants: false});
+                          }
                         }
                       }}
                       disabled={!formData.requireMinParticipants}

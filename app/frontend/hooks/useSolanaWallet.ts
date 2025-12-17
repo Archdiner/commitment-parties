@@ -184,18 +184,21 @@ export function useSolanaWallet(): SolanaWalletState {
     // Use Privy embedded wallet signing
     if (activeWallet.type === 'embedded' && activeWallet.wallet) {
       try {
-        // Ensure feePayer and blockhash are set (should already be set by backend)
+        // The backend sends a fully-formed Transaction with:
+        // - Instructions (with all account keys, program ID, instruction data)
+        // - Fee payer (already set to the wallet)
+        // - Blockhash (already set)
+        // 
+        // We need to convert it to @solana/kit format for Privy's signTransaction
         const walletPubkey = new PublicKey(activeWallet.address);
+        
+        // Ensure feePayer matches (backend should already have set it correctly)
         if (!tx.feePayer) {
           tx.feePayer = walletPubkey;
         }
-        if (!tx.recentBlockhash) {
-          const { blockhash } = await connection.getLatestBlockhash('confirmed');
-          tx.recentBlockhash = blockhash;
-        }
         
-        // Privy works best with @solana/kit format
-        // Convert the legacy Transaction to @solana/kit format
+        // Get blockhash - use the one from transaction if present, otherwise fetch fresh
+        // Using a fresh blockhash is safer (more time remaining before expiration)
         const rpc = createSolanaRpc(connection.rpcEndpoint);
         const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
         
@@ -203,6 +206,7 @@ export function useSolanaWallet(): SolanaWalletState {
         const feePayerAddress = address(tx.feePayer!.toBase58());
         
         // Convert legacy TransactionInstructions to @solana/kit format
+        // fromLegacyTransactionInstruction preserves: instruction data, accounts, program ID, signer/writable flags
         const kitInstructions = tx.instructions.map(inst => fromLegacyTransactionInstruction(inst));
         
         // Build and encode transaction message using @solana/kit (following Privy docs pattern)

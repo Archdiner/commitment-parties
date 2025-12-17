@@ -4,7 +4,7 @@ Pydantic models for request/response validation.
 Provides type-safe data models for API endpoints.
 """
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional, Dict, Any
 from datetime import datetime
 
@@ -124,7 +124,15 @@ class PoolConfirmRequest(BaseModel):
     stake_amount: float = Field(..., gt=0, description="Stake amount in SOL")
     duration_days: int = Field(..., ge=1, le=30, description="Duration in days")
     max_participants: int = Field(..., ge=1, le=100, description="Maximum participants")
-    min_participants: int = Field(1, ge=1, description="Minimum participants")
+    min_participants: int = Field(1, ge=1, le=100, description="Minimum participants (must be <= max_participants)")
+    
+    @model_validator(mode='after')
+    def validate_participant_range(self):
+        """Ensure min_participants <= max_participants (database constraint)"""
+        if self.min_participants > self.max_participants:
+            # Auto-correct: set min_participants to 1 (minimum valid value)
+            self.min_participants = 1
+        return self
     distribution_mode: str = Field(
         "competitive",
         description="Distribution mode: competitive, charity, split",
