@@ -24,12 +24,30 @@ export const Navbar = () => {
   const isLoading = !isReady;
 
   const { linkGithub, user: privyUser } = usePrivy();
-  const { wallets, ready: walletsReady } = useWallets();
+  
+  // Safely get wallets, handle case where useWallets might not be available during build
+  let wallets: any[] | undefined;
+  let walletsReady = false;
+  try {
+    const walletsResult = useWallets();
+    wallets = walletsResult.wallets;
+    walletsReady = walletsResult.ready;
+  } catch (error) {
+    // During build or when PrivyProvider is not available, wallets will be undefined
+    wallets = undefined;
+    walletsReady = false;
+  }
   
   // Check if user has external wallets connected (not embedded)
   // Only check when wallets are ready to avoid false positives during loading
-  const hasExternalWallet = walletsReady && wallets?.some((w: any) => w.walletClientType && w.walletClientType !== 'privy') || false;
-  const hasEmbeddedWallet = walletsReady && wallets?.some((w: any) => w.walletClientType === 'privy') || false;
+  const hasExternalWallet = walletsReady && wallets?.some((w: any) => {
+    const clientType = (w as any)?.walletClientType;
+    return clientType && clientType !== 'privy';
+  }) || false;
+  const hasEmbeddedWallet = walletsReady && wallets?.some((w: any) => {
+    const clientType = (w as any)?.walletClientType;
+    return clientType === 'privy';
+  }) || false;
   
   // Show connect wallet button if user has embedded wallet but no external wallet
   // Also check walletType as a fallback to ensure we're showing the button at the right time

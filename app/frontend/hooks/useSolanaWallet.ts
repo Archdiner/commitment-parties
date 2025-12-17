@@ -91,7 +91,11 @@ export function useSolanaWallet(): SolanaWalletState {
     if (walletsReady && wallets && wallets.length > 0) {
       // Prioritize external wallets connected through Privy (Phantom, Solflare, etc.)
       // External wallets have walletClientType that is NOT 'privy'
-      const externalPrivyWallet = wallets.find((w: any) => w.walletClientType && w.walletClientType !== 'privy');
+      // Use type assertion to access walletClientType which may not be in TypeScript types
+      const externalPrivyWallet = wallets.find((w: any) => {
+        const clientType = (w as any).walletClientType;
+        return clientType && clientType !== 'privy';
+      });
       if (externalPrivyWallet) {
         return {
           address: externalPrivyWallet.address,
@@ -101,7 +105,10 @@ export function useSolanaWallet(): SolanaWalletState {
       }
       
       // Fall back to Privy embedded wallet (has walletClientType: 'privy')
-      const privyEmbeddedWallet = wallets.find((w: any) => w.walletClientType === 'privy');
+      const privyEmbeddedWallet = wallets.find((w: any) => {
+        const clientType = (w as any).walletClientType;
+        return clientType === 'privy';
+      });
       if (privyEmbeddedWallet) {
         return {
           address: privyEmbeddedWallet.address,
@@ -111,9 +118,12 @@ export function useSolanaWallet(): SolanaWalletState {
       }
       
       // Use first available Privy wallet as fallback
+      // Check walletClientType with type assertion
+      const firstWallet = wallets[0] as any;
+      const clientType = firstWallet?.walletClientType;
       return {
         address: wallets[0].address,
-        type: wallets[0].walletClientType === 'privy' ? 'embedded' as const : 'external' as const,
+        type: clientType === 'privy' ? 'embedded' as const : 'external' as const,
         wallet: wallets[0],
       };
     }
