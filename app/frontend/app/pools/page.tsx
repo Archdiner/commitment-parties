@@ -31,7 +31,12 @@ export default function PoolsPage() {
         }
       } catch (err: any) {
         console.error('Failed to load pools:', err);
-        setError(err?.message || 'Failed to load pools. Please try again.');
+        // Provide user-friendly error messages
+        let errorMsg = err?.message || 'Failed to load pools.';
+        if (errorMsg.includes('waking up from sleep') || errorMsg.includes('Unable to connect')) {
+          errorMsg = 'Backend server is starting up. Please wait 30-60 seconds and refresh the page.';
+        }
+        setError(errorMsg);
         setPools([]);
       } finally {
         setLoading(false);
@@ -110,13 +115,27 @@ export default function PoolsPage() {
         ) : error ? (
             <div className="text-center py-20">
               <p className="text-red-400 mb-4">Error loading pools</p>
-              <p className="text-sm text-gray-500 mb-8">{error}</p>
-              <button 
-                onClick={() => window.location.reload()} 
-                className="px-4 py-2 bg-emerald-500/20 border border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/30 transition-colors"
-              >
-                Retry
-              </button>
+              <p className="text-sm text-gray-500 mb-8 max-w-md mx-auto">{error}</p>
+              {error.includes('waking up from sleep') || error.includes('starting up') ? (
+                <div className="space-y-4">
+                  <div className="text-xs text-gray-600">
+                    The backend server is starting up. This usually takes 30-60 seconds on Render free tier.
+                  </div>
+                  <button 
+                    onClick={() => window.location.reload()} 
+                    className="px-4 py-2 bg-emerald-500/20 border border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/30 transition-colors"
+                  >
+                    Refresh Page
+                  </button>
+                </div>
+              ) : (
+                <button 
+                  onClick={() => window.location.reload()} 
+                  className="px-4 py-2 bg-emerald-500/20 border border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/30 transition-colors"
+                >
+                  Retry
+                </button>
+              )}
             </div>
         ) : filteredPools.length === 0 ? (
             <div className="text-center py-20">
