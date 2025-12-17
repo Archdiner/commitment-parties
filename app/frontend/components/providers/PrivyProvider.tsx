@@ -2,10 +2,32 @@
 
 import { PrivyProvider as PrivyAuthProvider } from '@privy-io/react-auth';
 import { createSolanaRpc, createSolanaRpcSubscriptions } from '@solana/kit';
-import { ReactNode } from 'react';
+import { ReactNode, useMemo } from 'react';
 
 interface Props {
   children: ReactNode;
+}
+
+// Safely get Solana wallet connectors - only in browser, with fallback
+function getSolanaConnectors() {
+  if (typeof window === 'undefined') {
+    // During SSR/build, return null to skip externalWallets entirely
+    // This prevents build errors - external wallets will be available at runtime
+    return null;
+  }
+  
+  try {
+    const { toSolanaWalletConnectors } = require('@privy-io/react-auth/solana');
+    const connectors = toSolanaWalletConnectors();
+    // Validate connectors before returning
+    if (connectors && typeof connectors === 'object') {
+      return connectors;
+    }
+    return null;
+  } catch (error) {
+    // Silently fail - external wallets won't be available but app will still work
+    return null;
+  }
 }
 
 export function PrivyProvider({ children }: Props) {
@@ -16,12 +38,10 @@ export function PrivyProvider({ children }: Props) {
     return <>{children}</>;
   }
 
-  // Get Solana RPC URL from environment or default to devnet
-  const solanaRpcUrl = process.env.NEXT_PUBLIC_SOLANA_RPC || 'https://api.devnet.solana.com';
-  // For WebSocket, use the official devnet WSS endpoint
-  const solanaWssUrl = 'wss://api.devnet.solana.com';
+  // Get connectors - safe for both build-time and runtime
+  const solanaConnectors = useMemo(() => getSolanaConnectors(), []);
 
-  // Build config object - conditionally add externalWallets only in browser
+  // Build config - conditionally add externalWallets only when connectors are available
   const config: any = {
     // Login methods - support both crypto and non-crypto users
     loginMethods: ['email', 'wallet', 'github'],
@@ -42,16 +62,12 @@ export function PrivyProvider({ children }: Props) {
     },
     
     // Configure Solana RPC endpoints
-    // Privy internally defaults to mainnet during initialization, so we need to configure it
-    // Your app's actual network is controlled by getConnection() and NEXT_PUBLIC_SOLANA_RPC (devnet)
     solana: {
       rpcs: {
         'solana:devnet': {
           rpc: createSolanaRpc('https://api.devnet.solana.com'),
           rpcSubscriptions: createSolanaRpcSubscriptions('wss://api.devnet.solana.com'),
         },
-        // Privy defaults to mainnet internally, so we configure it but point to devnet
-        // This prevents "No RPC configuration found" error while keeping everything on devnet
         'solana:mainnet': {
           rpc: createSolanaRpc('https://api.devnet.solana.com'), // Point to devnet
           rpcSubscriptions: createSolanaRpcSubscriptions('wss://api.devnet.solana.com'), // Point to devnet
@@ -60,16 +76,18 @@ export function PrivyProvider({ children }: Props) {
     },
   };
 
-  // Note: externalWallets is intentionally omitted during build to prevent errors
-  // External wallet connections will work at runtime when the app is running in the browser
-  // Users can still connect wallets through the login flow even without this config
-  // The embedded wallets will still work, and external wallets can be connected via the login modal
+  // Only add externalWallets when connectors are available (runtime/browser only)
+  // This enables detection of Phantom, Solflare, Backpack, Jupiter, and other major Solana wallets
+  if (solanaConnectors) {
+    config.externalWallets = {
+      solana: {
+        connectors: solanaConnectors,
+      },
+    };
+  }
 
   return (
-    <PrivyAuthProvider
-      appId={appId}
-      config={config}
-    >
+    <PrivyAuthProvider appId={appId} config={config}>
       {children}
     </PrivyAuthProvider>
   );
