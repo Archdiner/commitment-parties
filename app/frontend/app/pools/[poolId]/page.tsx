@@ -6,6 +6,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, Loader2, Users, Clock, ShieldCheck, Coins } from 'lucide-react';
 import { InfoIcon } from '@/components/ui/Tooltip';
 import { InsufficientBalanceModal } from '@/components/InsufficientBalanceModal';
+import { Badge } from '@/components/ui/Badge';
 import {
   getPool,
   PoolResponse,
@@ -15,6 +16,29 @@ import { useWallet } from '@/hooks/useWallet';
 import { getConnection, getTokenBalance } from '@/lib/solana';
 import { Transaction } from '@solana/web3.js';
 import { getTokenByMint } from '@/lib/tokens';
+
+// Helper function to get challenge type label and color
+// Color indicates category: blue = crypto, orange = lifestyle
+function getChallengeType(pool: PoolResponse): { label: string; color: 'blue' | 'orange' } {
+  const goalMetadata = (pool.goal_metadata || {}) as any;
+  
+  if (pool.goal_type === 'hodl_token') {
+    return { label: 'HODL', color: 'blue' };
+  }
+  if (pool.goal_type === 'DailyDCA' || pool.goal_type === 'dca') {
+    return { label: 'DCA', color: 'blue' };
+  }
+  if (pool.goal_type === 'lifestyle_habit') {
+    const habitType = goalMetadata.habit_type;
+    if (habitType === 'github_commits') {
+      return { label: 'GitHub', color: 'orange' };
+    }
+    if (habitType === 'screen_time') {
+      return { label: 'Screen Time', color: 'orange' };
+    }
+  }
+  return { label: 'Unknown', color: 'blue' };
+}
 
 // Force dynamic rendering - this page depends on route params
 export const dynamic = 'force-dynamic';
@@ -237,6 +261,9 @@ export default function PoolDetailPage() {
   const goalMetadata = (pool.goal_metadata || {}) as any;
   const habitType = goalMetadata.habit_type;
   const isGitHubCommits = habitType === 'github_commits';
+  const isScreenTime = habitType === 'screen_time';
+  const challengeType = getChallengeType(pool);
+  const poolType = pool.goal_type?.includes('Lifestyle') || pool.goal_type === 'lifestyle_habit' ? 'LIFESTYLE' : 'CRYPTO';
   const tokenMint: string | undefined = goalMetadata.token_mint;
   const tokenInfo = tokenMint ? getTokenByMint(tokenMint) : undefined;
   const hodlMinBalanceRaw: number | undefined = goalMetadata.min_balance;
@@ -311,6 +338,12 @@ export default function PoolDetailPage() {
               <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-gray-500 mb-2">
                 <p>Commitment Pool #{pool.pool_id}</p>
                 <InfoIcon content="Each challenge has a unique ID on the Solana blockchain. This helps track and verify the challenge." />
+              </div>
+              <div className="flex items-center gap-3 mb-3 flex-wrap">
+                <Badge color={challengeType.color}>{challengeType.label}</Badge>
+                <Badge color={pool.status === 'pending' ? 'emerald' : pool.status === 'active' ? 'blue' : 'gray'}>
+                  {pool.status === 'pending' ? 'RECRUITING' : pool.status === 'active' ? 'ACTIVE' : pool.status?.toUpperCase() || 'UNKNOWN'}
+                </Badge>
               </div>
               <h1 className="text-3xl md:text-4xl font-light mb-3">{pool.name}</h1>
               {pool.description && (
@@ -515,6 +548,30 @@ export default function PoolDetailPage() {
                   <p className="text-[11px] text-amber-400">
                     Note: Verification counts wallet transactions as a proxy for trading activity. 
                     Currently does not verify specific token swaps.
+                  </p>
+                </div>
+              );
+            })()}
+
+            {isScreenTime && (() => {
+              const maxHours = goalMetadata.max_hours;
+              return (
+                <div className="mt-6 p-4 border border-orange-500/40 bg-orange-500/5 rounded-xl space-y-3">
+                  <div className="text-[10px] uppercase tracking-widest text-orange-400">
+                    Screen Time Requirement
+                  </div>
+                  
+                  <p className="text-xs text-gray-300">
+                    This is a Screen Time challenge. You must keep your daily screen time below{' '}
+                    <span className="font-mono text-orange-300">
+                      {maxHours || 2}
+                    </span>{' '}
+                    hour{maxHours !== 1 ? 's' : ''} per day.
+                  </p>
+                  
+                  <p className="text-[11px] text-amber-400">
+                    You'll need to upload a screenshot of your mobile screen time data each day. 
+                    Make sure the date is visible (showing 'Today' or today's date). Our AI will verify your screen time is below the limit.
                   </p>
                 </div>
               );

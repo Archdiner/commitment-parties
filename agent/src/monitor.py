@@ -2,6 +2,27 @@
 Monitoring functions for different challenge types.
 
 Monitors pools and participants to verify goal completion.
+
+Supported Challenge Types:
+1. HODL Token (goal_type="hodl_token")
+   - Monitored by: monitor_hodl_pools()
+   - Verification: Checks token balance >= min_balance
+   - Frequency: Hourly (HODL_CHECK_INTERVAL)
+
+2. DCA/Trading (goal_type="DailyDCA" or goal_type="lifestyle_habit" with habit_type="dca_trade")
+   - Monitored by: monitor_dca_pools()
+   - Verification: Checks for minimum transactions per day on-chain
+   - Frequency: Daily (DCA_CHECK_INTERVAL)
+   - Note: DCA pools stored as lifestyle_habit are correctly identified and routed to DCA monitor
+
+3. Lifestyle Habits (goal_type="lifestyle_habit")
+   - Monitored by: monitor_lifestyle_pools()
+   - Verification methods:
+     * habit_type="github_commits": Verifies GitHub commits via API
+     * habit_type="screen_time": Verifies screen-time check-ins from database
+     * Other habit types: Generic check-in verification
+   - Frequency: Daily with grace period (LIFESTYLE_CHECK_INTERVAL)
+   - Note: DCA pools (habit_type="dca_trade") are excluded from lifestyle monitoring
 """
 
 import asyncio
@@ -760,18 +781,17 @@ Respond with only "yes" or "no"."""
             if not wallet:
                 return False
 
-            # Calculate the UTC day window for the specific challenge day
-            # We need to check commits made on the day corresponding to the challenge day
+            # Calculate the day window for the specific challenge day
+            # We need to check transactions made on the day corresponding to the challenge day
             # Day 1 = day when pool started, Day 2 = next day, etc.
             start_timestamp = pool.get("start_timestamp")
             if not start_timestamp:
                 logger.warning("Pool %s missing start_timestamp", pool.get("pool_id"))
                 return False
             
-            # Get the current challenge day (calculated by the caller)
-            current_day = self._calculate_current_day(start_timestamp)
+            # Use the current_day parameter passed by the caller
             if current_day is None:
-                logger.warning("Pool %s hasn't started yet", pool.get("pool_id"))
+                logger.warning("Pool %s hasn't started yet (current_day is None)", pool.get("pool_id"))
                 return False
             
             # Calculate day boundaries in Eastern Time
@@ -779,7 +799,7 @@ Respond with only "yes" or "no"."""
             start_of_day, end_of_day = get_challenge_day_window(start_timestamp, current_day)
             
             logger.info(
-                "Checking commits for challenge day %s: %s to %s (Eastern Time)",
+                "Checking transactions for challenge day %s: %s to %s (Eastern Time)",
                 current_day,
                 start_of_day.isoformat(),
                 end_of_day.isoformat()
@@ -1032,15 +1052,29 @@ Respond with only "yes" or "no"."""
                 logger.info("Checking DCA pools...")
 
                 # Get all active pools and filter to DCA-style crypto goals
+                # DCA pools can be stored as:
+                # 1. goal_type="DailyDCA" or goal_type="dca_trade" (legacy)
+                # 2. goal_type="lifestyle_habit" with habit_type="dca_trade" in goal_metadata (current frontend format)
                 all_pools = await self.get_active_pools()
-                dca_pools = [
-                    p
-                    for p in all_pools
-                    if p.get("goal_type") in ("DailyDCA", "dca_trade")
-                ]
+                dca_pools = []
+                for p in all_pools:
+                    goal_type = p.get("goal_type", "").lower()
+                    goal_metadata = p.get("goal_metadata") or {}
+                    habit_type = (goal_metadata.get("habit_type") or "").lower()
+                    
+                    # Check if it's a DCA pool
+                    if goal_type in ("dailydca", "dca_trade"):
+                        dca_pools.append(p)
+                    elif goal_type == "lifestyle_habit" and habit_type == "dca_trade":
+                        dca_pools.append(p)
 
                 if not dca_pools:
                     logger.info("No active DCA pools found")
+                else:
+                    # Log breakdown of pool types found
+                    legacy_count = sum(1 for p in dca_pools if p.get("goal_type", "").lower() in ("dailydca", "dca_trade"))
+                    lifestyle_dca_count = len(dca_pools) - legacy_count
+                    logger.info(f"Found {len(dca_pools)} active DCA pools ({legacy_count} legacy format, {lifestyle_dca_count} lifestyle_habit format)")
                 else:
                     logger.info("Found %d active DCA pools", len(dca_pools))
 
@@ -1149,6 +1183,8 @@ Respond with only "yes" or "no"."""
                 
                 if not pools:
                     logger.info("No active HODL pools found")
+                else:
+                    logger.info(f"Found {len(pools)} active HODL pools")
                 else:
                     logger.info(f"Found {len(pools)} active HODL pools")
                     
@@ -1261,12 +1297,29 @@ Respond with only "yes" or "no"."""
                 logger.info("Checking lifestyle pools...")
                 
                 # Get active lifestyle pools from database
-                pools = await self.get_active_pools(goal_type="lifestyle_habit")
+                # Exclude DCA pools (habit_type="dca_trade") as they're handled by monitor_dca_pools()
+                all_lifestyle_pools = await self.get_active_pools(goal_type="lifestyle_habit")
+                pools = []
+                for p in all_lifestyle_pools:
+                    goal_metadata = p.get("goal_metadata") or {}
+                    habit_type = (goal_metadata.get("habit_type") or "").lower()
+                    # Skip DCA pools - they're monitored by monitor_dca_pools()
+                    if habit_type == "dca_trade":
+                        continue
+                    pools.append(p)
                 
                 if not pools:
-                    logger.info("No active lifestyle pools found")
+                    skipped_dca = len(all_lifestyle_pools) - len(pools) if all_lifestyle_pools else 0
+                    if skipped_dca > 0:
+                        logger.debug(f"No active lifestyle pools found (excluded {skipped_dca} DCA pool(s) which are handled by DCA monitor)")
+                    else:
+                        logger.info("No active lifestyle pools found")
                 else:
-                    logger.info(f"Found {len(pools)} active lifestyle pools")
+                    skipped_dca = len(all_lifestyle_pools) - len(pools) if all_lifestyle_pools else 0
+                    if skipped_dca > 0:
+                        logger.info(f"Found {len(pools)} active lifestyle pools (excluded {skipped_dca} DCA pool(s) which are handled by DCA monitor)")
+                    else:
+                        logger.info(f"Found {len(pools)} active lifestyle pools")
                     
                     for pool in pools:
                         try:

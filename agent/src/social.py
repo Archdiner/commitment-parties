@@ -264,28 +264,66 @@ class SocialManager:
             return text[:max_len]
         return text[: max_len - 3].rstrip() + "..."
 
-    def _is_crypto_challenge(self, goal_type: str) -> bool:
+    def _is_dca_pool(self, pool: Dict[str, Any]) -> bool:
+        """
+        Check if a pool is a DCA/trading challenge.
+        
+        DCA pools can be stored as:
+        - goal_type="DailyDCA" or goal_type="dca_trade" (legacy)
+        - goal_type="lifestyle_habit" with habit_type="dca_trade" in goal_metadata (current frontend format)
+        """
+        goal_type = (pool.get("goal_type") or "").lower()
+        goal_metadata = pool.get("goal_metadata") or {}
+        if not isinstance(goal_metadata, dict):
+            goal_metadata = {}
+        habit_type = (goal_metadata.get("habit_type") or "").lower()
+        
+        return goal_type in ("dailydca", "dca_trade") or (goal_type == "lifestyle_habit" and habit_type == "dca_trade")
+    
+    def _is_crypto_challenge(self, goal_type: Optional[str] = None, pool: Optional[Dict[str, Any]] = None) -> bool:
         """
         Check if a goal_type is a crypto challenge (can use Blink action).
         
-        Crypto challenges: hodl_token, DailyDCA, daily_dca
+        Crypto challenges: hodl_token, DailyDCA, daily_dca, lifestyle_habit with habit_type=dca_trade
         Non-crypto challenges: lifestyle_habit (screen time, GitHub commits, etc.)
+        
+        Args:
+            goal_type: The goal_type string (for backward compatibility)
+            pool: Pool dictionary (preferred - allows checking metadata)
         """
-        goal_type_lower = goal_type.lower() if goal_type else ""
+        # If pool is provided, use it for more accurate detection
+        if pool:
+            goal_type_lower = (pool.get("goal_type") or "").lower()
+            if goal_type_lower == "hodl_token":
+                return True
+            if self._is_dca_pool(pool):
+                return True
+            return False
+        
+        # Fallback to goal_type string only (backward compatibility)
+        goal_type_lower = (goal_type or "").lower()
         return goal_type_lower in ("hodl_token", "dailydca", "daily_dca")
     
-    def build_full_tweet(self, body: str, blink_url: str, app_url: str, goal_type: Optional[str] = None) -> str:
+    def build_full_tweet(self, body: str, blink_url: str, app_url: str, goal_type: Optional[str] = None, pool: Optional[Dict[str, Any]] = None) -> str:
         """
         Combine a tweet body with Blink and app links, respecting Twitter's limit.
         
-        For crypto challenges (hodl_token, DailyDCA), includes both Blink and app links.
+        For crypto challenges (hodl_token, DailyDCA, lifestyle_habit with habit_type=dca_trade), includes both Blink and app links.
         For non-crypto challenges (lifestyle_habit), includes only app link.
         
         We conservatively enforce 280 characters including URLs.
         If needed, the body is truncated to make room for links.
+        
+        Args:
+            body: Tweet body text
+            blink_url: Blink action URL
+            app_url: App detail page URL
+            goal_type: Goal type string (for backward compatibility)
+            pool: Optional pool dictionary (preferred - allows checking metadata for accurate DCA detection)
         """
         # Only include Blink URL for crypto challenges
-        is_crypto = self._is_crypto_challenge(goal_type) if goal_type else True  # Default to True for backward compatibility
+        # Prefer pool dict if provided for accurate detection (handles lifestyle_habit with habit_type=dca_trade)
+        is_crypto = self._is_crypto_challenge(goal_type=goal_type, pool=pool) if (goal_type or pool) else True  # Default to True for backward compatibility
         
         if is_crypto:
             trailer = f"\n\n🔗 Join: {blink_url}\n🌐 Details: {app_url}"
@@ -335,12 +373,16 @@ class SocialManager:
         active_participants = participant_count - eliminations
         
         # Build challenge context
+        # Handle DCA pools that might be stored as lifestyle_habit with habit_type="dca_trade"
         challenge_info = ""
+        habit_type = (goal_metadata.get("habit_type") or "").lower()
+        is_dca = goal_type in ("dailydca", "daily_dca") or (goal_type == "lifestyle_habit" and habit_type == "dca_trade")
+        
         if goal_type == "hodl_token":
             token_mint = goal_metadata.get("token_mint")
             token_symbol = self._get_token_symbol(token_mint)
             challenge_info = f"💎 HODL {token_symbol}"
-        elif goal_type == "dailydca" or goal_type == "daily_dca":
+        elif is_dca:
             token_mint = goal_metadata.get("token_mint")
             token_symbol = self._get_token_symbol(token_mint)
             challenge_info = f"💰 DCA {token_symbol}"
@@ -526,7 +568,10 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
         recruitment_time = self._format_recruitment_time_remaining(pool)
         
         # Build challenge-specific content
+        # Handle DCA pools that might be stored as lifestyle_habit with habit_type="dca_trade"
         challenge_details = []
+        habit_type = (goal_metadata.get("habit_type") or "").lower()
+        is_dca = goal_type in ("dailydca", "daily_dca") or (goal_type == "lifestyle_habit" and habit_type == "dca_trade")
         
         if goal_type == "hodl_token":
             # HODL challenge: coin, amount, stake, max participants, recruitment time
@@ -549,11 +594,12 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
             else:
                 challenge_details.append(f"💎 Hold {token_symbol}")
             
-        elif goal_type == "dailydca" or goal_type == "daily_dca":
-            # DCA challenge: coin, amount per trade, stake, max participants, recruitment time
+        elif is_dca:
+            # DCA challenge: coin, trades per day, stake, max participants, recruitment time
             token_mint = goal_metadata.get("token_mint")
             token_symbol = self._get_token_symbol(token_mint)
-            dca_amount_raw = goal_metadata.get("amount")
+            min_trades_per_day = goal_metadata.get("min_trades_per_day", 1)
+            dca_amount_raw = goal_metadata.get("amount")  # Legacy field
             
             # Get token decimals
             token_decimals = 9
@@ -568,7 +614,7 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
                 dca_amount_tokens = float(dca_amount_raw) / (10 ** token_decimals)
                 challenge_details.append(f"💰 DCA {dca_amount_tokens:.2f} {token_symbol}/day")
             else:
-                challenge_details.append(f"💰 DCA {token_symbol}")
+                challenge_details.append(f"💰 DCA {token_symbol} ({min_trades_per_day} trade{'s' if min_trades_per_day > 1 else ''}/day)")
                 
         elif goal_type == "lifestyle_habit":
             # Lifestyle challenge: habit name, stake, max participants, recruitment time
@@ -609,12 +655,16 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
         total_staked = stats.get("total_staked", float(pool.get("total_staked", 0.0)))
         
         # Add challenge-specific context
+        # Handle DCA pools that might be stored as lifestyle_habit with habit_type="dca_trade"
         challenge_context = ""
+        habit_type = (goal_metadata.get("habit_type") or "").lower()
+        is_dca = goal_type in ("dailydca", "daily_dca") or (goal_type == "lifestyle_habit" and habit_type == "dca_trade")
+        
         if goal_type == "hodl_token":
             token_mint = goal_metadata.get("token_mint")
             token_symbol = self._get_token_symbol(token_mint)
             challenge_context = f"💎 HODL {token_symbol} Challenge"
-        elif goal_type == "dailydca" or goal_type == "daily_dca":
+        elif is_dca:
             token_mint = goal_metadata.get("token_mint")
             token_symbol = self._get_token_symbol(token_mint)
             challenge_context = f"💰 DCA {token_symbol} Challenge"
@@ -864,7 +914,8 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
             
             # Build full tweet (conditionally includes Blink based on goal_type)
             goal_type = pool.get("goal_type")
-            full_tweet = self.build_full_tweet(tweet_text, blink_url, app_url, goal_type)
+            # Pass pool dict for accurate crypto challenge detection (includes metadata for DCA pools)
+            full_tweet = self.build_full_tweet(tweet_text, blink_url, app_url, goal_type, pool=pool)
             
             # Post to Twitter - use new account system if available
             logger.info(f"Posting update for pool {pool_id} to Twitter")
@@ -1196,7 +1247,8 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
             blink_url = self.create_blink(task.pool_id, pool_pubkey)
             app_url = self.create_app_link(task.pool_id)
             goal_type = pool.get("goal_type")
-            full_tweet = self.build_full_tweet(body, blink_url, app_url, goal_type)
+            # Pass pool dict for accurate crypto challenge detection (includes metadata for DCA pools)
+            full_tweet = self.build_full_tweet(body, blink_url, app_url, goal_type, pool=pool)
             
             logger.info(
                 f"Posting {task.event_type.value} update for pool {task.pool_id} "
@@ -1354,10 +1406,12 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
         
         # Start queue worker if Twitter is enabled
         if self.twitter_enabled:
+            logger.info(f"Twitter is enabled with {len(self.twitter_accounts)} account(s)")
             asyncio.create_task(self._tweet_queue_worker())
             logger.info("Tweet queue worker started")
         else:
-            logger.info("Twitter not enabled, queue worker not started")
+            logger.warning("Twitter not enabled - no Twitter accounts configured or initialization failed. Queue worker not started.")
+            logger.warning("To enable Twitter, configure TWITTER_API_KEY, TWITTER_API_SECRET, TWITTER_ACCESS_TOKEN, and TWITTER_ACCESS_TOKEN_SECRET in agent/.env")
         
         while True:
             try:
@@ -1374,11 +1428,11 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
                 )
                 
                 if not pools:
-                    logger.info("No active public pools found, sleeping for 1 hour...")
+                    logger.info("No active public pools found for Twitter posting, sleeping for 1 hour...")
                     await asyncio.sleep(3600)
                     continue
                 
-                logger.info(f"Found {len(pools)} active pools to potentially post about")
+                logger.info(f"Found {len(pools)} active public pools to potentially post about on Twitter")
                 
                 # First, check for newly created pools that haven't been tweeted about yet
                 # This catches immediate start pools and scheduled pools that were activated before getting a tweet

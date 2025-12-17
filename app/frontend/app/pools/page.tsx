@@ -2,11 +2,34 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowRight, Search, Filter, Info, GitCommit } from 'lucide-react';
+import { ArrowRight, Search, Filter, Info, GitCommit, Clock } from 'lucide-react';
 import { getPools, PoolResponse } from '@/lib/api';
 import { Badge } from '@/components/ui/Badge';
 import { ButtonPrimary } from '@/components/ui/ButtonPrimary';
 import { getTokenByMint } from '@/lib/tokens';
+
+// Helper function to get challenge type label and color
+// Color indicates category: blue = crypto, orange = lifestyle
+function getChallengeType(pool: PoolResponse): { label: string; color: 'blue' | 'orange' } {
+  const goalMetadata = (pool.goal_metadata || {}) as any;
+  
+  if (pool.goal_type === 'hodl_token') {
+    return { label: 'HODL', color: 'blue' };
+  }
+  if (pool.goal_type === 'DailyDCA' || pool.goal_type === 'dca') {
+    return { label: 'DCA', color: 'blue' };
+  }
+  if (pool.goal_type === 'lifestyle_habit') {
+    const habitType = goalMetadata.habit_type;
+    if (habitType === 'github_commits') {
+      return { label: 'GitHub', color: 'orange' };
+    }
+    if (habitType === 'screen_time') {
+      return { label: 'Screen Time', color: 'orange' };
+    }
+  }
+  return { label: 'Unknown', color: 'blue' };
+}
 
 export default function PoolsPage() {
   const [pools, setPools] = useState<PoolResponse[]>([]);
@@ -153,7 +176,6 @@ export default function PoolsPage() {
                 return null; // Skip invalid pools
               }
               
-              const poolType = pool.goal_type?.includes('Lifestyle') || pool.goal_type === 'lifestyle_habit' ? 'LIFESTYLE' : 'CRYPTO';
               const status = pool.status === 'active' ? 'ACTIVE' : (pool.status === 'pending' ? 'RECRUITING' : (pool.status || 'UNKNOWN').toUpperCase());
               const goalMetadata = (pool.goal_metadata || {}) as any;
               
@@ -162,6 +184,8 @@ export default function PoolsPage() {
               const isDCA = pool.goal_type === 'DailyDCA' || pool.goal_type === 'dca';
               const habitType = goalMetadata.habit_type;
               const isGitHubCommits = habitType === 'github_commits';
+              const isScreenTime = habitType === 'screen_time';
+              const challengeType = getChallengeType(pool);
               
               // Extract challenge-specific data
               const tokenMint: string | undefined = goalMetadata.token_mint;
@@ -181,8 +205,8 @@ export default function PoolsPage() {
                   className="group relative p-6 border border-white/5 bg-white/[0.01] hover:bg-white/[0.03] hover:border-emerald-500/20 transition-all cursor-pointer flex flex-col md:flex-row gap-6 md:items-center"
                 >
                   <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      <Badge color={poolType === 'CRYPTO' ? 'blue' : 'orange'}>{poolType}</Badge>
+                    <div className="flex items-center gap-3 mb-2 flex-wrap">
+                      <Badge color={challengeType.color}>{challengeType.label}</Badge>
                       <Badge color={status === 'RECRUITING' || status === 'pending' ? 'emerald' : status === 'ACTIVE' || status === 'active' ? 'blue' : 'gray'}>
                         {status}
                       </Badge>
@@ -256,6 +280,15 @@ export default function PoolsPage() {
                           <span className="text-xs font-mono text-purple-300">
                             {minCommitsPerDay || 1} commit{minCommitsPerDay !== 1 ? 's' : ''}/day
                             {minTotalLinesPerDay && minTotalLinesPerDay > 0 && ` • ${minTotalLinesPerDay}+ total lines/day`}
+                          </span>
+                        </div>
+                      )}
+                      
+                      {isScreenTime && (
+                        <div className="flex items-center gap-2 px-3 py-1.5 bg-orange-500/10 border border-orange-500/30 rounded-lg">
+                          <Clock className="w-4 h-4 text-orange-300" />
+                          <span className="text-xs font-mono text-orange-300">
+                            Max {goalMetadata.max_hours || 2}h/day
                           </span>
                         </div>
                       )}
