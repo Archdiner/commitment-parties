@@ -3,8 +3,20 @@
 import { useCallback, useMemo, useState, useEffect } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { useWallets, useSignTransaction } from '@privy-io/react-auth/solana';
-import { Transaction, PublicKey, VersionedTransaction, TransactionMessage } from '@solana/web3.js';
+import { Transaction, PublicKey } from '@solana/web3.js';
 import { getConnection, requestAirdrop } from '@/lib/solana';
+import {
+  pipe,
+  createTransactionMessage,
+  setTransactionMessageFeePayer,
+  setTransactionMessageLifetimeUsingBlockhash,
+  appendTransactionMessageInstructions,
+  compileTransaction,
+  getTransactionEncoder,
+  createSolanaRpc,
+  address,
+} from '@solana/kit';
+import { fromLegacyTransactionInstruction } from '@solana/compat';
 
 export interface SolanaWalletState {
   // Auth state
@@ -172,34 +184,40 @@ export function useSolanaWallet(): SolanaWalletState {
     // Use Privy embedded wallet signing
     if (activeWallet.type === 'embedded' && activeWallet.wallet) {
       try {
-        // Privy's signTransaction works best with VersionedTransaction
-        // Convert the legacy Transaction from backend to VersionedTransaction
+        // Ensure feePayer and blockhash are set (should already be set by backend)
         const walletPubkey = new PublicKey(activeWallet.address);
-        
-        // Ensure feePayer matches (should already be set by backend)
         if (!tx.feePayer) {
           tx.feePayer = walletPubkey;
         }
-        
-        // Ensure blockhash is set (should already be set by backend)
         if (!tx.recentBlockhash) {
           const { blockhash } = await connection.getLatestBlockhash('confirmed');
           tx.recentBlockhash = blockhash;
         }
         
-        // Convert legacy Transaction to VersionedTransaction format
-        // Privy's signTransaction expects the serialized message bytes from a VersionedTransaction
-        const messageV0 = new TransactionMessage({
-          payerKey: tx.feePayer,
-          recentBlockhash: tx.recentBlockhash!,
-          instructions: tx.instructions,
-        }).compileToV0Message();
+        // Privy works best with @solana/kit format
+        // Convert the legacy Transaction to @solana/kit format
+        const rpc = createSolanaRpc(connection.rpcEndpoint);
+        const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
         
-        // Serialize the VersionedTransaction message to get the bytes Privy expects
-        const messageBytes = messageV0.serialize();
+        // Convert PublicKey to Address type for @solana/kit
+        const feePayerAddress = address(tx.feePayer!.toBase58());
+        
+        // Convert legacy TransactionInstructions to @solana/kit format
+        const kitInstructions = tx.instructions.map(inst => fromLegacyTransactionInstruction(inst));
+        
+        // Build and encode transaction message using @solana/kit (following Privy docs pattern)
+        // According to Privy docs: compileTransaction then encode with getTransactionEncoder
+        const transaction = pipe(
+          createTransactionMessage({ version: 0 }),
+          (msg) => setTransactionMessageFeePayer(feePayerAddress, msg),
+          (msg) => setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, msg),
+          (msg) => appendTransactionMessageInstructions(kitInstructions, msg),
+          (msg) => compileTransaction(msg),
+          (msg) => new Uint8Array(getTransactionEncoder().encode(msg))
+        );
         
         const { signedTransaction } = await signTransaction({
-          transaction: messageBytes,
+          transaction: transaction,
           wallet: activeWallet.wallet,
           chain: 'solana:devnet', // Explicitly specify devnet chain
         });
