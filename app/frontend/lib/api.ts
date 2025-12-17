@@ -196,16 +196,61 @@ async function fetchWithRetry<T>(
         throw err;
       }
       
+      // Check if it's a network error (likely Render cold start)
+      const isNetworkError = err?.message?.includes('Failed to fetch') || 
+                            err?.message?.includes('NetworkError') ||
+                            err?.name === 'TypeError' ||
+                            err?.message?.includes('fetch');
+      
       // Wait before retrying (exponential backoff)
       if (attempt < maxRetries) {
         const delay = retryDelay * Math.pow(2, attempt);
-        console.warn(`API request failed (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${delay}ms...`, err.message);
+        const errorMsg = isNetworkError 
+          ? `Backend may be waking up from sleep (Render cold start). Retrying in ${delay}ms...`
+          : `API request failed (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${delay}ms...`;
+        console.warn(errorMsg, err.message);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
   }
 
+  // If we get here, all retries failed
+  // Provide a helpful error message for network errors
+  if (lastError?.message?.includes('Failed to fetch') || 
+      lastError?.name === 'TypeError' ||
+      lastError?.message?.includes('NetworkError')) {
+    throw new ApiError(
+      'Unable to connect to backend server. The server may be waking up from sleep (this can take 30-60 seconds on Render free tier). Please wait a moment and try again.',
+      0,
+      lastError
+    );
+  }
+
   throw lastError;
+}
+
+/**
+ * Wake up backend server if it's sleeping (Render cold start)
+ * This is a lightweight health check that helps wake up the server
+ */
+async function wakeUpBackend(): Promise<void> {
+  try {
+    // Try a quick health check to wake up the backend
+    // Use a short timeout so we don't block for too long
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+    
+    await fetch(`${API_URL}/health`, {
+      method: 'GET',
+      signal: controller.signal,
+      cache: 'no-store',
+    });
+    
+    clearTimeout(timeoutId);
+  } catch (err) {
+    // Ignore errors - backend might be waking up
+    // The actual request will handle retries
+  }
 }
 
 async function fetchApi<T>(
@@ -226,6 +271,14 @@ async function fetchApi<T>(
   };
   
   try {
+    // For GET requests, try to wake up backend first (helps with Render cold starts)
+    if (!options.method || options.method === 'GET') {
+      // Wake up backend in background (don't wait for it)
+      wakeUpBackend().catch(() => {
+        // Ignore errors - this is just a best-effort wake-up call
+      });
+    }
+    
     const response = await fetchWithRetry<T>(url, {
         ...options,
         headers: {
@@ -248,11 +301,18 @@ async function fetchApi<T>(
       console.error('==================');
       
       // Extract error message safely
-      const errorMessage = err instanceof Error 
+      let errorMessage = err instanceof Error 
         ? err.message 
         : (typeof err === 'object' && err !== null && 'message' in err)
           ? String((err as any).message)
-          : 'Network error contacting backend API. Backend may be waking up from sleep - please try again.';
+          : 'Network error contacting backend API.';
+      
+      // Provide more helpful messages for common network errors
+      if (errorMessage.includes('Failed to fetch') || 
+          errorMessage.includes('NetworkError') ||
+          err?.name === 'TypeError') {
+        errorMessage = 'Unable to connect to backend server. The server may be waking up from sleep (this can take 30-60 seconds on Render free tier). Please wait a moment and refresh the page.';
+      }
       
       throw new ApiError(
         errorMessage,
