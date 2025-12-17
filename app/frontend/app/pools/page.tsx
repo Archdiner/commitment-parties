@@ -122,9 +122,6 @@ export default function PoolsPage() {
                <Filter className="w-3 h-3" /> 
                {showAllChallenges ? 'Show All' : 'Recruiting Only'}
              </button>
-             <button onClick={() => setFilter('ALL')} className={`flex items-center gap-2 px-3 py-2 border transition-colors ${filter === 'ALL' ? 'border-emerald-500/50 text-emerald-500 bg-emerald-500/10' : 'border-white/10 bg-white/[0.02] text-white hover:border-white/30'}`}>
-               <Filter className="w-3 h-3" /> Filter: All
-             </button>
              <div className="h-4 w-px bg-white/10 mx-2" />
              <button onClick={() => setFilter('CRYPTO')} className={`transition-colors ${filter === 'CRYPTO' ? 'text-white' : 'hover:text-white'}`}>CRYPTO</button>
              <button onClick={() => setFilter('LIFESTYLE')} className={`transition-colors ${filter === 'LIFESTYLE' ? 'text-white' : 'hover:text-white'}`}>LIFESTYLE</button>

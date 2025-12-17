@@ -1420,19 +1420,22 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
                     await asyncio.sleep(3600)
                     continue
                 
-                # Get active pools
+                # Get active and pending pools (pending pools need POOL_CREATED tweets)
                 pools = await execute_query(
                     table="pools",
                     operation="select",
-                    filters={"status": "active", "is_public": True}
+                    filters={"is_public": True}
                 )
                 
+                # Filter to only include active or pending pools
+                pools = [p for p in pools if p.get("status") in ("active", "pending")]
+                
                 if not pools:
-                    logger.info("No active public pools found for Twitter posting, sleeping for 1 hour...")
+                    logger.info("No active or pending public pools found for Twitter posting, sleeping for 1 hour...")
                     await asyncio.sleep(3600)
                     continue
                 
-                logger.info(f"Found {len(pools)} active public pools to potentially post about on Twitter")
+                logger.info(f"Found {len(pools)} active/pending public pools to potentially post about on Twitter")
                 
                 # First, check for newly created pools that haven't been tweeted about yet
                 # This catches immediate start pools and scheduled pools that were activated before getting a tweet
@@ -1450,28 +1453,41 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
                     key = (pool_id, SocialEventType.POOL_CREATED)
                     last_created = self.last_event_post_time.get(key, 0.0)
                     
-                    # If pool was created recently (within last 24 hours) and we haven't tweeted about it
-                    start_time = pool.get("start_timestamp")
-                    if start_time and time.time() - start_time < 86400:  # Created within last 24 hours
-                        if last_created == 0.0:  # Never posted about this pool
-                            logger.info(f"Pool {pool_id}: Newly created, queuing POOL_CREATED tweet")
-                            result = await self.post_event_update(
-                                SocialEventType.POOL_CREATED,
-                                pool_id
-                            )
-                            if result:
-                                new_pool_count += 1
-                                await asyncio.sleep(5)  # Small delay between queuing
-                            else:
-                                logger.warning(f"Pool {pool_id}: Failed to queue POOL_CREATED tweet")
+                    # Check if this is a newly created pool that needs a POOL_CREATED tweet
+                    pool_status = pool.get("status")
+                    should_tweet = False
+                    
+                    # Pending pools are newly created and should get a tweet
+                    if pool_status == "pending" and last_created == 0.0:
+                        should_tweet = True
+                        logger.info(f"Pool {pool_id}: Pending pool detected, queuing POOL_CREATED tweet")
+                    # Active pools that were created recently (within last 24 hours) and haven't been tweeted about
+                    elif pool_status == "active":
+                        start_time = pool.get("start_timestamp")
+                        if start_time and time.time() - start_time < 86400 and last_created == 0.0:
+                            should_tweet = True
+                            logger.info(f"Pool {pool_id}: Newly activated pool (created within 24h), queuing POOL_CREATED tweet")
+                    
+                    if should_tweet:
+                        result = await self.post_event_update(
+                            SocialEventType.POOL_CREATED,
+                            pool_id
+                        )
+                        if result:
+                            new_pool_count += 1
+                            await asyncio.sleep(5)  # Small delay between queuing
+                        else:
+                            logger.warning(f"Pool {pool_id}: Failed to queue POOL_CREATED tweet")
                 
                 # Queue updates for pools that are actually at the midway point
+                # Only check active pools for midway updates (not pending ones)
                 queued_count = 0
                 skipped_recent = 0
                 skipped_not_midway = 0
                 skipped_no_timestamps = 0
                 
-                for pool in pools:
+                active_pools = [p for p in pools if p.get("status") == "active"]
+                for pool in active_pools:
                     pool_id = pool.get("pool_id")
                     if not pool_id:
                         continue
