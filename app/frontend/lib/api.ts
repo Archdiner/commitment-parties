@@ -139,6 +139,9 @@ async function fetchWithTimeout(
     const response = await fetch(url, {
       ...options,
       signal: controller.signal,
+      // Add mode and credentials for better CORS handling
+      mode: 'cors',
+      credentials: 'omit', // Don't send cookies to avoid CORS issues
     });
     clearTimeout(timeoutId);
     return response;
@@ -146,6 +149,11 @@ async function fetchWithTimeout(
     clearTimeout(timeoutId);
     if (err.name === 'AbortError') {
       throw new Error(`Request timeout after ${timeout}ms. Backend may be waking up from sleep.`);
+    }
+    // Preserve the original error for better debugging
+    if (err instanceof TypeError && err.message.includes('Failed to fetch')) {
+      // This is a network error - could be CORS, connectivity, or server issue
+      throw new Error(`Network error: ${err.message}. Check CORS configuration and network connectivity.`);
     }
     throw err;
   }
@@ -188,27 +196,60 @@ async function fetchWithRetry<T>(
       }
       
       return await response.json();
-    } catch (err: any) {
+    } catch (err: unknown) {
       lastError = err;
+      
+      // Safely extract error properties for TypeScript
+      const errorName = err instanceof Error ? err.name : 
+                       (typeof err === 'object' && err !== null && 'name' in err) 
+                         ? String((err as { name?: unknown }).name) 
+                         : 'Unknown';
+      const errorMessage = err instanceof Error ? err.message :
+                          (typeof err === 'object' && err !== null && 'message' in err)
+                            ? String((err as { message?: unknown }).message)
+                            : String(err);
+      const errorType = err instanceof Error ? err.constructor?.name : 'Unknown';
+      
+      console.warn(`[API Retry ${attempt + 1}/${maxRetries + 1}] Error:`, {
+        name: errorName,
+        message: errorMessage,
+        type: errorType,
+        url: url,
+      });
       
       // Don't retry on client errors (4xx) or if it's the last attempt
       if ((err instanceof ApiError && (err.status >= 400 && err.status < 500)) || attempt === maxRetries) {
         throw err;
       }
       
-      // Check if it's a network error (likely Render cold start)
-      const isNetworkError = err?.message?.includes('Failed to fetch') || 
-                            err?.message?.includes('NetworkError') ||
-                            err?.name === 'TypeError' ||
-                            err?.message?.includes('fetch');
+      // Check if it's a network error
+      const isNetworkError = errorMessage.includes('Failed to fetch') || 
+                            errorMessage.includes('NetworkError') ||
+                            errorName === 'TypeError' ||
+                            errorMessage.includes('fetch') ||
+                            errorMessage.includes('timeout');
+      
+      // Check if it's a CORS error
+      const isCorsError = errorMessage.includes('CORS') || 
+                         errorMessage.includes('cors') ||
+                         errorMessage.includes('Access-Control');
+      
+      if (isCorsError && attempt === 0) {
+        // CORS errors shouldn't be retried - they indicate a configuration issue
+        throw new ApiError(
+          'CORS error: Backend may not be configured to allow requests from this domain. Check CORS_ORIGINS in backend configuration.',
+          0,
+          err
+        );
+      }
       
       // Wait before retrying (exponential backoff)
       if (attempt < maxRetries) {
         const delay = retryDelay * Math.pow(2, attempt);
         const errorMsg = isNetworkError 
-          ? `Backend may be waking up from sleep (Render cold start). Retrying in ${delay}ms...`
-          : `API request failed (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${delay}ms...`;
-        console.warn(errorMsg, err.message);
+          ? `Network error. Retrying in ${delay}ms... (attempt ${attempt + 1}/${maxRetries + 1})`
+          : `API request failed. Retrying in ${delay}ms... (attempt ${attempt + 1}/${maxRetries + 1})`;
+        console.warn(errorMsg);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
@@ -216,11 +257,20 @@ async function fetchWithRetry<T>(
 
   // If we get here, all retries failed
   // Provide a helpful error message for network errors
-  if (lastError?.message?.includes('Failed to fetch') || 
-      lastError?.name === 'TypeError' ||
-      lastError?.message?.includes('NetworkError')) {
+  const lastErrorMessage = lastError instanceof Error ? lastError.message :
+                          (typeof lastError === 'object' && lastError !== null && 'message' in lastError)
+                            ? String((lastError as any).message)
+                            : String(lastError);
+  const lastName = lastError instanceof Error ? lastError.name :
+                  (typeof lastError === 'object' && lastError !== null && 'name' in lastError)
+                    ? String((lastError as any).name)
+                    : '';
+  
+  if (lastErrorMessage.includes('Failed to fetch') || 
+      lastName === 'TypeError' ||
+      lastErrorMessage.includes('NetworkError')) {
     throw new ApiError(
-      'Unable to connect to backend server. The server may be waking up from sleep (this can take 30-60 seconds on Render free tier). Please wait a moment and try again.',
+      'Unable to connect to backend server after multiple attempts. Please check your network connection and ensure the backend is running.',
       0,
       lastError
     );
@@ -285,33 +335,62 @@ async function fetchApi<T>(
         ...defaultHeaders,
         ...options.headers,
         },
+        // Ensure CORS mode is set
+        mode: 'cors',
+        credentials: 'omit',
     });
     
     return response;
-  } catch (err) {
+  } catch (err: unknown) {
       console.error("API request failed:", err);
       if (err instanceof ApiError) {
         throw err;
       }
       
-      // Log the full error for debugging
-      console.error('=== API ERROR ===');
-      console.error('URL:', url);
-      console.error('Error:', err);
-      console.error('==================');
-      
-      // Extract error message safely
+      // Safely extract error properties for TypeScript
+      const errorName = err instanceof Error ? err.name : 
+                       (typeof err === 'object' && err !== null && 'name' in err) 
+                         ? String((err as { name?: unknown }).name) 
+                         : 'Unknown';
       let errorMessage = err instanceof Error 
         ? err.message 
         : (typeof err === 'object' && err !== null && 'message' in err)
-          ? String((err as any).message)
+          ? String((err as { message?: unknown }).message)
           : 'Network error contacting backend API.';
+      const errorType = err instanceof Error ? err.constructor?.name : 'Unknown';
+      
+      // Log the full error for debugging
+      console.error('=== API ERROR ===');
+      console.error('URL:', url);
+      console.error('Method:', options.method || 'GET');
+      console.error('Error Type:', errorType);
+      console.error('Error Name:', errorName);
+      console.error('Error Message:', errorMessage);
+      console.error('Full Error:', err);
+      
+      // Check if it's a CORS error (browser doesn't always expose this clearly)
+      const errorStr = String(errorMessage || err || '');
+      const isCorsError = errorStr.includes('CORS') || 
+                         errorStr.includes('cors') ||
+                         errorStr.includes('Access-Control');
+      
+      if (isCorsError) {
+        console.error('CORS Error detected. Check backend CORS_ORIGINS configuration.');
+        console.error('Current origin:', typeof window !== 'undefined' ? window.location.origin : 'unknown');
+      }
+      
+      console.error('==================');
       
       // Provide more helpful messages for common network errors
       if (errorMessage.includes('Failed to fetch') || 
           errorMessage.includes('NetworkError') ||
-          err?.name === 'TypeError') {
-        errorMessage = 'Unable to connect to backend server. The server may be waking up from sleep (this can take 30-60 seconds on Render free tier). Please wait a moment and refresh the page.';
+          errorName === 'TypeError') {
+        // Check if it might be a CORS issue
+        if (isCorsError) {
+          errorMessage = 'CORS error: Backend may not be configured to allow requests from this domain. Check CORS_ORIGINS in backend configuration.';
+        } else {
+          errorMessage = 'Unable to connect to backend server. Check your network connection and ensure the backend is running.';
+        }
       }
       
       throw new ApiError(
@@ -489,6 +568,8 @@ export async function getPools(params?: {
   if (params?.wallet) queryParams.append('wallet', params.wallet);
   
   const query = queryParams.toString();
+  // Backend route is defined as "" (empty string) which maps to /api/pools (no trailing slash)
+  // This avoids 307 redirects that cause fetch API issues
   return fetchApi<PoolResponse[]>(`/api/pools${query ? `?${query}` : ''}`);
 }
 
@@ -496,6 +577,7 @@ export async function getPools(params?: {
  * Get pool by ID
  */
 export async function getPool(poolId: number): Promise<PoolResponse> {
+  // No trailing slash needed for ID routes
   return fetchApi<PoolResponse>(`/api/pools/${poolId}`);
 }
 

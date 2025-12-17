@@ -72,7 +72,7 @@ async def get_solana_client() -> AsyncClient:
 
 
 @router.get(
-    "/",
+    "",
     response_model=List[PoolResponse],
     summary="List active pools",
     description="Get a list of active commitment pools with optional filtering",
