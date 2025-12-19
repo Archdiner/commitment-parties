@@ -520,17 +520,24 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
         """
         Calculate and format how long recruitment is still open.
         Returns formatted string like "2h", "1d", "3d 5h", or None if recruitment closed.
+        Uses recruitment_deadline if available, otherwise falls back to scheduled_start_time.
         """
         current_time = int(time.time())
-        scheduled_start = pool.get("scheduled_start_time")
-        recruitment_hours = pool.get("recruitment_period_hours", 0)
         
-        # If no scheduled start or recruitment already closed, return None
-        if not scheduled_start or current_time >= scheduled_start:
+        # NEW RECRUITMENT SYSTEM: Use recruitment_deadline if available
+        recruitment_deadline = pool.get("recruitment_deadline")
+        if recruitment_deadline:
+            deadline_ts = recruitment_deadline
+        else:
+            # Fallback to scheduled_start_time for backward compatibility
+            deadline_ts = pool.get("scheduled_start_time")
+        
+        # If no deadline or recruitment already closed, return None
+        if not deadline_ts or current_time >= deadline_ts:
             return None
         
         # Calculate time remaining
-        seconds_remaining = scheduled_start - current_time
+        seconds_remaining = deadline_ts - current_time
         
         if seconds_remaining <= 0:
             return None
@@ -550,12 +557,33 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
             if minutes_remaining > 0:
                 return f"{minutes_remaining}m"
             return "soon"
+    
+    def _format_recruitment_period_duration(self, pool: Dict[str, Any]) -> str:
+        """
+        Format the total recruitment period duration (not remaining time).
+        Returns formatted string like "1 day", "1 week", "2 weeks".
+        """
+        recruitment_hours = pool.get("recruitment_period_hours", 0)
+        
+        if recruitment_hours >= 336:  # 2 weeks
+            return "2 weeks"
+        elif recruitment_hours >= 168:  # 1 week
+            return "1 week"
+        elif recruitment_hours >= 24:  # 1 day
+            days = recruitment_hours // 24
+            if days == 1:
+                return "1 day"
+            return f"{days} days"
+        else:
+            if recruitment_hours == 0:
+                return "until filled"
+            return f"{recruitment_hours}h"
 
     def generate_new_pool_tweet(self, pool: Dict[str, Any], stats: Dict[str, Any]) -> str:
         """
         Generate tweet text for a newly created/activated pool.
         
-        Includes challenge-specific details: coin, amount, stake, max participants, recruitment time.
+        Includes challenge-specific details: coin, amount, stake, min/max participants, recruitment period.
         """
         name = pool.get("name", "New Challenge")
         goal_type = pool.get("goal_type", "").lower()
@@ -565,6 +593,8 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
         
         stake = float(pool.get("stake_amount", 0.0))
         max_participants = pool.get("max_participants", 0)
+        min_participants = pool.get("min_participants", 5)  # Default to 5 if not set
+        recruitment_period = self._format_recruitment_period_duration(pool)
         recruitment_time = self._format_recruitment_time_remaining(pool)
         
         # Build challenge-specific content
@@ -574,7 +604,7 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
         is_dca = goal_type in ("dailydca", "daily_dca") or (goal_type == "lifestyle_habit" and habit_type == "dca_trade")
         
         if goal_type == "hodl_token":
-            # HODL challenge: coin, amount, stake, max participants, recruitment time
+            # HODL challenge: coin, amount, stake, min/max participants, recruitment period
             token_mint = goal_metadata.get("token_mint")
             token_symbol = self._get_token_symbol(token_mint)
             min_balance_raw = goal_metadata.get("min_balance")
@@ -595,7 +625,7 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
                 challenge_details.append(f"💎 Hold {token_symbol}")
             
         elif is_dca:
-            # DCA challenge: coin, trades per day, stake, max participants, recruitment time
+            # DCA challenge: coin, trades per day, stake, min/max participants, recruitment period
             token_mint = goal_metadata.get("token_mint")
             token_symbol = self._get_token_symbol(token_mint)
             min_trades_per_day = goal_metadata.get("min_trades_per_day", 1)
@@ -617,25 +647,25 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
                 challenge_details.append(f"💰 DCA {token_symbol} ({min_trades_per_day} trade{'s' if min_trades_per_day > 1 else ''}/day)")
                 
         elif goal_type == "lifestyle_habit":
-            # Lifestyle challenge: habit name, stake, max participants, recruitment time
+            # Lifestyle challenge: habit name, stake, min/max participants, recruitment period
             habit_name = goal_metadata.get("habit_name") or goal_metadata.get("summary") or "Lifestyle Habit"
             challenge_details.append(f"🏃 {habit_name}")
         
-        # Add common details
-        challenge_details.append(f"💵 Stake: {stake:.2f} SOL")
-        challenge_details.append(f"👥 Max: {max_participants} participants")
+        # Add common details (concise format to fit Twitter limit)
+        challenge_details.append(f"💵 {stake:.2f} SOL stake")
+        challenge_details.append(f"👥 {min_participants}-{max_participants} people")
+        challenge_details.append(f"⏰ {recruitment_period} to recruit")
         
+        # Add time remaining if available (only if there's room)
         if recruitment_time:
-            challenge_details.append(f"⏰ Recruiting for: {recruitment_time}")
-        else:
-            signup_deadline = self._format_signup_deadline(pool)
-            challenge_details.append(f"⏰ Sign-up: {signup_deadline}")
+            challenge_details.append(f"⏳ {recruitment_time} left")
         
         # Build tweet
-        base = f"🎉 New challenge: {name}\n\n"
+        base = f"🎉 {name}\n\n"
         base += "\n".join(challenge_details)
         
-        return self._truncate_body(base, max_len=220)
+        # Truncate to 200 chars to leave room for links (trailer is ~50-60 chars)
+        return self._truncate_body(base, max_len=200)
 
     def generate_midway_tweet(self, pool: Dict[str, Any], stats: Dict[str, Any]) -> str:
         """

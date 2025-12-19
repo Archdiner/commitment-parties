@@ -663,7 +663,31 @@ export default function CreatePool() {
                <div className="space-y-4">
                   <div>
                     <label className="flex items-center gap-2 text-xs uppercase tracking-widest text-gray-500 mb-2">
-                      Challenge Description
+                      Challenge Name <span className="text-emerald-400">*Required</span>
+                    </label>
+                    <input 
+                      type="text" 
+                      value={formData.name}
+                      onChange={(e) => {
+                        setFormData({...formData, name: e.target.value});
+                        if (validationErrors.name) {
+                          setValidationErrors({...validationErrors, name: false});
+                        }
+                      }}
+                      className={`w-full bg-transparent border-b py-3 text-xl text-white placeholder-gray-800 focus:outline-none transition-colors ${
+                        validationErrors.name 
+                          ? 'border-red-500 focus:border-red-500' 
+                          : 'border-white/20 focus:border-emerald-500'
+                      }`}
+                      placeholder="e.g. 100 Days of Code" 
+                    />
+                    {validationErrors.name && (
+                      <p className="text-[10px] text-red-400 mt-1">Challenge name is required</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="flex items-center gap-2 text-xs uppercase tracking-widest text-gray-500 mb-2">
+                      Challenge Description <span className="text-gray-600">(Optional)</span>
                       <InfoIcon content="A detailed description of your challenge. This helps others understand what they're committing to. This will be displayed prominently on the challenge page." />
                     </label>
                     <textarea
@@ -678,20 +702,12 @@ export default function CreatePool() {
                       {formData.descriptionText.length}/500 characters. A good description helps attract participants.
                     </p>
                   </div>
-                  <div>
-                    <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">Challenge Name</label>
-                    <input 
-                      type="text" 
-                      value={formData.name}
-                      onChange={(e) => setFormData({...formData, name: e.target.value})}
-                      className="w-full bg-transparent border-b border-white/20 py-3 text-xl text-white placeholder-gray-800 focus:outline-none focus:border-emerald-500 transition-colors" 
-                      placeholder="e.g. 100 Days of Code" 
-                    />
-                  </div>
                </div>
                <div className="grid grid-cols-2 gap-6">
                   <div>
-                    <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">Category</label>
+                    <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">
+                      Category <span className="text-emerald-400">*Required</span>
+                    </label>
                     <select 
                         value={formData.category}
                         onChange={(e) => setFormData({
@@ -706,7 +722,7 @@ export default function CreatePool() {
                   </div>
                   <div>
                     <label className="flex items-center gap-2 text-xs uppercase tracking-widest text-gray-500 mb-2">
-                      Duration
+                      Duration <span className="text-emerald-400">*Required</span>
                       <InfoIcon content="How long your challenge will last. You must verify your progress every day during this period." />
                     </label>
                     {!useCustomDuration ? (
@@ -784,7 +800,7 @@ export default function CreatePool() {
                <SectionLabel>Money & Participants</SectionLabel>
                <div>
                   <label className="flex items-center gap-2 text-xs uppercase tracking-widest text-gray-500 mb-2">
-                    Stake Amount (SOL)
+                    Stake Amount (SOL) <span className="text-emerald-400">*Required</span>
                     <InfoIcon content="This is the amount of money each person must put down to join. This money is locked until the challenge ends. If you complete your goal, you can win more. If you fail, you lose this amount." />
                   </label>
                   <input 
@@ -824,7 +840,7 @@ export default function CreatePool() {
                </div>
                <div>
                   <label className="flex items-center gap-2 text-xs uppercase tracking-widest text-gray-500 mb-2">
-                    Max Participants
+                    Max Participants <span className="text-emerald-400">*Required</span>
                     <InfoIcon content="Maximum number of people who can join this challenge. More participants = bigger prize pool for winners." />
                   </label>
                   <input 
@@ -891,7 +907,9 @@ export default function CreatePool() {
               {formData.category === 'Crypto' ? (
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">Crypto Mode</label>
+                    <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">
+                      Crypto Mode <span className="text-emerald-400">*Required</span>
+                    </label>
                     <div className="grid grid-cols-2 gap-3">
                       {(['HODL', 'DCA'] as const).map((mode) => {
                         const isActive = formData.cryptoMode === mode;
@@ -923,7 +941,7 @@ export default function CreatePool() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="relative">
                       <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">
-                        Token
+                        Token <span className="text-emerald-400">*Required</span>
                         <InfoIcon content="Select a popular token or enter a custom token mint address. Only tokens available on Solana can be tracked." />
                       </label>
                       
@@ -1069,7 +1087,7 @@ export default function CreatePool() {
                     {formData.cryptoMode === 'HODL' ? (
                       <div>
                         <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">
-                          Minimum Balance (tokens)
+                          Minimum Balance (tokens) <span className="text-emerald-400">*Required</span>
                         </label>
                         <input
                           type="number"
@@ -1107,7 +1125,7 @@ export default function CreatePool() {
                     ) : (
                       <div>
                         <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">
-                          Trades Per Day
+                          Trades Per Day <span className="text-emerald-400">*Required</span>
                         </label>
                         <input
                           type="number"
@@ -1151,7 +1169,9 @@ export default function CreatePool() {
               ) : (
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">Social Mode</label>
+                    <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">
+                      Social Mode <span className="text-emerald-400">*Required</span>
+                    </label>
                     <div className="grid grid-cols-2 gap-3">
                       {(['GitHub', 'Screen-time'] as const).map((mode) => {
                         const isActive = formData.socialMode === mode;
@@ -1185,7 +1205,7 @@ export default function CreatePool() {
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">
-                            Commits Per Day
+                            Commits Per Day <span className="text-emerald-400">*Required</span>
                           </label>
                           <input
                             type="number"
@@ -1225,7 +1245,7 @@ export default function CreatePool() {
                         </div>
                         <div>
                           <label className="flex items-center gap-2 text-xs uppercase tracking-widest text-gray-500 mb-2">
-                            Min Total Lines Per Day
+                            Min Total Lines Per Day <span className="text-emerald-400">*Required</span>
                             <InfoIcon content="Minimum total lines changed (additions + deletions) across all commits and repositories per day. AI will evaluate all your code together to ensure it's genuine work." />
                           </label>
                           <input
@@ -1272,7 +1292,7 @@ export default function CreatePool() {
                   ) : (
                     <div className="space-y-2">
                       <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">
-                        Max Screen-time Per Day (hours)
+                        Max Screen-time Per Day (hours) <span className="text-emerald-400">*Required</span>
                       </label>
                       <input
                         type="number"
