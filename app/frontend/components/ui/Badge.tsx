@@ -2,14 +2,14 @@ import React from 'react';
 
 interface BadgeProps {
   children: React.ReactNode;
-  color?: 'emerald' | 'orange' | 'blue' | 'gray';
+  color?: 'emerald' | 'teal' | 'cyan' | 'gray';
 }
 
 export const Badge = ({ children, color = "emerald" }: BadgeProps) => {
   const styles = {
     emerald: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-    orange: "bg-orange-500/10 text-orange-400 border-orange-500/20",
-    blue: "bg-blue-500/10 text-blue-400 border-blue-500/20",
+    teal: "bg-teal-500/10 text-teal-400 border-teal-500/20",
+    cyan: "bg-cyan-500/10 text-cyan-400 border-cyan-500/20",
     gray: "bg-white/5 text-gray-400 border-white/10"
   };
   

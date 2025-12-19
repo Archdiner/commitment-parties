@@ -25,18 +25,8 @@ export const Navbar = () => {
 
   const { linkGithub, user: privyUser } = usePrivy();
   
-  // Safely get wallets, handle case where useWallets might not be available during build
-  let wallets: any[] | undefined;
-  let walletsReady = false;
-  try {
-    const walletsResult = useWallets();
-    wallets = walletsResult.wallets;
-    walletsReady = walletsResult.ready;
-  } catch (error) {
-    // During build or when PrivyProvider is not available, wallets will be undefined
-    wallets = undefined;
-    walletsReady = false;
-  }
+  // Get wallets - this component is only rendered client-side (ssr: false)
+  const { wallets, ready: walletsReady } = useWallets();
   
   // Check if user has external wallets connected (not embedded)
   // Only check when wallets are ready to avoid false positives during loading
@@ -212,9 +202,9 @@ export const Navbar = () => {
               <div className={`text-sm border px-3 py-2 flex items-center gap-2 ${
                 walletAddress
                   ? walletType === 'embedded' 
-                    ? 'border-purple-500/50 text-purple-400 bg-purple-500/5' 
+                    ? 'border-cyan-500/50 text-cyan-400 bg-cyan-500/5' 
                     : 'border-emerald-500/50 text-emerald-400 bg-emerald-500/5'
-                  : 'border-blue-500/50 text-blue-400 bg-blue-500/5'
+                  : 'border-teal-500/50 text-teal-400 bg-teal-500/5'
               }`}>
                 {walletAddress ? (
                   walletType === 'embedded' ? <User className="w-4 h-4" /> : <Wallet className="w-4 h-4" />
@@ -229,7 +219,7 @@ export const Navbar = () => {
                   )}
                 </span>
                 {walletAddress && walletType === 'embedded' && (
-                  <span className="hidden lg:inline text-[10px] text-purple-300/70">(auto)</span>
+                  <span className="hidden lg:inline text-[10px] text-cyan-300/70">(auto)</span>
                 )}
               </div>
               

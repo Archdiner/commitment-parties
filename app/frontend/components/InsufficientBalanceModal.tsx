@@ -120,8 +120,8 @@ export function InsufficientBalanceModal({
 
         {/* Instructions - Environment specific */}
         {isDevnet ? (
-          <div className="mb-6 p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-            <p className="text-xs text-blue-300 leading-relaxed">
+          <div className="mb-6 p-4 bg-teal-500/10 border border-teal-500/30 rounded-lg">
+            <p className="text-xs text-teal-300 leading-relaxed">
               <strong>Step 1:</strong> Click the button below to open the Solana faucet (your address is already filled in)
               <br />
               <br />
