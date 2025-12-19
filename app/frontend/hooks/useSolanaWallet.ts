@@ -310,7 +310,33 @@ export function useSolanaWallet(): SolanaWalletState {
       await privyConnectWallet({ walletChainType: 'solana-only' });
     } catch (error: any) {
       console.error('Failed to connect wallet:', error);
-      throw new Error(error?.message || 'Failed to connect wallet');
+      
+      // Check for specific error types
+      const errorMessage = error?.message || error?.toString() || 'Unknown error';
+      const errorCode = error?.code || error?.status;
+      
+      // Handle 403 errors specifically (most common issue)
+      if (errorCode === 403 || errorMessage.includes('403') || errorMessage.includes('Forbidden')) {
+        const helpfulMessage = 
+          'Unable to connect wallet. This is usually caused by:\n\n' +
+          '1. Domain not whitelisted in Privy Dashboard\n' +
+          '   → Go to https://dashboard.privy.io/ → Settings → Allowed Origins\n' +
+          '   → Add: ' + (typeof window !== 'undefined' ? window.location.origin : 'your domain') + '\n\n' +
+          '2. Solana devnet not enabled in Privy\n' +
+          '   → Privy Dashboard → Settings → Blockchain Networks → Enable Solana Devnet\n\n' +
+          '3. Wallet login not enabled\n' +
+          '   → Privy Dashboard → Settings → Login Methods → Enable "Wallet"';
+        
+        throw new Error(helpfulMessage);
+      }
+      
+      // Handle user cancellation
+      if (errorMessage.includes('rejected') || errorMessage.includes('cancelled') || errorCode === 4001) {
+        throw new Error('Wallet connection cancelled');
+      }
+      
+      // Generic error
+      throw new Error(errorMessage || 'Failed to connect wallet. Please check your Privy dashboard configuration.');
     }
   }, [privyConnectWallet]);
   

@@ -34,8 +34,19 @@ export function PrivyProvider({ children }: Props) {
   const appId = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
   
   if (!appId) {
-    console.warn('NEXT_PUBLIC_PRIVY_APP_ID is not set - auth will not work');
+    console.error('❌ NEXT_PUBLIC_PRIVY_APP_ID is not set - auth will not work');
+    console.error('💡 Solution: Add NEXT_PUBLIC_PRIVY_APP_ID to your .env.local file');
+    console.error('   Get your App ID from: https://dashboard.privy.io/');
     return <>{children}</>;
+  }
+
+  // Log configuration for debugging (only in development)
+  if (process.env.NODE_ENV === 'development') {
+    console.log('🔐 Privy Configuration:', {
+      appId: appId ? `${appId.substring(0, 8)}...` : 'NOT SET',
+      network: 'devnet',
+      origin: typeof window !== 'undefined' ? window.location.origin : 'SSR',
+    });
   }
 
   // Get connectors - safe for both build-time and runtime

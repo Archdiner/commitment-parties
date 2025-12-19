@@ -107,7 +107,14 @@ export const Navbar = () => {
     } catch (error: any) {
       console.error('Failed to connect wallet:', error);
       const errorMessage = error?.message || error?.toString() || 'Unknown error';
-      alert(`Failed to connect wallet: ${errorMessage}`);
+      
+      // Show user-friendly error message
+      // If it's a 403 error, the error message already contains helpful instructions
+      if (errorMessage.includes('Domain not whitelisted') || errorMessage.includes('Privy Dashboard')) {
+        alert(errorMessage);
+      } else {
+        alert(`Failed to connect wallet: ${errorMessage}\n\nIf this persists, check your Privy dashboard configuration.`);
+      }
     }
   };
 
