@@ -201,6 +201,10 @@ class PoolResponse(BaseModel):
     recruitment_period_hours: Optional[int] = None
     scheduled_start_time: Optional[int] = None
     require_min_participants: Optional[bool] = None
+    recruitment_deadline: Optional[int] = None
+    filled_at: Optional[int] = None
+    auto_start_time: Optional[int] = None
+    min_participants: Optional[int] = None
 
     class Config:
         from_attributes = True

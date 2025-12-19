@@ -29,16 +29,20 @@ class PoolActivator:
     
     async def activate_scheduled_pools(self):
         """
-        Check for pending pools that should be activated and activate them.
-        Runs every minute to ensure timely activation.
+        NEW RECRUITMENT SYSTEM: Monitor pending pools for:
+        1. Early activation when filled (auto_start_time reached)
+        2. Expiration handling (recruitment_deadline passed, not filled) - refund participants
+        3. Twitter posting at start and end of recruitment period
+        
+        Runs every minute to ensure timely activation and expiration handling.
         """
-        logger.info("Starting pool activation monitoring...")
+        logger.info("Starting pool activation monitoring (recruitment system)...")
         
         while True:
             try:
                 current_time = int(time.time())
                 
-                # Find pending pools that should be activated
+                # Find pending pools (in recruiting phase)
                 pools = await execute_query(
                     table="pools",
                     operation="select",
@@ -48,101 +52,76 @@ class PoolActivator:
                 )
                 
                 activated_count = 0
+                expired_count = 0
+                
                 for pool in pools:
-                    scheduled_start = pool.get("scheduled_start_time")
-                    if not scheduled_start:
-                        # Immediate start pools should already be active (handled by backend)
-                        # But check if somehow they're still pending and activate them
-                        recruitment_hours = pool.get("recruitment_period_hours", 0)
-                        if recruitment_hours == 0:
-                            # This is an immediate start pool that's still pending - activate it
-                            pool_id = pool.get("pool_id")
-                            logger.info(f"Activating immediate start pool {pool_id}")
-                            await execute_query(
-                                table="pools",
-                                operation="update",
-                                filters={"pool_id": pool_id},
-                                data={"status": "active"}
-                            )
-                            activated_count += 1
-                        continue
-
                     pool_id = pool.get("pool_id")
-
-                    # For scheduled (non-immediate) public pools, queue a "new pool" tweet
-                    # soon after creation so people can see and join during recruitment.
-                    # We only do this for pools with a scheduled_start_time (future or past) and rely
-                    # on SocialManager's internal tracking to avoid duplicate tweets.
-                    # Queue the tweet for ALL pending pools with scheduled_start_time, not just future ones,
-                    # to catch pools that were created while the activator wasn't running.
-                    # Note: Immediate start pools (recruitment_period_hours == 0) have scheduled_start_time = None
-                    # and are set to "active" status immediately, so they won't appear in pending pools list.
-                    # Even if they did, the check for scheduled_start would skip them.
-                    if _social_manager:
-                        is_public = pool.get("is_public", True)
-                        # Only queue tweets for pools with scheduled_start_time (skips immediate start pools)
-                        if is_public and scheduled_start:
-                            try:
-                                from social import SocialEventType
-
-                                # Only queue if we haven't posted a POOL_CREATED event for this pool
+                    recruitment_deadline = pool.get("recruitment_deadline")
+                    filled_at = pool.get("filled_at")
+                    auto_start_time = pool.get("auto_start_time")
+                    is_public = pool.get("is_public", True)
+                    
+                    # Twitter posting: Post at start of recruitment period
+                    if _social_manager and is_public:
+                        try:
+                            from social import SocialEventType
+                            
+                            # Post POOL_CREATED tweet at start of recruitment period
+                            # Check if pool was created recently (within last 5 minutes) and hasn't been tweeted
+                            created_at = pool.get("created_at")
+                            if created_at:
+                                # Parse created_at timestamp (could be string or timestamp)
+                                if isinstance(created_at, str):
+                                    from datetime import datetime
+                                    try:
+                                        created_ts = int(datetime.fromisoformat(created_at.replace('Z', '+00:00')).timestamp())
+                                    except:
+                                        created_ts = None
+                                else:
+                                    created_ts = created_at
+                                
+                                if created_ts and (current_time - created_ts) < 300:  # Within 5 minutes
+                                    last_events = getattr(_social_manager, "last_event_post_time", {})
+                                    key = (pool_id, SocialEventType.POOL_CREATED)
+                                    if not last_events.get(key):
+                                        result = await _social_manager.post_event_update(
+                                            SocialEventType.POOL_CREATED,
+                                            pool_id,
+                                        )
+                                        if result:
+                                            logger.info(f"Posted POOL_CREATED tweet for new pool {pool_id} (start of recruitment)")
+                        except Exception as e:
+                            logger.error(f"Error posting start-of-recruitment tweet for pool {pool_id}: {e}", exc_info=True)
+                    
+                    # Twitter posting: Post towards end of recruitment period (24h before deadline)
+                    if _social_manager and is_public and recruitment_deadline:
+                        try:
+                            from social import SocialEventType
+                            
+                            # Post reminder tweet 24 hours before deadline
+                            reminder_time = recruitment_deadline - 86400  # 24 hours before
+                            if current_time >= reminder_time and current_time < recruitment_deadline:
+                                # Check if we've already posted this reminder
                                 last_events = getattr(_social_manager, "last_event_post_time", {})
-                                key = (pool_id, SocialEventType.POOL_CREATED)
+                                key = (pool_id, "recruitment_ending_soon")
                                 if not last_events.get(key):
+                                    # Use POOL_CREATED event type but with custom message
                                     result = await _social_manager.post_event_update(
                                         SocialEventType.POOL_CREATED,
                                         pool_id,
                                     )
                                     if result:
-                                        logger.info(
-                                            f"Queued POOL_CREATED tweet for newly created scheduled pool {pool_id}"
-                                        )
-                                    else:
-                                        logger.warning(
-                                            f"Failed to queue POOL_CREATED tweet for pool {pool_id} "
-                                            f"(post_event_update returned None)"
-                                        )
-                                else:
-                                    logger.debug(
-                                        f"Skipping POOL_CREATED tweet for pool {pool_id} "
-                                        f"(already queued/posted at {last_events.get(key)})"
-                                    )
-                            except Exception as e:
-                                logger.error(
-                                    f"Failed to queue POOL_CREATED tweet for pool {pool_id}: {e}",
-                                    exc_info=True
-                                )
-                        elif not is_public:
-                            logger.debug(f"Skipping tweet for pool {pool_id} (not public)")
-                        elif not scheduled_start:
-                            logger.debug(f"Skipping tweet for pool {pool_id} (no scheduled_start_time)")
-                    else:
-                        logger.debug("Social manager not available, skipping tweet queue")
+                                        last_events[key] = current_time
+                                        logger.info(f"Posted recruitment ending soon tweet for pool {pool_id}")
+                        except Exception as e:
+                            logger.error(f"Error posting end-of-recruitment tweet for pool {pool_id}: {e}", exc_info=True)
                     
-                    # Check if it's time to activate
-                    if current_time >= scheduled_start:
-                        require_min = pool.get("require_min_participants", False)
-                        min_participants = pool.get("min_participants", 1)
-                        participant_count = pool.get("participant_count", 0)
-                        
-                        # Check minimum participants requirement
-                        if require_min and participant_count < min_participants:
-                            logger.info(
-                                f"Pool {pool_id} scheduled to start but minimum participants not met "
-                                f"({participant_count}/{min_participants}). Extending recruitment by 24 hours."
-                            )
-                            # Extend recruitment by 24 hours
-                            new_scheduled_start = scheduled_start + 86400
-                            await execute_query(
-                                table="pools",
-                                operation="update",
-                                filters={"pool_id": pool_id},
-                                data={"scheduled_start_time": new_scheduled_start}
-                            )
-                            continue
-                        
-                        # Activate the pool
-                        logger.info(f"Activating pool {pool_id} (scheduled start: {scheduled_start})")
+                    # Priority 1: Check if pool filled and auto_start_time reached
+                    if filled_at and auto_start_time and current_time >= auto_start_time:
+                        # Pool filled and it's time to start!
+                        logger.info(
+                            f"Activating pool {pool_id} - filled at {filled_at}, starting at {auto_start_time}"
+                        )
                         await execute_query(
                             table="pools",
                             operation="update",
@@ -152,7 +131,6 @@ class PoolActivator:
                         activated_count += 1
                         
                         # Mark forfeited participants as failed when challenge starts
-                        # If someone forfeited before challenge started, they're now failed
                         forfeited_participants = await execute_query(
                             table="participants",
                             operation="select",
@@ -176,15 +154,67 @@ class PoolActivator:
                                     },
                                     data={"status": "failed"}
                                 )
+                        continue
+                    
+                    # Priority 2: Check if recruitment deadline passed and pool not filled
+                    if recruitment_deadline and current_time >= recruitment_deadline and not filled_at:
+                        # Pool expired without filling - refund all participants
+                        logger.warning(
+                            f"Pool {pool_id} expired without filling. Refunding all participants."
+                        )
                         
-                        # Note: POOL_CREATED tweet should have been queued earlier when pool was pending.
-                        # We don't queue it here at activation time because:
-                        # 1. It's too late - recruitment period is over
-                        # 2. It would be redundant - should have been posted during recruitment
-                        # 3. The tweet should go out when the pool is created, not when it starts
+                        # Get all participants
+                        participants = await execute_query(
+                            table="participants",
+                            operation="select",
+                            filters={"pool_id": pool_id}
+                        )
+                        
+                        if participants:
+                            # Refund each participant
+                            refunded_count = 0
+                            for participant in participants:
+                                wallet_address = participant.get("wallet_address")
+                                stake_amount = participant.get("stake_amount", 0.0)
+                                
+                                try:
+                                    # Call refund function (will be implemented)
+                                    refund_success = await self._refund_participant(
+                                        pool_id, wallet_address, stake_amount
+                                    )
+                                    if refund_success:
+                                        refunded_count += 1
+                                    else:
+                                        logger.error(
+                                            f"Failed to refund participant {wallet_address} "
+                                            f"for expired pool {pool_id}"
+                                        )
+                                except Exception as e:
+                                    logger.error(
+                                        f"Error refunding participant {wallet_address} "
+                                        f"for expired pool {pool_id}: {e}",
+                                        exc_info=True
+                                    )
+                            
+                            logger.info(
+                                f"Refunded {refunded_count}/{len(participants)} participants "
+                                f"for expired pool {pool_id}"
+                            )
+                        
+                        # Mark pool as expired
+                        await execute_query(
+                            table="pools",
+                            operation="update",
+                            filters={"pool_id": pool_id},
+                            data={"status": "expired"}
+                        )
+                        expired_count += 1
+                        continue
                 
                 if activated_count > 0:
                     logger.info(f"Activated {activated_count} pool(s)")
+                if expired_count > 0:
+                    logger.info(f"Expired and refunded {expired_count} pool(s)")
                 
                 # Check every minute
                 await asyncio.sleep(60)
@@ -192,4 +222,70 @@ class PoolActivator:
             except Exception as e:
                 logger.error(f"Error in pool activation monitoring: {e}", exc_info=True)
                 await asyncio.sleep(60)  # Wait before retrying
+    
+    async def _refund_participant(
+        self, pool_id: int, wallet_address: str, stake_amount: float
+    ) -> bool:
+        """
+        Refund a participant's stake for an expired pool.
+        
+        NOTE: This requires a refund instruction in the smart contract.
+        For now, we'll call a backend endpoint that handles the refund.
+        The backend can use the agent's authority to create refund transactions.
+        
+        Args:
+            pool_id: Pool ID
+            wallet_address: Participant wallet address
+            stake_amount: Amount to refund (in SOL)
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            import aiohttp
+            
+            # Call backend refund endpoint
+            backend_url = getattr(settings, "BACKEND_URL", None)
+            if not backend_url:
+                # Fallback: try to construct from common deployment patterns
+                backend_url = "http://localhost:8000"
+                logger.warning(f"BACKEND_URL not set, using default: {backend_url}")
+            
+            refund_url = f"{backend_url}/api/pools/{pool_id}/refund"
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    refund_url,
+                    json={
+                        "wallet_address": wallet_address,
+                        "stake_amount": stake_amount,
+                    },
+                    timeout=aiohttp.ClientTimeout(total=30),
+                ) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        signature = result.get("transaction_signature")
+                        if signature:
+                            logger.info(
+                                f"Refunded {stake_amount} SOL to {wallet_address} "
+                                f"for expired pool {pool_id}. Signature: {signature}"
+                            )
+                            return True
+                        else:
+                            logger.error(f"Backend refund succeeded but no signature returned")
+                            return False
+                    else:
+                        error_text = await response.text()
+                        logger.error(
+                            f"Backend refund failed for pool {pool_id}, "
+                            f"wallet {wallet_address}: {response.status} - {error_text}"
+                        )
+                        return False
+        
+        except Exception as e:
+            logger.error(
+                f"Error refunding participant {wallet_address} for pool {pool_id}: {e}",
+                exc_info=True
+            )
+            return False
 

@@ -356,29 +356,68 @@ async def confirm_pool_creation(pool_data: PoolConfirmRequest) -> PoolResponse:
             pool_dict["total_staked"] = 0.0
             pool_dict["yield_earned"] = 0.0
             
-            # Calculate scheduled_start_time based on recruitment_period_hours
-            recruitment_hours = pool_dict.get("recruitment_period_hours", 24)  # Default to 24 hours
+            # NEW RECRUITMENT SYSTEM: All challenges start in recruiting phase
             current_time = get_eastern_timestamp()  # Use Eastern Time
-            
-            if recruitment_hours > 0:
-                # Scheduled start: current time + recruitment period
-                scheduled_start = current_time + (recruitment_hours * 3600)
-                pool_dict["start_timestamp"] = scheduled_start
-                pool_dict["end_timestamp"] = pool_dict["start_timestamp"] + (pool_dict["duration_days"] * 86400)
-                pool_dict["status"] = "pending"  # Will be activated by agent
-            else:
-                # Immediate start: activate immediately
-                pool_dict["start_timestamp"] = current_time
-                pool_dict["end_timestamp"] = pool_dict["start_timestamp"] + (pool_dict["duration_days"] * 86400)
-                pool_dict["status"] = "active"  # Activate immediately
             
             # Remove fields that don't exist in database schema
             pool_dict.pop("transaction_signature", None)
             
-            # Set defaults for recruitment system fields (these exist in migration_add_pool_fields.sql)
-            # These fields are used by the recruitment system feature branch
+            # Get values - ensure we have valid integers (MUST be before enforcement logic)
             min_participants = pool_dict.get("min_participants", 1)
             max_participants = pool_dict.get("max_participants")
+            
+            # Ensure max_participants is valid
+            if max_participants is None:
+                logger.error("max_participants is missing from pool_dict")
+                raise HTTPException(status_code=400, detail="max_participants is required")
+            
+            # Convert to int if needed
+            try:
+                max_participants = int(max_participants)
+            except (ValueError, TypeError):
+                logger.error(f"Invalid max_participants value: {max_participants}")
+                raise HTTPException(status_code=400, detail=f"Invalid max_participants: {max_participants}")
+            
+            # Convert min_participants to int
+            try:
+                min_participants = int(min_participants) if min_participants is not None else 1
+            except (ValueError, TypeError):
+                logger.warning(f"Invalid min_participants value: {min_participants}, defaulting to 1")
+                min_participants = 1
+            
+            # Enforce recruitment period: min 1 day (24 hours), default 1 week (168 hours), max 2 weeks (336 hours)
+            recruitment_hours = pool_dict.get("recruitment_period_hours", 168)  # Default to 1 week
+            if recruitment_hours > 336:  # Max 2 weeks
+                recruitment_hours = 336
+            elif recruitment_hours < 24:  # Minimum 1 day
+                recruitment_hours = 24
+            
+            # Set recruitment_deadline = now + recruitment_period
+            recruitment_deadline = current_time + (recruitment_hours * 3600)
+            pool_dict["recruitment_deadline"] = recruitment_deadline
+            
+            # NEW RECRUITMENT SYSTEM: Enforce min_participants >= 5, max_participants <= 50
+            if min_participants < 5:
+                min_participants = 5
+            if max_participants > 50:
+                max_participants = 50
+            
+            # CRITICAL: Ensure min_participants <= max_participants
+            if min_participants > max_participants:
+                logger.warning(f"min_participants ({min_participants}) > max_participants ({max_participants}). Setting to 5.")
+                min_participants = 5
+            
+            # All challenges now require minimum participants
+            pool_dict["require_min_participants"] = True
+            pool_dict["min_participants"] = min_participants
+            pool_dict["max_participants"] = max_participants
+            
+            # Challenge starts in recruiting phase
+            pool_dict["start_timestamp"] = recruitment_deadline  # Placeholder
+            pool_dict["end_timestamp"] = pool_dict["start_timestamp"] + (pool_dict["duration_days"] * 86400)  # Placeholder
+            pool_dict["status"] = "pending"  # Recruiting phase
+            pool_dict["filled_at"] = None
+            pool_dict["auto_start_time"] = None
             
             # CRITICAL: Ensure min_participants <= max_participants (database constraint)
             if min_participants > max_participants:
@@ -392,7 +431,7 @@ async def confirm_pool_creation(pool_data: PoolConfirmRequest) -> PoolResponse:
                 min_participants = 1
             
             pool_dict["min_participants"] = min_participants
-            pool_dict.setdefault("recruitment_period_hours", 24)  # Default 24 hours
+            pool_dict.setdefault("recruitment_period_hours", 168)  # Default 1 week (168 hours)
             pool_dict.setdefault("require_min_participants", False)  # Default false
             # scheduled_start_time is calculated above and kept (nullable, so None is fine)
             
@@ -414,31 +453,27 @@ async def confirm_pool_creation(pool_data: PoolConfirmRequest) -> PoolResponse:
         pool_dict["total_staked"] = 0.0
         pool_dict["yield_earned"] = 0.0
         
-        # Handle recruitment period and scheduled start (if these columns exist in DB)
-        # For now, we'll calculate timestamps but only store what's in schema
-        recruitment_hours = pool_dict.get("recruitment_period_hours", 24)  # Default to 24 hours
+        # NEW RECRUITMENT SYSTEM: All challenges start in recruiting phase
+        # Default recruitment period: 1 week (7 days), max allowed: 2 weeks (14 days)
         current_time = get_eastern_timestamp()  # Use Eastern Time
         
-        if recruitment_hours > 0:
-            # Scheduled start: current time + recruitment period
-            scheduled_start = current_time + (recruitment_hours * 3600)
-            # Update start_timestamp to scheduled time (for end_timestamp calculation)
-            pool_dict["start_timestamp"] = scheduled_start
-            pool_dict["end_timestamp"] = pool_dict["start_timestamp"] + (pool_dict["duration_days"] * 86400)
-            pool_dict["status"] = "pending"  # Will be activated by agent at scheduled time
-        else:
-            # Immediate start: activate immediately
-            pool_dict["start_timestamp"] = current_time
-            pool_dict["end_timestamp"] = pool_dict["start_timestamp"] + (pool_dict["duration_days"] * 86400)
-            pool_dict["status"] = "active"  # Activate immediately
+        # Enforce recruitment period: min 1 day (24 hours), default 1 week (168 hours), max 2 weeks (336 hours)
+        recruitment_hours = pool_dict.get("recruitment_period_hours", 168)  # Default to 1 week (168 hours)
+        if recruitment_hours > 336:  # Max 2 weeks (336 hours)
+            recruitment_hours = 336
+            logger.warning(f"Recruitment period capped at 2 weeks (336 hours) for pool {pool_data.pool_id}")
+        elif recruitment_hours < 24:  # Minimum 1 day (24 hours)
+            recruitment_hours = 24
+            logger.info(f"Recruitment period set to minimum 1 day (24 hours) for pool {pool_data.pool_id}")
+        
+        # Set recruitment_deadline = now + recruitment_period
+        recruitment_deadline = current_time + (recruitment_hours * 3600)
+        pool_dict["recruitment_deadline"] = recruitment_deadline
         
         # Remove fields that don't exist in database schema
         pool_dict.pop("transaction_signature", None)  # Not in schema
         
-        # Set defaults for recruitment system fields (these exist in migration_add_pool_fields.sql)
-        # These fields are used by the recruitment system feature branch
-        
-        # Get values - ensure we have valid integers
+        # Get values - ensure we have valid integers (MUST be before enforcement logic)
         min_participants = pool_dict.get("min_participants")
         max_participants = pool_dict.get("max_participants")
         
@@ -464,27 +499,39 @@ async def confirm_pool_creation(pool_data: PoolConfirmRequest) -> PoolResponse:
                 logger.warning(f"Invalid min_participants value: {min_participants}, defaulting to 1")
                 min_participants = 1
         
+        # NEW RECRUITMENT SYSTEM: Enforce min_participants >= 5, max_participants <= 50
+        if min_participants < 5:
+            logger.warning(f"min_participants ({min_participants}) < 5. Setting to 5.")
+            min_participants = 5
+        if max_participants > 50:
+            logger.warning(f"max_participants ({max_participants}) > 50. Setting to 50.")
+            max_participants = 50
+        
         # CRITICAL: Ensure min_participants <= max_participants (database constraint check_participant_range)
-        # If min_participants is greater than max_participants, set it to 1 (minimum valid value)
         if min_participants > max_participants:
             logger.warning(
                 f"min_participants ({min_participants}) > max_participants ({max_participants}). "
-                f"Setting min_participants to 1 to satisfy database constraint check_participant_range."
+                f"Setting min_participants to 5 to satisfy database constraint."
             )
-            min_participants = 1
-        
-        # Ensure min_participants is at least 1
-        if min_participants < 1:
-            min_participants = 1
+            min_participants = 5
         
         # Log final values for debugging
         logger.info(f"Pool creation: min_participants={min_participants}, max_participants={max_participants}")
         
         pool_dict["min_participants"] = min_participants
-        pool_dict["max_participants"] = max_participants  # Ensure this is set correctly
-        pool_dict.setdefault("recruitment_period_hours", 24)  # Default 24 hours
-        pool_dict.setdefault("require_min_participants", False)  # Default false
-        # scheduled_start_time is calculated above and kept (nullable, so None is fine)
+        pool_dict["max_participants"] = max_participants
+        pool_dict.setdefault("recruitment_period_hours", 168)  # Default 1 week
+        pool_dict["require_min_participants"] = True  # NEW: Always required
+        
+        # Challenge starts in recruiting phase - status stays "pending"
+        # start_timestamp will be set when challenge actually starts (after filling or at auto_start_time)
+        # For now, set a placeholder start_timestamp (will be updated when challenge starts)
+        # end_timestamp will be calculated from actual start_timestamp + duration_days
+        pool_dict["start_timestamp"] = recruitment_deadline  # Placeholder, will be updated
+        pool_dict["end_timestamp"] = pool_dict["start_timestamp"] + (pool_dict["duration_days"] * 86400)  # Placeholder
+        pool_dict["status"] = "pending"  # Recruiting phase
+        pool_dict["filled_at"] = None  # Not filled yet
+        pool_dict["auto_start_time"] = None  # Will be set when filled
         
         # NOTE: If you've added new required columns to the pools table that aren't in the schema.sql file,
         # add default/filler values here. For example:
@@ -1574,18 +1621,39 @@ async def confirm_pool_join(
         
         # Update participant count and total staked
         current_participants = pool.get("participant_count", 0)
+        new_participant_count = current_participants + 1
         stake_amount = pool.get("stake_amount", 0.0)
         current_total_staked = pool.get("total_staked", 0.0)
         
         # Increment participant count and total staked
         update_data = {
-            "participant_count": current_participants + 1,
+            "participant_count": new_participant_count,
             "total_staked": current_total_staked + stake_amount,
         }
         
-        # If pool was pending and now has participants, mark as active
-        if pool.get("status") == "pending" and current_participants == 0:
-            update_data["status"] = "active"
+        # NEW RECRUITMENT SYSTEM: Check if minimum participants reached
+        min_participants = pool.get("min_participants", 1)
+        filled_at = pool.get("filled_at")
+        
+        if new_participant_count >= min_participants and filled_at is None:
+            # Challenge just filled! Set filled_at and auto_start_time (24h later)
+            current_time = get_eastern_timestamp()
+            auto_start_time = current_time + 86400  # 24 hours from now
+            
+            update_data["filled_at"] = current_time
+            update_data["auto_start_time"] = auto_start_time
+            
+            # Update start_timestamp and end_timestamp based on auto_start_time
+            duration_days = pool.get("duration_days", 7)
+            update_data["start_timestamp"] = auto_start_time
+            update_data["end_timestamp"] = auto_start_time + (duration_days * 86400)
+            
+            logger.info(
+                f"Pool {pool_id} filled! Minimum participants ({min_participants}) reached. "
+                f"Challenge will start at {auto_start_time} (24h from now)"
+            )
+        
+        # Pool stays in "pending" status during recruitment - agent will activate it
         
         results = await execute_query(
             table="pools",
@@ -1699,6 +1767,109 @@ async def forfeit_pool(
     except Exception as e:
         logger.error(f"Error forfeiting pool: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to forfeit pool")
+
+
+@router.post(
+    "/{pool_id}/refund",
+    summary="Refund participant for expired pool",
+    description="Refunds a participant's stake when a pool expires without filling. Requires agent authority.",
+)
+async def refund_participant(
+    pool_id: int,
+    wallet_address: str = Query(..., description="Participant wallet address"),
+    stake_amount: float = Query(..., description="Stake amount to refund in SOL"),
+) -> dict:
+    """
+    Refund a participant's stake for an expired pool.
+    
+    NOTE: This endpoint requires a refund instruction in the smart contract.
+    For now, it records the refund request. The actual on-chain refund
+    will be implemented when the refund instruction is added to the contract.
+    """
+    try:
+        # Get pool information
+        pools = await execute_query(
+            table="pools",
+            operation="select",
+            filters={"pool_id": pool_id},
+            limit=1
+        )
+        
+        if not pools:
+            raise HTTPException(status_code=404, detail="Pool not found")
+        
+        pool = pools[0]
+        
+        # Verify pool is expired
+        if pool.get("status") != "expired":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Pool must be expired to refund. Current status: {pool.get('status')}"
+            )
+        
+        # Verify participant exists
+        participants = await execute_query(
+            table="participants",
+            operation="select",
+            filters={
+                "pool_id": pool_id,
+                "wallet_address": wallet_address
+            },
+            limit=1
+        )
+        
+        if not participants:
+            raise HTTPException(status_code=404, detail="Participant not found in pool")
+        
+        participant = participants[0]
+        
+        # Verify stake amount matches
+        participant_stake = participant.get("stake_amount", 0.0)
+        if abs(participant_stake - stake_amount) > 0.0001:  # Allow small floating point differences
+            logger.warning(
+                f"Stake amount mismatch for pool {pool_id}, wallet {wallet_address}: "
+                f"expected {participant_stake}, got {stake_amount}"
+            )
+        
+        # TODO: Implement actual on-chain refund when refund instruction is added to contract
+        # For now, we'll log the refund request
+        logger.info(
+            f"Refund request for pool {pool_id}, wallet {wallet_address}, "
+            f"amount {stake_amount} SOL. On-chain refund pending contract update."
+        )
+        
+        # Record refund payout (even though on-chain refund not yet implemented)
+        try:
+            await execute_query(
+                table="payouts",
+                operation="insert",
+                data={
+                    "pool_id": pool_id,
+                    "recipient_wallet": wallet_address,
+                    "amount": stake_amount,
+                    "payout_type": "refund",
+                    "transaction_hash": None,  # Will be set when on-chain refund is implemented
+                }
+            )
+        except Exception as e:
+            logger.warning(f"Failed to record refund payout: {e}")
+        
+        # Return success (even though on-chain refund not yet implemented)
+        # The agent will handle the actual refund when the contract instruction is available
+        return {
+            "success": True,
+            "message": "Refund request recorded. On-chain refund pending contract update.",
+            "pool_id": pool_id,
+            "wallet_address": wallet_address,
+            "stake_amount": stake_amount,
+            "transaction_signature": None,  # Will be set when on-chain refund is implemented
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error processing refund: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to process refund")
 
 
 
