@@ -60,6 +60,7 @@ export interface PoolResponse {
   stake_amount: number;
   duration_days: number;
   max_participants: number;
+  min_participants?: number;  // NEW: Minimum participants required
   participant_count: number;
   distribution_mode: string;
   split_percentage_winners: number;
@@ -77,6 +78,10 @@ export interface PoolResponse {
   recruitment_period_hours?: number;
   scheduled_start_time?: number;
   require_min_participants?: boolean;
+  // NEW RECRUITMENT SYSTEM FIELDS
+  recruitment_deadline?: number;  // When recruitment period ends
+  filled_at?: number;  // When minimum participants reached
+  auto_start_time?: number;  // When challenge starts (24h after filling)
 }
 
 export interface PoolConfirmRequest {

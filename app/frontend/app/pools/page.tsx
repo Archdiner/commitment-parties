@@ -9,26 +9,26 @@ import { ButtonPrimary } from '@/components/ui/ButtonPrimary';
 import { getTokenByMint } from '@/lib/tokens';
 
 // Helper function to get challenge type label and color
-// Color indicates category: blue = crypto, orange = lifestyle
-function getChallengeType(pool: PoolResponse): { label: string; color: 'blue' | 'orange' } {
+// Color indicates category: teal = crypto, cyan = lifestyle
+function getChallengeType(pool: PoolResponse): { label: string; color: 'teal' | 'cyan' } {
   const goalMetadata = (pool.goal_metadata || {}) as any;
   
   if (pool.goal_type === 'hodl_token') {
-    return { label: 'HODL', color: 'blue' };
+    return { label: 'HODL', color: 'teal' };
   }
   if (pool.goal_type === 'DailyDCA' || pool.goal_type === 'dca') {
-    return { label: 'DCA', color: 'blue' };
+    return { label: 'DCA', color: 'teal' };
   }
   if (pool.goal_type === 'lifestyle_habit') {
     const habitType = goalMetadata.habit_type;
     if (habitType === 'github_commits') {
-      return { label: 'GitHub', color: 'orange' };
+      return { label: 'GitHub', color: 'cyan' };
     }
     if (habitType === 'screen_time') {
-      return { label: 'Screen Time', color: 'orange' };
+      return { label: 'Screen Time', color: 'cyan' };
     }
   }
-  return { label: 'Unknown', color: 'blue' };
+  return { label: 'Unknown', color: 'teal' };
 }
 
 export default function PoolsPage() {
@@ -204,7 +204,7 @@ export default function PoolsPage() {
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2 flex-wrap">
                       <Badge color={challengeType.color}>{challengeType.label}</Badge>
-                      <Badge color={status === 'RECRUITING' || status === 'pending' ? 'emerald' : status === 'ACTIVE' || status === 'active' ? 'blue' : 'gray'}>
+                      <Badge color={status === 'RECRUITING' || status === 'pending' ? 'emerald' : status === 'ACTIVE' || status === 'active' ? 'teal' : 'gray'}>
                         {status}
                       </Badge>
                       {status === 'ACTIVE' || status === 'active' ? (
@@ -249,7 +249,7 @@ export default function PoolsPage() {
                       )}
                       
                       {isDCA && (
-                        <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+                        <div className="flex items-center gap-2 px-3 py-1.5 bg-teal-500/10 border border-teal-500/30 rounded-lg">
                           {tokenInfo && tokenInfo.iconUrl ? (
                             <img 
                               src={tokenInfo.iconUrl} 
@@ -260,11 +260,11 @@ export default function PoolsPage() {
                               }}
                             />
                           ) : tokenInfo ? (
-                            <div className="w-5 h-5 rounded-full bg-blue-500/20 flex items-center justify-center text-xs font-mono">
+                            <div className="w-5 h-5 rounded-full bg-teal-500/20 flex items-center justify-center text-xs font-mono">
                               {tokenInfo.symbol[0]}
                             </div>
                           ) : null}
-                          <span className="text-xs font-mono text-blue-300">
+                          <span className="text-xs font-mono text-teal-300">
                             {dcaTradesPerDay || 1} trade{dcaTradesPerDay !== 1 ? 's' : ''}/day
                             {tokenInfo && ` • ${tokenInfo.symbol}`}
                           </span>
@@ -272,9 +272,9 @@ export default function PoolsPage() {
                       )}
                       
                       {isGitHubCommits && (
-                        <div className="flex items-center gap-2 px-3 py-1.5 bg-purple-500/10 border border-purple-500/30 rounded-lg">
-                          <GitCommit className="w-4 h-4 text-purple-300" />
-                          <span className="text-xs font-mono text-purple-300">
+                        <div className="flex items-center gap-2 px-3 py-1.5 bg-cyan-500/10 border border-cyan-500/30 rounded-lg">
+                          <GitCommit className="w-4 h-4 text-cyan-300" />
+                          <span className="text-xs font-mono text-cyan-300">
                             {minCommitsPerDay || 1} commit{minCommitsPerDay !== 1 ? 's' : ''}/day
                             {minTotalLinesPerDay && minTotalLinesPerDay > 0 && ` • ${minTotalLinesPerDay}+ total lines/day`}
                           </span>
@@ -282,9 +282,9 @@ export default function PoolsPage() {
                       )}
                       
                       {isScreenTime && (
-                        <div className="flex items-center gap-2 px-3 py-1.5 bg-orange-500/10 border border-orange-500/30 rounded-lg">
-                          <Clock className="w-4 h-4 text-orange-300" />
-                          <span className="text-xs font-mono text-orange-300">
+                        <div className="flex items-center gap-2 px-3 py-1.5 bg-teal-500/10 border border-teal-500/30 rounded-lg">
+                          <Clock className="w-4 h-4 text-teal-300" />
+                          <span className="text-xs font-mono text-teal-300">
                             Max {goalMetadata.max_hours || 2}h/day
                           </span>
                         </div>
@@ -305,8 +305,19 @@ export default function PoolsPage() {
                     </div>
                     <div>
                       <div className="text-[9px] uppercase tracking-wider text-gray-500 mb-1">Capacity</div>
-                      <div className="font-mono text-sm mb-1">{(pool.participant_count || 0)}/{(pool.max_participants || 0)}</div>
-                      <div className="text-[9px] text-gray-600">Joined / Max</div>
+                      <div className="font-mono text-sm mb-1">
+                        {(pool.participant_count || 0)}/{(pool.max_participants || 0)}
+                        {pool.min_participants && pool.min_participants > 0 && (
+                          <span className="text-gray-500 text-[9px] ml-1">
+                            (min: {pool.min_participants})
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[9px] text-gray-600">
+                        {pool.status === 'pending' && pool.min_participants
+                          ? `${pool.min_participants - (pool.participant_count || 0)} more needed`
+                          : 'Joined / Max'}
+                      </div>
                     </div>
                   </div>
 

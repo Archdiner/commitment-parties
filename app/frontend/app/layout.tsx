@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { PrivyProvider } from "@/components/providers/PrivyProvider";
-import { Navbar } from "@/components/Navbar";
+import { NavbarWrapper } from "@/components/NavbarWrapper";
 import { HelpBar } from "@/components/HelpBar";
 import { Footer } from "@/components/Footer";
 
@@ -33,7 +33,7 @@ export default function RootLayout({
         suppressHydrationWarning
       >
         <PrivyProvider>
-        <Navbar />
+        <NavbarWrapper />
         <HelpBar />
         <main className="flex-1">
           {children}

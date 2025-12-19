@@ -2,7 +2,7 @@
 
 import { PrivyProvider as PrivyAuthProvider } from '@privy-io/react-auth';
 import { createSolanaRpc, createSolanaRpcSubscriptions } from '@solana/kit';
-import { ReactNode, useMemo } from 'react';
+import { ReactNode, useMemo, useState, useEffect } from 'react';
 
 interface Props {
   children: ReactNode;
@@ -53,6 +53,9 @@ export function PrivyProvider({ children }: Props) {
   const solanaConnectors = useMemo(() => getSolanaConnectors(), []);
 
   // Build config - conditionally add externalWallets only when connectors are available
+  // During build/SSR, create a minimal safe config
+  const isBrowser = typeof window !== 'undefined';
+  
   const config: any = {
     // Login methods - support both crypto and non-crypto users
     loginMethods: ['email', 'wallet', 'github'],
@@ -71,30 +74,38 @@ export function PrivyProvider({ children }: Props) {
         createOnLogin: 'all-users',
       },
     },
-    
-    // Configure Solana RPC endpoints
-    solana: {
-      rpcs: {
-        'solana:devnet': {
-          rpc: createSolanaRpc('https://api.devnet.solana.com'),
-          rpcSubscriptions: createSolanaRpcSubscriptions('wss://api.devnet.solana.com'),
-        },
-        'solana:mainnet': {
-          rpc: createSolanaRpc('https://api.devnet.solana.com'), // Point to devnet
-          rpcSubscriptions: createSolanaRpcSubscriptions('wss://api.devnet.solana.com'), // Point to devnet
-        },
-      },
-    },
   };
 
-  // Only add externalWallets when connectors are available (runtime/browser only)
-  // This enables detection of Phantom, Solflare, Backpack, Jupiter, and other major Solana wallets
-  if (solanaConnectors) {
-    config.externalWallets = {
-      solana: {
-        connectors: solanaConnectors,
-      },
-    };
+  // Only configure RPC and externalWallets in browser (not during build/SSR)
+  // This prevents build errors when RPC creation or connector access fails
+  if (isBrowser) {
+    try {
+      config.solana = {
+        rpcs: {
+          'solana:devnet': {
+            rpc: createSolanaRpc('https://api.devnet.solana.com'),
+            rpcSubscriptions: createSolanaRpcSubscriptions('wss://api.devnet.solana.com'),
+          },
+          'solana:mainnet': {
+            rpc: createSolanaRpc('https://api.devnet.solana.com'), // Point to devnet
+            rpcSubscriptions: createSolanaRpcSubscriptions('wss://api.devnet.solana.com'), // Point to devnet
+          },
+        },
+      };
+
+      // Only add externalWallets when connectors are available (runtime/browser only)
+      // This enables detection of Phantom, Solflare, Backpack, Jupiter, and other major Solana wallets
+      if (solanaConnectors) {
+        config.externalWallets = {
+          solana: {
+            connectors: solanaConnectors,
+          },
+        };
+      }
+    } catch (error) {
+      // Silently fail during build - config will work without RPC/externalWallets
+      console.warn('Failed to configure Solana RPC during build:', error);
+    }
   }
 
   return (

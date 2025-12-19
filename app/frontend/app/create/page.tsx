@@ -15,6 +15,9 @@ import { derivePoolPDA, solToLamports } from '@/lib/solana';
 import { Transaction } from '@solana/web3.js';
 import { POPULAR_TOKENS, getTokenByMint, type TokenInfo } from '@/lib/tokens';
 
+// Force dynamic rendering to prevent build-time errors with Privy hooks
+export const dynamic = 'force-dynamic';
+
 export default function CreatePool() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -51,10 +54,10 @@ export default function CreatePool() {
     duration: '14 Days',
     customDuration: '',
     stake: '0.5',
-    maxParticipants: '100',
-    recruitmentPeriodHours: '24', // onboarding / initiation phase length (in hours)
-    requireMinParticipants: false,
-    minParticipants: '10',
+    maxParticipants: '50', // NEW RECRUITMENT SYSTEM: Max 50 participants
+    recruitmentPeriodHours: '168', // Fixed at 1 week (168 hours), max 2 weeks (336 hours)
+    requireMinParticipants: true, // Always required now
+    minParticipants: '5', // Minimum 5 participants
     // Crypto-specific fields
     tokenMint: 'So11111111111111111111111111111111111111112',
     hodlAmount: '1',          // whole tokens
@@ -159,23 +162,21 @@ export default function CreatePool() {
       errors.stake = true;
     }
     
-    // Validate max participants (1 to 100)
-    const maxParticipants = parseInt(formData.maxParticipants);
-    if (isNaN(maxParticipants) || maxParticipants < 1 || maxParticipants > 100) {
-      errors.maxParticipants = true;
-    }
-    
-    // Validate min participants if required
-    if (formData.requireMinParticipants) {
-      const minParticipants = parseInt(formData.minParticipants);
-      if (isNaN(minParticipants) || minParticipants < 1) {
-        errors.minParticipants = true;
-      }
-      // CRITICAL: min_participants must be <= max_participants (database constraint)
-      if (minParticipants > maxParticipants) {
-        errors.minParticipants = true;
-      }
-    }
+        // Validate max participants (5 to 50) - NEW RECRUITMENT SYSTEM
+        const maxParticipants = parseInt(formData.maxParticipants);
+        if (isNaN(maxParticipants) || maxParticipants < 5 || maxParticipants > 50) {
+          errors.maxParticipants = true;
+        }
+        
+        // Validate min participants (always required, 5 to 50)
+        const minParticipants = parseInt(formData.minParticipants);
+        if (isNaN(minParticipants) || minParticipants < 5 || minParticipants > 50) {
+          errors.minParticipants = true;
+        }
+        // CRITICAL: min_participants must be <= max_participants (database constraint)
+        if (minParticipants > maxParticipants) {
+          errors.minParticipants = true;
+        }
     
     // Validate challenge-specific fields
     if (formData.category === 'Crypto') {
@@ -240,28 +241,27 @@ export default function CreatePool() {
         
         const stakeAmount = parseFloat(formData.stake);
         
-        // Parse and validate max participants
+        // Parse and validate max participants (NEW RECRUITMENT SYSTEM: 5-50 range)
         let maxParticipants = parseInt(formData.maxParticipants, 10);
-        if (isNaN(maxParticipants) || maxParticipants < 1) {
-          alert("Max participants must be at least 1. Setting to 1.");
-          maxParticipants = 1;
+        if (isNaN(maxParticipants) || maxParticipants < 5) {
+          alert("Max participants must be at least 5. Setting to 5.");
+          maxParticipants = 5;
           setLoading(false);
           return;
         }
-        if (maxParticipants > 100) {
-          alert("Max participants cannot exceed 100. Setting to 100.");
-          maxParticipants = 100;
+        if (maxParticipants > 50) {
+          alert("Max participants cannot exceed 50. Setting to 50.");
+          maxParticipants = 50;
           setLoading(false);
           return;
         }
         
-        const recruitmentHours = parseInt(formData.recruitmentPeriodHours);
-        const requireMinParticipants = formData.requireMinParticipants;
+        // NEW RECRUITMENT SYSTEM: Always require minimum participants
+        let recruitmentHours = parseInt(formData.recruitmentPeriodHours);
+        const requireMinParticipants = true; // Always required now
         
         // Calculate minParticipantsForBackend - ensure it's always <= maxParticipants
-        let minParticipantsForBackend = requireMinParticipants
-          ? parseInt(formData.minParticipants, 10)
-          : 1;
+        let minParticipantsForBackend = parseInt(formData.minParticipants, 10);
         
         // Validate minParticipants
         if (isNaN(minParticipantsForBackend) || minParticipantsForBackend < 1) {
@@ -296,9 +296,9 @@ export default function CreatePool() {
           return;
         }
 
-        const MIN_PARTICIPANTS = 1;
-        // On-chain program enforces max_participants <= 100
-        const MAX_PARTICIPANTS = 100;
+        // NEW RECRUITMENT SYSTEM: Enforce 5-50 participant range
+        const MIN_PARTICIPANTS = 5;
+        const MAX_PARTICIPANTS = 50;
         if (
           isNaN(maxParticipants) ||
           maxParticipants < MIN_PARTICIPANTS ||
@@ -308,22 +308,33 @@ export default function CreatePool() {
           setLoading(false);
           return;
         }
-        if (![0, 1, 24, 168].includes(recruitmentHours)) {
-          alert("Please select a valid recruitment period option.");
+        
+        // Recruitment period: min 1 day (24 hours), default 1 week (168 hours), max 2 weeks (336 hours)
+        // Enforce this range
+        if (recruitmentHours < 24) {
+          recruitmentHours = 24; // Minimum 1 day
+          console.log("Recruitment period set to minimum 1 day");
+        }
+        if (recruitmentHours > 336) {
+          recruitmentHours = 336; // Maximum 2 weeks
+          console.log("Recruitment period capped at 2 weeks");
+        }
+        
+        // Min participants validation (always required now)
+        if (isNaN(minParticipantsForBackend) || minParticipantsForBackend < MIN_PARTICIPANTS) {
+          alert(`Minimum participants must be at least ${MIN_PARTICIPANTS}.`);
           setLoading(false);
           return;
         }
-        if (requireMinParticipants) {
-          if (isNaN(minParticipantsForBackend) || minParticipantsForBackend < MIN_PARTICIPANTS) {
-            alert(`Minimum participants must be at least ${MIN_PARTICIPANTS} when enabled.`);
-            setLoading(false);
-            return;
-          }
-          if (minParticipantsForBackend > maxParticipants) {
-            alert("Minimum participants cannot be greater than max participants.");
-            setLoading(false);
-            return;
-          }
+        if (minParticipantsForBackend > maxParticipants) {
+          alert("Minimum participants cannot be greater than max participants.");
+          setLoading(false);
+          return;
+        }
+        if (minParticipantsForBackend > MAX_PARTICIPANTS) {
+          alert(`Minimum participants cannot exceed ${MAX_PARTICIPANTS}.`);
+          setLoading(false);
+          return;
         }
 
         // Determine Goal Type metadata based on explicit form selection only
@@ -818,15 +829,15 @@ export default function CreatePool() {
                   </label>
                   <input 
                     type="number" 
-                    min="1"
-                    max="100"
+                    min="5"
+                    max="50"
                     step="1"
                     value={formData.maxParticipants}
                     onChange={(e) => {
                       const value = e.target.value;
-                      // Prevent negative values and enforce max
+                      // NEW RECRUITMENT SYSTEM: Enforce 5-50 range
                       const numValue = parseInt(value, 10);
-                      if (value === '' || (!isNaN(numValue) && numValue >= 1 && numValue <= 100)) {
+                      if (value === '' || (!isNaN(numValue) && numValue >= 5 && numValue <= 50)) {
                         setFormData({...formData, maxParticipants: value});
                         if (validationErrors.maxParticipants) {
                           setValidationErrors({...validationErrors, maxParticipants: false});
@@ -835,10 +846,10 @@ export default function CreatePool() {
                     }}
                     onBlur={() => {
                       const maxParts = parseInt(formData.maxParticipants, 10);
-                      if (isNaN(maxParts) || maxParts < 1) {
-                        setFormData({...formData, maxParticipants: '1'});
-                      } else if (maxParts > 100) {
-                        setFormData({...formData, maxParticipants: '100'});
+                      if (isNaN(maxParts) || maxParts < 5) {
+                        setFormData({...formData, maxParticipants: '5'});
+                      } else if (maxParts > 50) {
+                        setFormData({...formData, maxParticipants: '50'});
                       }
                     }}
                     className={`w-full bg-transparent border-b py-3 text-xl text-white placeholder-gray-800 focus:outline-none transition-colors ${
@@ -846,10 +857,10 @@ export default function CreatePool() {
                         ? 'border-red-500 focus:border-red-500' 
                         : 'border-white/20 focus:border-emerald-500'
                     }`}
-                    placeholder="100" 
+                    placeholder="50" 
                   />
                   {validationErrors.maxParticipants && (
-                    <p className="text-[10px] text-red-400 mt-1">Max participants must be between 1 and 100</p>
+                    <p className="text-[10px] text-red-400 mt-1">Max participants must be between 5 and 50</p>
                   )}
                </div>
                {potentialProfit > 0 && (
@@ -1307,96 +1318,69 @@ export default function CreatePool() {
               )}
             </div>
 
-            {/* Section 3 - Onboarding / Recruitment */}
+            {/* Section 3 - Recruitment System */}
             <div className="space-y-6">
-               <SectionLabel>Onboarding & Start Time</SectionLabel>
+               <SectionLabel>Recruitment & Start</SectionLabel>
+               
+               {/* Recruitment Period Selection */}
                <div>
-                  <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">Recruitment Period</label>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                    {[
-                      { label: '1 Hour', value: '1', hint: 'Quick sprint with friends' },
-                      { label: '1 Day', value: '24', hint: 'Default – time to onboard' },
-                      { label: '1 Week', value: '168', hint: 'Big public campaign' },
-                    ].map(option => {
-                      const isActive = formData.recruitmentPeriodHours === option.value;
-                      return (
-                        <button
-                          key={option.value}
-                          type="button"
-                          onClick={() => setFormData({ ...formData, recruitmentPeriodHours: option.value })}
-                          className={`text-left border px-3 py-3 text-xs rounded-sm transition-colors ${
-                            isActive
-                              ? 'border-emerald-500/60 bg-emerald-500/10 text-white'
-                              : 'border-white/10 bg-white/[0.02] text-gray-400 hover:border-white/30'
-                          }`}
-                        >
-                          <div className="font-mono uppercase tracking-widest text-[10px] mb-1">
-                            {option.label}
-                          </div>
-                          <div className="text-[10px] text-gray-500">
-                            {option.hint}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">
+                    Recruitment Period <span className="text-emerald-400">*Required</span>
+                  </label>
+                  <select
+                    value={formData.recruitmentPeriodHours}
+                    onChange={(e) => {
+                      setFormData({
+                        ...formData,
+                        recruitmentPeriodHours: e.target.value,
+                      });
+                    }}
+                    className="w-full px-4 py-3 bg-white/[0.02] border border-white/10 rounded-sm text-white text-sm focus:outline-none focus:border-emerald-500/50"
+                  >
+                    <option value="24">1 Day (24 hours)</option>
+                    <option value="168">1 Week (168 hours) - Default</option>
+                    <option value="336">2 Weeks (336 hours)</option>
+                  </select>
                   <p className="mt-2 text-[10px] text-gray-600">
-                    This is the onboarding window before the challenge actually starts. Longer windows give people more time to join.
+                    How long the challenge will recruit participants. If minimum participants join, the challenge starts 24 hours later. 
+                    If not filled by the deadline, all stakes are refunded.
                   </p>
                </div>
 
+               {/* Minimum Participants (Always Required) */}
                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                   <div>
-                    <label className="block text-xs uppercase tracking-widest text-gray-500 mb-1">Minimum Participants</label>
+                    <label className="block text-xs uppercase tracking-widest text-gray-500 mb-1">
+                      Minimum Participants <span className="text-emerald-400">*Required</span>
+                    </label>
                     <p className="text-[10px] text-gray-600 max-w-xs">
-                      Optionally require a minimum number of people before the challenge can start.
+                      Challenge won't start until this many people join (5-50 range).
                     </p>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={() =>
+                  <input
+                    type="number"
+                    min="5"
+                    max="50"
+                    step="1"
+                    value={formData.minParticipants}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      const numValue = parseInt(value, 10);
+                      const maxParts = parseInt(formData.maxParticipants, 10);
+                      // Enforce 5-50 range and ensure min <= max
+                      if (value === '' || (!isNaN(numValue) && numValue >= 5 && numValue <= 50 && numValue <= (isNaN(maxParts) ? 50 : maxParts))) {
                         setFormData({
                           ...formData,
-                          requireMinParticipants: !formData.requireMinParticipants,
-                        })
-                      }
-                      className={`w-10 h-5 rounded-full border flex items-center px-1 transition-colors ${
-                        formData.requireMinParticipants
-                          ? 'border-emerald-500 bg-emerald-500/20'
-                          : 'border-white/20 bg-white/[0.02]'
-                      }`}
-                    >
-                      <div
-                        className={`w-3 h-3 rounded-full bg-white transition-transform ${
-                          formData.requireMinParticipants ? 'translate-x-4' : 'translate-x-0'
-                        }`}
-                      />
-                    </button>
-                    <input
-                      type="number"
-                      min="1"
-                      max="100"
-                      step="1"
-                      value={formData.minParticipants}
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        const numValue = parseInt(value, 10);
-                        const maxParts = parseInt(formData.maxParticipants, 10);
-                        // Prevent negative values and enforce range
-                        if (value === '' || (!isNaN(numValue) && numValue >= 1 && numValue <= (isNaN(maxParts) ? 100 : maxParts))) {
-                          setFormData({
-                            ...formData,
-                            minParticipants: value,
-                          });
-                          if (validationErrors.minParticipants) {
-                            setValidationErrors({...validationErrors, minParticipants: false});
-                          }
+                          minParticipants: value,
+                        });
+                        if (validationErrors.minParticipants) {
+                          setValidationErrors({...validationErrors, minParticipants: false});
                         }
-                      }}
-                      onBlur={() => {
-                        const minParts = parseInt(formData.minParticipants, 10);
-                        const maxParts = parseInt(formData.maxParticipants, 10);
+                      }
+                    }}
+                    onBlur={() => {
+                      const minParts = parseInt(formData.minParticipants, 10);
+                      const maxParts = parseInt(formData.maxParticipants, 10);
                         if (isNaN(minParts) || minParts < 1) {
                           setFormData({...formData, minParticipants: '1'});
                         } else if (!isNaN(maxParts) && minParts > maxParts) {
@@ -1407,16 +1391,15 @@ export default function CreatePool() {
                           }
                         }
                       }}
-                      disabled={!formData.requireMinParticipants}
-                      className={`w-20 bg-transparent border-b py-1 text-sm text-white placeholder-gray-700 focus:outline-none transition-colors disabled:text-gray-700 disabled:border-white/10 ${
+                      className={`w-20 bg-transparent border-b py-1 text-sm text-white placeholder-gray-700 focus:outline-none transition-colors ${
                         validationErrors.minParticipants 
                           ? 'border-red-500 focus:border-red-500' 
                           : 'border-white/20 focus:border-emerald-500'
                       }`}
-                      placeholder="10"
+                      placeholder="5"
                     />
                     {validationErrors.minParticipants && (
-                      <p className="text-[10px] text-red-400 mt-1">Min participants must be between 1 and max participants</p>
+                      <p className="text-[10px] text-red-400 mt-1">Min participants must be between 5 and 50, and ≤ max participants</p>
                     )}
                     <span className="text-[10px] text-gray-500 uppercase tracking-widest">
                       People
@@ -1516,6 +1499,5 @@ export default function CreatePool() {
             </div>
          </div>
       </div>
-    </div>
   );
 }

@@ -46,6 +46,8 @@ export interface SolanaWalletState {
 }
 
 export function useSolanaWallet(): SolanaWalletState {
+  // Always call hooks unconditionally (required by React rules)
+  // These hooks should only be called within PrivyProvider context
   const { ready, authenticated, user, login: privyLogin, logout: privyLogout } = usePrivy();
   const { connectWallet: privyConnectWallet } = useConnectWallet();
   const { wallets, ready: walletsReady } = useWallets();

@@ -10,6 +10,9 @@ import { SectionLabel } from '@/components/ui/SectionLabel';
 import { Stat } from '@/components/ui/Stat';
 import { getConnection } from '@/lib/solana';
 
+// Force dynamic rendering to prevent build-time errors with Privy hooks
+export const dynamic = 'force-dynamic';
+
 export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   

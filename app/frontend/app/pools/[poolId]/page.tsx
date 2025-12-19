@@ -7,6 +7,7 @@ import { ArrowLeft, Loader2, Users, Clock, ShieldCheck, Coins } from 'lucide-rea
 import { InfoIcon } from '@/components/ui/Tooltip';
 import { InsufficientBalanceModal } from '@/components/InsufficientBalanceModal';
 import { Badge } from '@/components/ui/Badge';
+import { RecruitmentStatus } from '@/components/RecruitmentStatus';
 import {
   getPool,
   PoolResponse,
@@ -18,26 +19,26 @@ import { Transaction } from '@solana/web3.js';
 import { getTokenByMint } from '@/lib/tokens';
 
 // Helper function to get challenge type label and color
-// Color indicates category: blue = crypto, orange = lifestyle
-function getChallengeType(pool: PoolResponse): { label: string; color: 'blue' | 'orange' } {
+// Color indicates category: teal = crypto, cyan = lifestyle
+function getChallengeType(pool: PoolResponse): { label: string; color: 'teal' | 'cyan' } {
   const goalMetadata = (pool.goal_metadata || {}) as any;
   
   if (pool.goal_type === 'hodl_token') {
-    return { label: 'HODL', color: 'blue' };
+    return { label: 'HODL', color: 'teal' };
   }
   if (pool.goal_type === 'DailyDCA' || pool.goal_type === 'dca') {
-    return { label: 'DCA', color: 'blue' };
+    return { label: 'DCA', color: 'teal' };
   }
   if (pool.goal_type === 'lifestyle_habit') {
     const habitType = goalMetadata.habit_type;
     if (habitType === 'github_commits') {
-      return { label: 'GitHub', color: 'orange' };
+      return { label: 'GitHub', color: 'cyan' };
     }
     if (habitType === 'screen_time') {
-      return { label: 'Screen Time', color: 'orange' };
+      return { label: 'Screen Time', color: 'cyan' };
     }
   }
-  return { label: 'Unknown', color: 'blue' };
+  return { label: 'Unknown', color: 'teal' };
 }
 
 // Force dynamic rendering - this page depends on route params
@@ -341,7 +342,7 @@ export default function PoolDetailPage() {
               </div>
               <div className="flex items-center gap-3 mb-3 flex-wrap">
                 <Badge color={challengeType.color}>{challengeType.label}</Badge>
-                <Badge color={pool.status === 'pending' ? 'emerald' : pool.status === 'active' ? 'blue' : 'gray'}>
+                <Badge color={pool.status === 'pending' ? 'emerald' : pool.status === 'active' ? 'teal' : 'gray'}>
                   {pool.status === 'pending' ? 'RECRUITING' : pool.status === 'active' ? 'ACTIVE' : pool.status?.toUpperCase() || 'UNKNOWN'}
                 </Badge>
               </div>
@@ -375,6 +376,11 @@ export default function PoolDetailPage() {
                 </div>
                 <div className="font-mono text-sm">
                   {pool.participant_count}/{pool.max_participants}
+                  {pool.min_participants && pool.min_participants > 0 && (
+                    <span className="text-gray-500 text-[10px] ml-1">
+                      (min: {pool.min_participants})
+                    </span>
+                  )}
                 </div>
               </div>
               <div>
@@ -396,6 +402,11 @@ export default function PoolDetailPage() {
                 </div>
               </div>
             </div>
+
+            {/* NEW: Recruitment Status Component */}
+            {pool.status === 'pending' && (
+              <RecruitmentStatus pool={pool} />
+            )}
 
             {isHodl && (() => {
               const tokenInfo = tokenMint ? getTokenByMint(tokenMint) : undefined;
@@ -462,21 +473,21 @@ export default function PoolDetailPage() {
 
             {isGitHubCommits && (() => {
               return (
-                <div className="mt-6 p-4 border border-purple-500/40 bg-purple-500/5 rounded-xl space-y-3">
-                  <div className="text-[10px] uppercase tracking-widest text-purple-400">
+                <div className="mt-6 p-4 border border-cyan-500/40 bg-cyan-500/5 rounded-xl space-y-3">
+                  <div className="text-[10px] uppercase tracking-widest text-cyan-400">
                     GitHub Commits Requirement
                   </div>
                   
                   <p className="text-xs text-gray-300">
                     This is a GitHub commits challenge. You must make at least{' '}
-                    <span className="font-mono text-purple-300">
+                    <span className="font-mono text-cyan-300">
                       {minCommitsPerDay || 1}
                     </span>{' '}
                     commit{minCommitsPerDay !== 1 ? 's' : ''} per day across any of your repositories.
                     {minTotalLinesPerDay && minTotalLinesPerDay > 0 && (
                       <>
                         {' '}Your total code changes (across all commits and repos) must be at least{' '}
-                        <span className="font-mono text-purple-300">
+                        <span className="font-mono text-cyan-300">
                           {minTotalLinesPerDay}
                         </span>{' '}
                         line{minTotalLinesPerDay !== 1 ? 's' : ''} per day.
@@ -495,8 +506,8 @@ export default function PoolDetailPage() {
             {isDCA && (() => {
               const tokenInfo = tokenMint ? getTokenByMint(tokenMint) : undefined;
               return (
-                <div className="mt-6 p-4 border border-blue-500/40 bg-blue-500/5 rounded-xl space-y-3">
-                  <div className="text-[10px] uppercase tracking-widest text-blue-400">
+                <div className="mt-6 p-4 border border-teal-500/40 bg-teal-500/5 rounded-xl space-y-3">
+                  <div className="text-[10px] uppercase tracking-widest text-teal-400">
                     Daily DCA Requirement
                   </div>
                   
@@ -512,7 +523,7 @@ export default function PoolDetailPage() {
                           }}
                         />
                       ) : (
-                        <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center text-lg font-mono">
+                        <div className="w-10 h-10 rounded-full bg-teal-500/20 flex items-center justify-center text-lg font-mono">
                           {tokenInfo.symbol[0]}
                         </div>
                       )}
@@ -525,13 +536,13 @@ export default function PoolDetailPage() {
                   
                   <p className="text-xs text-gray-300">
                     This is a Daily DCA challenge. You must make at least{' '}
-                    <span className="font-mono text-blue-300">
+                    <span className="font-mono text-teal-300">
                       {dcaTradesPerDay || 1}
                     </span>{' '}
                     transaction{dcaTradesPerDay !== 1 ? 's' : ''} per day from your connected Solana wallet.{' '}
                     {tokenInfo && (
                       <>
-                        This challenge is for <span className="font-mono text-blue-300">{tokenInfo.symbol}</span> ({tokenInfo.name}).
+                        This challenge is for <span className="font-mono text-teal-300">{tokenInfo.symbol}</span> ({tokenInfo.name}).
                       </>
                     )}
                   </p>
@@ -556,14 +567,14 @@ export default function PoolDetailPage() {
             {isScreenTime && (() => {
               const maxHours = goalMetadata.max_hours;
               return (
-                <div className="mt-6 p-4 border border-orange-500/40 bg-orange-500/5 rounded-xl space-y-3">
-                  <div className="text-[10px] uppercase tracking-widest text-orange-400">
+                <div className="mt-6 p-4 border border-teal-500/40 bg-teal-500/5 rounded-xl space-y-3">
+                  <div className="text-[10px] uppercase tracking-widest text-teal-400">
                     Screen Time Requirement
                   </div>
                   
                   <p className="text-xs text-gray-300">
                     This is a Screen Time challenge. You must keep your daily screen time below{' '}
-                    <span className="font-mono text-orange-300">
+                    <span className="font-mono text-teal-300">
                       {maxHours || 2}
                     </span>{' '}
                     hour{maxHours !== 1 ? 's' : ''} per day.
@@ -626,12 +637,12 @@ export default function PoolDetailPage() {
 
               {pool.status === 'active' ? (
                 <div className="space-y-3">
-                  <div className="p-4 border border-blue-500/30 bg-blue-500/5 rounded-lg">
-                    <div className="flex items-start gap-2 text-[10px] text-blue-400">
+                  <div className="p-4 border border-teal-500/30 bg-teal-500/5 rounded-lg">
+                    <div className="flex items-start gap-2 text-[10px] text-teal-400">
                       <InfoIcon content="This challenge has already started. You can't join now, but you can view the progress and see how participants are doing." />
                       <div>
                         <p className="font-medium mb-1">Challenge Has Started</p>
-                        <p className="text-blue-300/80 leading-relaxed">
+                        <p className="text-teal-300/80 leading-relaxed">
                           This challenge is already in progress. You can't join now, but you can view the progress and see how participants are doing.
                         </p>
                       </div>
@@ -644,18 +655,52 @@ export default function PoolDetailPage() {
                     Join Challenge (Not Available)
                   </button>
                 </div>
+              ) : pool.status === 'expired' ? (
+                <div className="space-y-3">
+                  <div className="p-4 border border-red-500/30 bg-red-500/5 rounded-lg">
+                    <div className="flex items-start gap-2 text-[10px] text-red-400">
+                      <InfoIcon content="This challenge expired without reaching the minimum number of participants. All stakes have been refunded." />
+                      <div>
+                        <p className="font-medium mb-1">Challenge Expired</p>
+                        <p className="text-red-300/80 leading-relaxed">
+                          This challenge didn't reach the minimum participants before the deadline. All stakes have been refunded.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    disabled
+                    className="w-full h-11 border border-white/10 text-xs uppercase tracking-widest font-medium rounded-full flex items-center justify-center gap-2 bg-white/[0.02] text-gray-500 cursor-not-allowed opacity-50"
+                  >
+                    Challenge Expired
+                  </button>
+                </div>
               ) : (
                 <>
                   <div className="flex items-center gap-2">
                     <button
                       onClick={handleJoin}
-                      disabled={joining || spotsRemaining <= 0 || pool.status !== 'pending'}
+                      disabled={
+                        joining || 
+                        spotsRemaining <= 0 || 
+                        pool.status !== 'pending' ||
+                        (pool.recruitment_deadline ? Math.floor(Date.now() / 1000) >= pool.recruitment_deadline : false)
+                      }
                       className="flex-1 h-11 border border-emerald-500 text-xs uppercase tracking-widest font-medium rounded-full flex items-center justify-center gap-2 bg-emerald-500/10 hover:bg-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {getButtonContent()}
                     </button>
                     <InfoIcon content="Click to join this challenge. You'll be asked to approve a transaction in your wallet. This locks your stake until the challenge ends. Make sure you're ready to commit!" />
                   </div>
+                  
+                  {/* Show warning if recruitment deadline passed */}
+                  {pool.recruitment_deadline && Math.floor(Date.now() / 1000) >= pool.recruitment_deadline && (
+                    <div className="p-2 border border-red-500/30 bg-red-500/5 rounded-lg">
+                      <p className="text-[10px] text-red-300">
+                        ⚠️ Recruitment period has ended. This challenge may be expired.
+                      </p>
+                    </div>
+                  )}
                   
                   {/* Helpful message for non-authenticated users */}
                   {!isAuthenticated && (
