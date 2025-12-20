@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { PrivyProvider } from "@/components/providers/PrivyProvider";
 import { NavbarWrapper } from "@/components/NavbarWrapper";
+import { DevBanner } from "@/components/DevBanner";
 import { HelpBar } from "@/components/HelpBar";
 import { Footer } from "@/components/Footer";
 
@@ -34,6 +35,7 @@ export default function RootLayout({
       >
         <PrivyProvider>
         <NavbarWrapper />
+        <DevBanner />
         <HelpBar />
         <main className="flex-1">
           {children}
