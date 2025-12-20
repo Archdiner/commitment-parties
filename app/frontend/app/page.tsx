@@ -6,7 +6,7 @@ import { ButtonPrimary } from '@/components/ui/ButtonPrimary';
 import { SectionLabel } from '@/components/ui/SectionLabel';
 import { useEffect, useRef, useState } from 'react';
 
-// Animated underline component with variants
+// Animated underline component with green shade variants
 function AnimatedUnderline({ 
   children, 
   delay = 0, 
@@ -17,7 +17,7 @@ function AnimatedUnderline({
   children: React.ReactNode; 
   delay?: number;
   duration?: number;
-  variant?: 'emerald' | 'light' | 'thick' | 'offset';
+  variant?: 'dark' | 'emerald' | 'pale';
   className?: string;
 }) {
   const [isVisible, setIsVisible] = useState(false);
@@ -46,31 +46,26 @@ function AnimatedUnderline({
 
   const getVariantStyles = () => {
     switch (variant) {
-      case 'thick':
-        return {
-          height: '3px',
-          backgroundColor: '#10b981', // emerald-500
-          bottom: '-4px',
-        };
-      case 'light':
-        return {
-          height: '1.5px',
-          backgroundColor: '#6ee7b7', // emerald-300 (lighter green)
-          bottom: '0px',
-        };
-      case 'offset':
+      case 'dark':
         return {
           height: '2px',
-          backgroundColor: '#10b981', // emerald-500
-          bottom: '2px',
-          left: '8px',
-          width: isVisible ? 'calc(100% - 16px)' : '0%',
+          backgroundColor: '#059669', // emerald-600 (dark green)
+          bottom: '0px',
+          left: '0px',
+        };
+      case 'pale':
+        return {
+          height: '2px',
+          backgroundColor: '#6ee7b7', // emerald-300 (pale green)
+          bottom: '0px',
+          left: '0px',
         };
       default: // emerald
         return {
           height: '2px',
-          backgroundColor: '#34d399', // emerald-400
+          backgroundColor: '#34d399', // emerald-400 (standard emerald)
           bottom: '0px',
+          left: '0px',
         };
     }
   };
@@ -84,7 +79,7 @@ function AnimatedUnderline({
         className="absolute transition-all ease-out"
         style={{
           ...styles,
-          width: variant === 'offset' ? styles.width : (isVisible ? '100%' : '0%'),
+          width: isVisible ? '100%' : '0%',
           transitionDuration: `${duration}ms`,
         }}
       />
@@ -133,7 +128,7 @@ export default function LandingPage() {
       <div className="border-y border-white/10 bg-white/[0.01]">
         <div className="max-w-4xl mx-auto px-6 py-20">
           <div className="text-center mb-12">
-            <AnimatedUnderline delay={0} duration={1500} variant="thick">
+            <AnimatedUnderline delay={0} duration={1500} variant="dark">
               <h2 className="text-4xl md:text-5xl font-medium mb-4 text-white">Why This Exists</h2>
             </AnimatedUnderline>
             <p className="text-xl text-gray-200 max-w-2xl mx-auto leading-relaxed mt-6">
@@ -143,7 +138,7 @@ export default function LandingPage() {
           </div>
           <div className="grid md:grid-cols-2 gap-6">
             <div className="p-8 border border-white/20 bg-white/[0.03] rounded-lg">
-              <AnimatedUnderline delay={200} duration={1800} variant="offset">
+              <AnimatedUnderline delay={200} duration={1800} variant="dark">
                 <h3 className="text-2xl font-medium mb-4 text-white">The Problem</h3>
               </AnimatedUnderline>
               <p className="text-base text-gray-200 leading-relaxed">
@@ -152,7 +147,7 @@ export default function LandingPage() {
               </p>
             </div>
             <div className="p-8 border border-emerald-500/30 bg-emerald-500/10 rounded-lg">
-              <AnimatedUnderline delay={400} duration={1800} variant="light">
+              <AnimatedUnderline delay={400} duration={1800} variant="pale">
                 <h3 className="text-2xl font-medium mb-4 text-white">Our Solution</h3>
               </AnimatedUnderline>
               <p className="text-base text-white leading-relaxed">
@@ -169,7 +164,7 @@ export default function LandingPage() {
       <div className="border-y border-white/10">
         <div className="max-w-6xl mx-auto px-6 py-20">
           <div className="text-center mb-16">
-            <AnimatedUnderline delay={0} duration={1500} variant="thick">
+            <AnimatedUnderline delay={0} duration={1500} variant="emerald">
               <h2 className="text-4xl md:text-5xl font-medium mb-4 text-white">How It Works</h2>
             </AnimatedUnderline>
             <p className="text-xl text-gray-200 max-w-2xl mx-auto mt-6">
@@ -197,7 +192,7 @@ export default function LandingPage() {
                 details: "Winners get their stake back plus a share of losers' stakes and any yield earned."
               }
             ].map((item, i) => {
-              const variants: Array<'offset' | 'light' | 'emerald'> = ['offset', 'light', 'emerald'];
+              const variants: Array<'dark' | 'emerald' | 'pale'> = ['dark', 'emerald', 'pale'];
               return (
               <div key={i} className="flex flex-col items-start group">
                 <div className="mb-6 text-emerald-500 opacity-50 group-hover:opacity-100 transition-opacity">
@@ -243,7 +238,7 @@ export default function LandingPage() {
       {/* Challenge Types */}
       <div className="max-w-6xl mx-auto px-6 py-24">
         <div className="text-center mb-12">
-          <AnimatedUnderline delay={0} duration={1500} variant="light">
+          <AnimatedUnderline delay={0} duration={1500} variant="pale">
             <h2 className="text-4xl md:text-5xl font-medium mb-4 text-white">Types of Challenges</h2>
           </AnimatedUnderline>
           <p className="text-xl text-gray-200 max-w-2xl mx-auto mt-6">
