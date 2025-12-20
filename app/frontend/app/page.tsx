@@ -6,16 +6,18 @@ import { ButtonPrimary } from '@/components/ui/ButtonPrimary';
 import { SectionLabel } from '@/components/ui/SectionLabel';
 import { useEffect, useRef, useState } from 'react';
 
-// Animated underline component
+// Animated underline component with variants
 function AnimatedUnderline({ 
   children, 
   delay = 0, 
   duration = 2000,
+  variant = 'emerald',
   className = '' 
 }: { 
   children: React.ReactNode; 
   delay?: number;
   duration?: number;
+  variant?: 'emerald' | 'light' | 'thick' | 'offset';
   className?: string;
 }) {
   const [isVisible, setIsVisible] = useState(false);
@@ -42,13 +44,47 @@ function AnimatedUnderline({
     };
   }, [delay]);
 
+  const getVariantStyles = () => {
+    switch (variant) {
+      case 'thick':
+        return {
+          height: '3px',
+          backgroundColor: '#10b981', // emerald-500
+          bottom: '-4px',
+        };
+      case 'light':
+        return {
+          height: '1.5px',
+          backgroundColor: '#6ee7b7', // emerald-300 (lighter green)
+          bottom: '0px',
+        };
+      case 'offset':
+        return {
+          height: '2px',
+          backgroundColor: '#10b981', // emerald-500
+          bottom: '2px',
+          left: '8px',
+          width: isVisible ? 'calc(100% - 16px)' : '0%',
+        };
+      default: // emerald
+        return {
+          height: '2px',
+          backgroundColor: '#34d399', // emerald-400
+          bottom: '0px',
+        };
+    }
+  };
+
+  const styles = getVariantStyles();
+
   return (
     <div ref={ref} className={`relative inline-block ${className}`}>
       {children}
       <span
-        className="absolute bottom-0 left-0 h-[2px] bg-emerald-400 transition-all ease-out"
+        className="absolute transition-all ease-out"
         style={{
-          width: isVisible ? '100%' : '0%',
+          ...styles,
+          width: variant === 'offset' ? styles.width : (isVisible ? '100%' : '0%'),
           transitionDuration: `${duration}ms`,
         }}
       />
@@ -97,7 +133,7 @@ export default function LandingPage() {
       <div className="border-y border-white/10 bg-white/[0.01]">
         <div className="max-w-4xl mx-auto px-6 py-20">
           <div className="text-center mb-12">
-            <AnimatedUnderline delay={0} duration={1500}>
+            <AnimatedUnderline delay={0} duration={1500} variant="thick">
               <h2 className="text-4xl md:text-5xl font-medium mb-4 text-white">Why This Exists</h2>
             </AnimatedUnderline>
             <p className="text-xl text-gray-200 max-w-2xl mx-auto leading-relaxed mt-6">
@@ -107,7 +143,7 @@ export default function LandingPage() {
           </div>
           <div className="grid md:grid-cols-2 gap-6">
             <div className="p-8 border border-white/20 bg-white/[0.03] rounded-lg">
-              <AnimatedUnderline delay={200} duration={1800}>
+              <AnimatedUnderline delay={200} duration={1800} variant="offset">
                 <h3 className="text-2xl font-medium mb-4 text-white">The Problem</h3>
               </AnimatedUnderline>
               <p className="text-base text-gray-200 leading-relaxed">
@@ -116,7 +152,7 @@ export default function LandingPage() {
               </p>
             </div>
             <div className="p-8 border border-emerald-500/30 bg-emerald-500/10 rounded-lg">
-              <AnimatedUnderline delay={400} duration={1800}>
+              <AnimatedUnderline delay={400} duration={1800} variant="light">
                 <h3 className="text-2xl font-medium mb-4 text-white">Our Solution</h3>
               </AnimatedUnderline>
               <p className="text-base text-white leading-relaxed">
@@ -133,7 +169,7 @@ export default function LandingPage() {
       <div className="border-y border-white/10">
         <div className="max-w-6xl mx-auto px-6 py-20">
           <div className="text-center mb-16">
-            <AnimatedUnderline delay={0} duration={1500}>
+            <AnimatedUnderline delay={0} duration={1500} variant="thick">
               <h2 className="text-4xl md:text-5xl font-medium mb-4 text-white">How It Works</h2>
             </AnimatedUnderline>
             <p className="text-xl text-gray-200 max-w-2xl mx-auto mt-6">
@@ -160,25 +196,26 @@ export default function LandingPage() {
                 desc: "If you complete your challenge, you split the prize pool with other winners. If you fail, you lose your stake to the winners.",
                 details: "Winners get their stake back plus a share of losers' stakes and any yield earned."
               }
-            ].map((item, i) => (
+            ].map((item, i) => {
+              const variants: Array<'offset' | 'light' | 'emerald'> = ['offset', 'light', 'emerald'];
+              return (
               <div key={i} className="flex flex-col items-start group">
                 <div className="mb-6 text-emerald-500 opacity-50 group-hover:opacity-100 transition-opacity">
                   <item.icon strokeWidth={1} className="w-6 h-6" />
                 </div>
-                <AnimatedUnderline delay={i * 300 + 200} duration={2000}>
+                <AnimatedUnderline delay={i * 300 + 200} duration={2000} variant={variants[i]}>
                   <h3 className="text-xl font-medium mb-4 text-white">{item.title}</h3>
                 </AnimatedUnderline>
                 <p className="text-base text-gray-200 leading-relaxed max-w-xs mb-3">{item.desc}</p>
                 <p className="text-sm text-gray-400 italic">{item.details}</p>
               </div>
-            ))}
+            );
+            })}
           </div>
 
           {/* Example Calculation */}
           <div className="max-w-2xl mx-auto p-8 border border-white/20 bg-white/[0.03] rounded-lg">
-            <AnimatedUnderline delay={1000} duration={1800}>
-              <h3 className="text-2xl font-medium mb-6 text-white">Example: How Rewards Work</h3>
-            </AnimatedUnderline>
+            <h3 className="text-2xl font-medium mb-6 text-white">Example: How Rewards Work</h3>
             <div className="space-y-4 text-base">
               <div className="flex items-center justify-between p-4 border-b border-white/10">
                 <span className="text-gray-200">10 people join at 1 SOL each</span>
@@ -206,7 +243,7 @@ export default function LandingPage() {
       {/* Challenge Types */}
       <div className="max-w-6xl mx-auto px-6 py-24">
         <div className="text-center mb-12">
-          <AnimatedUnderline delay={0} duration={1500}>
+          <AnimatedUnderline delay={0} duration={1500} variant="light">
             <h2 className="text-4xl md:text-5xl font-medium mb-4 text-white">Types of Challenges</h2>
           </AnimatedUnderline>
           <p className="text-xl text-gray-200 max-w-2xl mx-auto mt-6">
@@ -255,9 +292,7 @@ export default function LandingPage() {
       {/* Get Started CTA */}
       <div className="border-y border-white/10 bg-white/[0.01]">
         <div className="max-w-4xl mx-auto px-6 py-20 text-center">
-          <AnimatedUnderline delay={0} duration={1500}>
-            <h2 className="text-4xl md:text-5xl font-medium mb-6 text-white">Ready to Get Started?</h2>
-          </AnimatedUnderline>
+          <h2 className="text-4xl md:text-5xl font-medium mb-6 text-white">Ready to Get Started?</h2>
           <p className="text-xl text-gray-200 mb-8 max-w-2xl mx-auto">
             Sign in with your email to begin. No crypto experience needed—we'll handle everything.
           </p>
