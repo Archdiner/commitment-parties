@@ -10,32 +10,32 @@ interface FAQItem {
 }
 
 const faqCategories = {
-  'Getting Started': [
+  'The Mission': [
     {
       question: 'What is CommitMint?',
-      answer: 'CommitMint is an AI-powered accountability platform built on Solana. You stake SOL (Solana\'s cryptocurrency) on your goals, and our system automatically verifies your progress. Complete your challenge and win money, or fail and lose your stake.'
+      answer: 'CommitMint is an AI-powered accountability platform. You put your money where your mouth is by staking SOL on your goals. Our AI "Commitment Agent" monitors you. If you succeed, you win. If you quit, you lose your stake to the people who didn\'t.'
     },
     {
-      question: 'Do I need to know about cryptocurrency to use this?',
-      answer: 'Not at all! While we use Solana blockchain technology, we\'ve designed the platform to be accessible to everyone. You just need to install a free wallet app called Phantom (like a digital bank account) and you\'re ready to go. We provide helpful explanations throughout the app.'
+      question: 'Do I need a crypto wallet to start?',
+      answer: 'No. You can sign in with your Google or Email account. We use Privy technology to create a secure "invisible" wallet for you in the background. You can connect a professional wallet like Phantom later if you want.'
     },
     {
-      question: 'How do I get started?',
-      answer: 'First, install the Phantom wallet browser extension (it\'s free and takes 2 minutes). Then connect your wallet on our site, browse available challenges or create your own, and put down your stake to join. That\'s it!'
+      question: 'What types of challenges can I create?',
+      answer: 'You can create Crypto challenges (HODL or DCA trading habits verified automatically on-chain) and Social challenges (GitHub commits or screen time limits verified by our AI agent). Each challenge type has different verification methods tailored to the goal.'
     },
     {
-      question: 'What is SOL and how do I get it?',
-      answer: 'SOL is Solana\'s digital currency (like dollars, but digital). You can buy SOL on exchanges like Coinbase, Binance, or directly in your Phantom wallet. You\'ll need some SOL to stake on challenges and pay for transaction fees (which are very low, usually less than a cent).'
-    },
-    {
-      question: 'Is CommitMint free to use?',
-      answer: 'Yes, the platform is free to use. However, you\'ll need SOL to stake on challenges and pay for blockchain transaction fees (typically less than $0.01 per transaction). Creating a challenge also costs a small fee (about 0.05 SOL) to cover the on-chain transaction.'
+      question: 'How long do challenges last?',
+      answer: 'Challenges can last anywhere from 1 to 30 days. Most challenges are 7, 14, or 30 days. The duration is set when the challenge is created and cannot be changed. You must verify your progress every single day during this period.'
     }
   ],
-  'How It Works': [
+  'The Money Flow': [
     {
-      question: 'How does the verification process work?',
-      answer: 'Our AI agents automatically verify your progress based on the challenge type. For lifestyle challenges (like gym attendance), you upload photos as proof. For crypto challenges, we check your wallet activity on-chain automatically. For developer challenges, we verify GitHub commits. You need to verify daily - missing a day means you\'re eliminated.'
+      question: 'How do I get my money out?',
+      answer: 'Once a challenge ends and you are verified as a winner, your original stake plus your share of the reward pool is sent to your account. You can then withdraw this to any external Solana wallet or, once our Apple Pay integration is live, off-ramp it directly to your bank.'
+    },
+    {
+      question: 'How do I win rewards?',
+      answer: 'Rewards come from "The Loser\'s Pot." Every time a participant in your challenge fails to verify, their stake is locked into the winner\'s pool. At the end, the survivors split that pot equally.'
     },
     {
       question: 'What happens if I miss a day?',
@@ -46,58 +46,48 @@ const faqCategories = {
       answer: 'No. Once you stake SOL on a challenge, it\'s locked in a smart contract until the challenge ends. This ensures everyone stays committed and prevents people from backing out when things get tough. This is a core feature, not a bug!'
     },
     {
-      question: 'How do I win money?',
-      answer: 'If you successfully complete your challenge (verify every day for the entire duration), you split the prize pool with all other winners. The prize pool consists of all the staked SOL from participants who failed or were eliminated. More participants who fail = bigger prize pool for winners.'
+      question: 'How much SOL should I stake?',
+      answer: 'Stake an amount that\'s meaningful enough to motivate you, but not so much that losing it would cause financial hardship. Most people stake between 0.1 and 5 SOL. Remember, you can lose this amount if you fail the challenge.'
     },
     {
-      question: 'What types of challenges can I create?',
-      answer: 'You can create three types of challenges: Lifestyle (photo/GPS verification for habits like gym, screen time, etc.), Crypto (automatic on-chain verification for trading habits), and Developer (GitHub commit verification). Each type has different verification methods.'
+      question: 'Are there any fees?',
+      answer: 'There are minimal blockchain transaction fees (usually less than $0.01 per transaction). Creating a challenge costs a small fee (about 0.001-0.002 SOL) to cover the on-chain transaction. There are no platform fees or hidden costs - what you see is what you pay.'
     }
   ],
-  'Safety & Security': [
+  'Privacy & Security': [
     {
-      question: 'Is my money safe?',
-      answer: 'Yes. Your funds are secured by smart contracts on the Solana blockchain. Once you stake SOL, it\'s locked in the contract until the challenge ends - no one, including us, can access it. The code is open source and auditable.'
+      question: 'Can CommitMint steal my funds?',
+      answer: 'No. Your funds are held in a decentralized smart contract on Solana. We do not have a "withdraw" button for your money. Only the logic of the challenge (Success or Failure) can move those funds.'
     },
     {
-      question: 'Can CommitMint steal my money?',
-      answer: 'No. We cannot access your staked funds. They\'re locked in smart contracts that execute automatically based on the challenge rules. Even if our company disappeared, the smart contracts would continue to function and your funds would be safe.'
+      question: 'What happens if the website goes down?',
+      answer: 'Since everything runs on the Solana blockchain, the smart contracts continue to function even if our website is temporarily unavailable. Your funds remain safe in the blockchain. You can always interact with the contracts directly if needed.'
     },
     {
       question: 'What if the AI verification makes a mistake?',
       answer: 'Our AI verification system is designed to be fair and accurate. If you believe there\'s been an error, contact our support team immediately. We review disputed verifications on a case-by-case basis. However, the system is generally very reliable.'
     },
     {
-      question: 'What happens if the website goes down?',
-      answer: 'Since everything runs on the Solana blockchain, the smart contracts continue to function even if our website is temporarily unavailable. Your funds remain safe in the blockchain. You can always interact with the contracts directly if needed.'
+      question: 'What if I lose access to my wallet?',
+      answer: 'If you signed in with Google or Email, your wallet is managed by Privy and you can recover access through your account. If you connected an external wallet like Phantom, you must save your seed phrase when you create it. Without the seed phrase, you cannot recover an external wallet - and any SOL staked in challenges will be lost.'
     }
   ],
-  'Challenges & Pools': [
+  'The Technical': [
     {
-      question: 'How long do challenges last?',
-      answer: 'You can create challenges lasting anywhere from 1 to 30 days. Most challenges are 7, 14, or 30 days. The duration is set when the challenge is created and cannot be changed.'
+      question: 'How do I verify the Smart Contract?',
+      answer: 'Transparency is our core. You can view all challenge logic and pool transactions on Solscan. We use the Solana blockchain to ensure that the rules of the game are immutable and cannot be tampered with by anyone.'
     },
     {
-      question: 'How many people can join a challenge?',
-      answer: 'The challenge creator sets the maximum number of participants (between 1 and 100). Once a challenge is full, no one else can join. More participants typically mean a bigger prize pool for winners.'
+      question: 'How does the AI verify GitHub or Screen Time?',
+      answer: 'Our backend uses official APIs (GitHub OAuth) and OCR (Optical Character Recognition) for screenshots. The "Commitment Agent" parses the data to ensure the activity happened within the 24-hour window.'
     },
     {
-      question: 'Can I join a challenge after it has started?',
-      answer: 'It depends on the challenge status. If a challenge is still in "pending" status (recruitment phase) or just started and is "active", you can usually still join. Once a challenge is well underway, joining may be restricted. Check the challenge details for specific rules.'
+      question: 'How do I verify daily?',
+      answer: 'For GitHub challenges, verification happens automatically - our agent checks your commits daily. For screen time challenges, you upload a screenshot of your screen time data and our AI verifies it. For crypto challenges (HODL/DCA), verification is fully automatic - we check your wallet on-chain. You must verify every day within the 24-hour window.'
     },
-    {
-      question: 'What happens if not enough people join my challenge?',
-      answer: 'If your challenge doesn\'t reach the minimum number of participants (if one is set), it may not start, and participants can get their stake back. Check the specific challenge rules when creating it.'
-    },
-    {
-      question: 'Can I create a private challenge?',
-      answer: 'Yes! When creating a challenge, you can set it to "Private" mode, which means only people with the invite link can see and join it. This is great for challenges with friends or specific groups.'
-    }
-  ],
-  'Technical Issues': [
     {
       question: 'My wallet won\'t connect. What should I do?',
-      answer: 'First, make sure you have Phantom wallet installed. If it\'s installed, try refreshing the page, disconnecting and reconnecting, or restarting your browser. Make sure you\'re approving the connection request in the Phantom popup window.'
+      answer: 'If you\'re using an embedded wallet (signed in with Google/Email), make sure you\'re signed in. If you\'re using Phantom or another external wallet, try refreshing the page, disconnecting and reconnecting, or restarting your browser. Make sure you\'re approving the connection request in the wallet popup.'
     },
     {
       question: 'The transaction failed. Did I lose my money?',
@@ -106,36 +96,6 @@ const faqCategories = {
     {
       question: 'I can\'t submit my daily verification. Help!',
       answer: 'Make sure you\'re submitting within the verification window (usually 24 hours). Check that your wallet is connected and you have a small amount of SOL for transaction fees. If the problem persists, contact support immediately - we can help resolve verification issues.'
-    },
-    {
-      question: 'What if I lose access to my wallet?',
-      answer: 'This is why it\'s crucial to save your wallet\'s seed phrase when you create it. If you lose access to your wallet and don\'t have the seed phrase, you cannot recover it - and any SOL staked in challenges will be lost. Always back up your seed phrase securely.'
-    },
-    {
-      question: 'The website is slow or not loading. What\'s wrong?',
-      answer: 'Try refreshing the page or clearing your browser cache. If the issue persists, it might be a temporary server issue. Remember, your funds are safe on the blockchain even if the website has issues. You can check your wallet directly in Phantom to see your balances.'
-    }
-  ],
-  'Money & Stakes': [
-    {
-      question: 'How much SOL should I stake?',
-      answer: 'That\'s entirely up to you! Stake an amount that\'s meaningful enough to motivate you, but not so much that losing it would cause financial hardship. Most people stake between 0.1 and 5 SOL. Remember, you can lose this amount if you fail the challenge.'
-    },
-    {
-      question: 'When do I get my money back?',
-      answer: 'If you successfully complete the challenge, you receive your stake back plus your share of the prize pool automatically when the challenge ends. The funds are sent directly to your wallet. If you fail, you lose your stake and it goes to the winners.'
-    },
-    {
-      question: 'Are there any fees?',
-      answer: 'There are minimal blockchain transaction fees (usually less than $0.01 per transaction). Creating a challenge costs about 0.05 SOL to cover the on-chain transaction. There are no platform fees or hidden costs - what you see is what you pay.'
-    },
-    {
-      question: 'Can I stake more than the required amount?',
-      answer: 'No, each participant stakes the same amount set by the challenge creator. This ensures fairness - everyone has the same financial commitment and potential reward.'
-    },
-    {
-      question: 'What if I don\'t have enough SOL in my wallet?',
-      answer: 'You need enough SOL to cover both your stake amount and transaction fees. If you don\'t have enough, you\'ll need to add more SOL to your wallet before you can join a challenge. You can buy SOL directly in Phantom or transfer it from an exchange.'
     }
   ]
 };
@@ -207,7 +167,7 @@ export default function FAQPage() {
         <div className="mt-20 p-8 border border-white/10 bg-white/[0.01] rounded-xl text-center">
           <h2 className="text-2xl font-light mb-4">Still Have Questions?</h2>
           <p className="text-gray-400 mb-6">
-            Can't find the answer you're looking for? We're here to help.
+            Our agent is standing by on <a href="https://x.com/CommitmentAgent" target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:text-emerald-300">X</a> to help you clear the path to your goals.
           </p>
           <a 
             href="/contact" 
