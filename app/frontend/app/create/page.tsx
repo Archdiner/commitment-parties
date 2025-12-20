@@ -140,6 +140,68 @@ export default function CreatePool() {
     return () => document.removeEventListener('click', handleClickOutside);
   }, [showTokenDropdown]);
 
+  // Real-time validation function
+  const validateField = (fieldName: string, value: any): boolean => {
+    const errors = { ...validationErrors };
+    
+    switch (fieldName) {
+      case 'name':
+        errors.name = !value || value.trim() === '';
+        break;
+      case 'customDuration':
+        if (useCustomDuration) {
+          const days = parseInt(value);
+          errors.customDuration = isNaN(days) || days < 1 || days > 30;
+        }
+        break;
+      case 'stake':
+        const stakeAmount = parseFloat(value);
+        errors.stake = isNaN(stakeAmount) || stakeAmount < 0.05 || stakeAmount > 10;
+        break;
+      case 'maxParticipants':
+        const maxParts = parseInt(value, 10);
+        const minParts = parseInt(formData.minParticipants, 10);
+        errors.maxParticipants = isNaN(maxParts) || maxParts < 5 || maxParts > 50 || (!isNaN(minParts) && maxParts < minParts);
+        // Also validate min if max changed
+        if (!isNaN(minParts) && !isNaN(maxParts) && minParts > maxParts) {
+          errors.minParticipants = true;
+        }
+        break;
+      case 'minParticipants':
+        const minParts2 = parseInt(value, 10);
+        const maxParts2 = parseInt(formData.maxParticipants, 10);
+        errors.minParticipants = isNaN(minParts2) || minParts2 < 5 || minParts2 > 50 || (!isNaN(maxParts2) && minParts2 > maxParts2);
+        // Also validate max if min changed
+        if (!isNaN(maxParts2) && !isNaN(minParts2) && maxParts2 < minParts2) {
+          errors.maxParticipants = true;
+        }
+        break;
+      case 'hodlAmount':
+        const hodlAmount = parseFloat(value || '0');
+        errors.hodlAmount = isNaN(hodlAmount) || hodlAmount <= 0;
+        break;
+      case 'dcaTradesPerDay':
+        const trades = parseInt(value || '0', 10);
+        errors.dcaTradesPerDay = isNaN(trades) || trades < 1 || trades > 50;
+        break;
+      case 'githubCommitsPerDay':
+        const commits = parseInt(value || '0', 10);
+        errors.githubCommitsPerDay = isNaN(commits) || commits < 1 || commits > 50;
+        break;
+      case 'githubMinTotalLinesPerDay':
+        const lines = parseInt(value || '0', 10);
+        errors.githubMinTotalLinesPerDay = isNaN(lines) || lines < 1 || lines > 10000;
+        break;
+      case 'screenTimeHours':
+        const hours = parseFloat(value || '0');
+        errors.screenTimeHours = isNaN(hours) || hours < 0.5 || hours > 24;
+        break;
+    }
+    
+    setValidationErrors(errors);
+    return !errors[fieldName];
+  };
+
   const validateForm = (): boolean => {
     const errors: Record<string, boolean> = {};
     
@@ -162,21 +224,22 @@ export default function CreatePool() {
       errors.stake = true;
     }
     
-        // Validate max participants (5 to 50) - NEW RECRUITMENT SYSTEM
-        const maxParticipants = parseInt(formData.maxParticipants);
-        if (isNaN(maxParticipants) || maxParticipants < 5 || maxParticipants > 50) {
-          errors.maxParticipants = true;
-        }
-        
-        // Validate min participants (always required, 5 to 50)
-        const minParticipants = parseInt(formData.minParticipants);
-        if (isNaN(minParticipants) || minParticipants < 5 || minParticipants > 50) {
-          errors.minParticipants = true;
-        }
-        // CRITICAL: min_participants must be <= max_participants (database constraint)
-        if (minParticipants > maxParticipants) {
-          errors.minParticipants = true;
-        }
+    // Validate max participants (5 to 50)
+    const maxParticipants = parseInt(formData.maxParticipants);
+    const minParticipants = parseInt(formData.minParticipants);
+    if (isNaN(maxParticipants) || maxParticipants < 5 || maxParticipants > 50) {
+      errors.maxParticipants = true;
+    }
+    
+    // Validate min participants (always required, 5 to 50)
+    if (isNaN(minParticipants) || minParticipants < 5 || minParticipants > 50) {
+      errors.minParticipants = true;
+    }
+    // CRITICAL: min_participants must be <= max_participants (database constraint)
+    if (minParticipants > maxParticipants) {
+      errors.minParticipants = true;
+      errors.maxParticipants = true;
+    }
     
     // Validate challenge-specific fields
     if (formData.category === 'Crypto') {
@@ -670,13 +733,11 @@ export default function CreatePool() {
                       value={formData.name}
                       onChange={(e) => {
                         setFormData({...formData, name: e.target.value});
-                        if (validationErrors.name) {
-                          setValidationErrors({...validationErrors, name: false});
-                        }
+                        validateField('name', e.target.value);
                       }}
                       className={`w-full bg-transparent border-b py-3 text-xl text-white placeholder-gray-800 focus:outline-none transition-colors ${
                         validationErrors.name 
-                          ? 'border-red-500 focus:border-red-500' 
+                          ? 'border-red-500 focus:border-red-500 bg-red-500/5' 
                           : 'border-white/20 focus:border-emerald-500'
                       }`}
                       placeholder="e.g. 100 Days of Code" 
@@ -753,25 +814,27 @@ export default function CreatePool() {
                           onChange={(e) => {
                             const value = e.target.value;
                             const numValue = parseInt(value, 10);
-                            // Prevent negative values and enforce range
+                            // Allow empty or valid numbers
                             if (value === '' || (!isNaN(numValue) && numValue >= 1 && numValue <= 30)) {
                               setFormData({...formData, customDuration: value});
-                              if (validationErrors.customDuration) {
-                                setValidationErrors({...validationErrors, customDuration: false});
-                              }
+                              validateField('customDuration', value);
                             }
                           }}
                           onBlur={() => {
                             const days = parseInt(formData.customDuration, 10);
                             if (isNaN(days) || days < 1) {
                               setFormData({...formData, customDuration: '1'});
+                              validateField('customDuration', '1');
                             } else if (days > 30) {
                               setFormData({...formData, customDuration: '30'});
+                              validateField('customDuration', '30');
+                            } else {
+                              validateField('customDuration', formData.customDuration);
                             }
                           }}
                           className={`flex-1 bg-transparent border-b py-3 text-xl text-white placeholder-gray-800 focus:outline-none transition-colors ${
                             validationErrors.customDuration 
-                              ? 'border-red-500 focus:border-red-500' 
+                              ? 'border-red-500 focus:border-red-500 bg-red-500/5' 
                               : 'border-white/20 focus:border-emerald-500'
                           }`}
                           placeholder="Enter days" 
@@ -811,25 +874,27 @@ export default function CreatePool() {
                     value={formData.stake}
                     onChange={(e) => {
                       const value = e.target.value;
-                      // Prevent negative values
+                      // Allow empty or valid numbers
                       if (value === '' || (parseFloat(value) >= 0 && parseFloat(value) <= 10)) {
                         setFormData({...formData, stake: value});
-                        if (validationErrors.stake) {
-                          setValidationErrors({...validationErrors, stake: false});
-                        }
+                        validateField('stake', value);
                       }
                     }}
                     onBlur={() => {
                       const stakeAmount = parseFloat(formData.stake);
                       if (isNaN(stakeAmount) || stakeAmount < 0.05) {
                         setFormData({...formData, stake: '0.05'});
+                        validateField('stake', '0.05');
                       } else if (stakeAmount > 10) {
                         setFormData({...formData, stake: '10'});
+                        validateField('stake', '10');
+                      } else {
+                        validateField('stake', formData.stake);
                       }
                     }}
                     className={`w-full bg-transparent border-b py-3 text-xl text-white placeholder-gray-800 focus:outline-none transition-colors ${
                       validationErrors.stake 
-                        ? 'border-red-500 focus:border-red-500' 
+                        ? 'border-red-500 focus:border-red-500 bg-red-500/5' 
                         : 'border-white/20 focus:border-emerald-500'
                     }`}
                     placeholder="0.5" 
@@ -851,32 +916,44 @@ export default function CreatePool() {
                     value={formData.maxParticipants}
                     onChange={(e) => {
                       const value = e.target.value;
-                      // NEW RECRUITMENT SYSTEM: Enforce 5-50 range
+                      // Allow empty or valid numbers
                       const numValue = parseInt(value, 10);
-                      if (value === '' || (!isNaN(numValue) && numValue >= 5 && numValue <= 50)) {
+                      if (value === '' || (!isNaN(numValue) && numValue >= 1 && numValue <= 50)) {
                         setFormData({...formData, maxParticipants: value});
-                        if (validationErrors.maxParticipants) {
-                          setValidationErrors({...validationErrors, maxParticipants: false});
-                        }
+                        // Real-time validation
+                        validateField('maxParticipants', value);
                       }
                     }}
                     onBlur={() => {
                       const maxParts = parseInt(formData.maxParticipants, 10);
                       if (isNaN(maxParts) || maxParts < 5) {
                         setFormData({...formData, maxParticipants: '5'});
+                        validateField('maxParticipants', '5');
                       } else if (maxParts > 50) {
                         setFormData({...formData, maxParticipants: '50'});
+                        validateField('maxParticipants', '50');
+                      } else {
+                        validateField('maxParticipants', formData.maxParticipants);
                       }
                     }}
                     className={`w-full bg-transparent border-b py-3 text-xl text-white placeholder-gray-800 focus:outline-none transition-colors ${
                       validationErrors.maxParticipants 
-                        ? 'border-red-500 focus:border-red-500' 
+                        ? 'border-red-500 focus:border-red-500 bg-red-500/5' 
                         : 'border-white/20 focus:border-emerald-500'
                     }`}
                     placeholder="50" 
                   />
                   {validationErrors.maxParticipants && (
-                    <p className="text-[10px] text-red-400 mt-1">Max participants must be between 5 and 50</p>
+                    <p className="text-[10px] text-red-400 mt-1">
+                      {(() => {
+                        const maxParts = parseInt(formData.maxParticipants, 10);
+                        const minParts = parseInt(formData.minParticipants, 10);
+                        if (!isNaN(maxParts) && !isNaN(minParts) && maxParts < minParts) {
+                          return `Max participants (${maxParts}) must be greater than or equal to min participants (${minParts})`;
+                        }
+                        return 'Max participants must be between 5 and 50';
+                      })()}
+                    </p>
                   )}
                </div>
                {potentialProfit > 0 && (
@@ -1385,42 +1462,53 @@ export default function CreatePool() {
                     value={formData.minParticipants}
                     onChange={(e) => {
                       const value = e.target.value;
+                      // Allow empty or valid numbers
                       const numValue = parseInt(value, 10);
-                      const maxParts = parseInt(formData.maxParticipants, 10);
-                      // Enforce 5-50 range and ensure min <= max
-                      if (value === '' || (!isNaN(numValue) && numValue >= 5 && numValue <= 50 && numValue <= (isNaN(maxParts) ? 50 : maxParts))) {
+                      if (value === '' || (!isNaN(numValue) && numValue >= 1 && numValue <= 50)) {
                         setFormData({
                           ...formData,
                           minParticipants: value,
                         });
-                        if (validationErrors.minParticipants) {
-                          setValidationErrors({...validationErrors, minParticipants: false});
-                        }
+                        // Real-time validation
+                        validateField('minParticipants', value);
                       }
                     }}
                     onBlur={() => {
                       const minParts = parseInt(formData.minParticipants, 10);
                       const maxParts = parseInt(formData.maxParticipants, 10);
-                        if (isNaN(minParts) || minParts < 1) {
-                          setFormData({...formData, minParticipants: '1'});
-                        } else if (!isNaN(maxParts) && minParts > maxParts) {
-                          // CRITICAL: Ensure min_participants <= max_participants (database constraint)
-                          setFormData({...formData, minParticipants: formData.maxParticipants});
-                          if (validationErrors.minParticipants) {
-                            setValidationErrors({...validationErrors, minParticipants: false});
-                          }
+                      if (isNaN(minParts) || minParts < 5) {
+                        setFormData({...formData, minParticipants: '5'});
+                        validateField('minParticipants', '5');
+                      } else if (minParts > 50) {
+                        setFormData({...formData, minParticipants: '50'});
+                        validateField('minParticipants', '50');
+                      } else if (!isNaN(maxParts) && minParts > maxParts) {
+                        // CRITICAL: Ensure min_participants <= max_participants (database constraint)
+                        setFormData({...formData, minParticipants: formData.maxParticipants});
+                        validateField('minParticipants', formData.maxParticipants);
+                      } else {
+                        validateField('minParticipants', formData.minParticipants);
+                      }
+                    }}
+                    className={`w-20 bg-transparent border-b py-1 text-sm text-white placeholder-gray-700 focus:outline-none transition-colors ${
+                      validationErrors.minParticipants 
+                        ? 'border-red-500 focus:border-red-500 bg-red-500/5' 
+                        : 'border-white/20 focus:border-emerald-500'
+                    }`}
+                    placeholder="5"
+                  />
+                  {validationErrors.minParticipants && (
+                    <p className="text-[10px] text-red-400 mt-1">
+                      {(() => {
+                        const minParts = parseInt(formData.minParticipants, 10);
+                        const maxParts = parseInt(formData.maxParticipants, 10);
+                        if (!isNaN(minParts) && !isNaN(maxParts) && minParts > maxParts) {
+                          return `Min participants (${minParts}) cannot be greater than max participants (${maxParts})`;
                         }
-                      }}
-                      className={`w-20 bg-transparent border-b py-1 text-sm text-white placeholder-gray-700 focus:outline-none transition-colors ${
-                        validationErrors.minParticipants 
-                          ? 'border-red-500 focus:border-red-500' 
-                          : 'border-white/20 focus:border-emerald-500'
-                      }`}
-                      placeholder="5"
-                    />
-                    {validationErrors.minParticipants && (
-                      <p className="text-[10px] text-red-400 mt-1">Min participants must be between 5 and 50, and ≤ max participants</p>
-                    )}
+                        return 'Min participants must be between 5 and 50, and ≤ max participants';
+                      })()}
+                    </p>
+                  )}
                     <span className="text-[10px] text-gray-500 uppercase tracking-widest">
                       People
                     </span>

@@ -87,6 +87,79 @@ function AnimatedUnderline({
   );
 }
 
+// Animated highlight component for step titles
+function AnimatedHighlight({ 
+  children, 
+  delay = 0, 
+  duration = 2000,
+  variant = 'emerald',
+  className = '' 
+}: { 
+  children: React.ReactNode; 
+  delay?: number;
+  duration?: number;
+  variant?: 'dark' | 'emerald' | 'pale';
+  className?: string;
+}) {
+  const [isVisible, setIsVisible] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setTimeout(() => setIsVisible(true), delay);
+        }
+      },
+      { threshold: 0.2 }
+    );
+
+    if (ref.current) {
+      observer.observe(ref.current);
+    }
+
+    return () => {
+      if (ref.current) {
+        observer.unobserve(ref.current);
+      }
+    };
+  }, [delay]);
+
+  const getVariantStyles = () => {
+    switch (variant) {
+      case 'dark':
+        return {
+          backgroundColor: '#059669', // emerald-600 (dark green)
+        };
+      case 'pale':
+        return {
+          backgroundColor: '#6ee7b7', // emerald-300 (pale green)
+        };
+      default: // emerald
+        return {
+          backgroundColor: '#34d399', // emerald-400 (standard emerald)
+        };
+    }
+  };
+
+  const styles = getVariantStyles();
+
+  return (
+    <div ref={ref} className={`relative inline-block ${className}`}>
+      <span
+        className="absolute left-0 top-0 h-full w-full transition-all ease-out rounded-sm"
+        style={{
+          backgroundColor: styles.backgroundColor,
+          opacity: 0.35,
+          width: isVisible ? '100%' : '0%',
+          transitionDuration: `${duration}ms`,
+        }}
+      />
+      <span className="relative z-10">{children}</span>
+    </div>
+  );
+}
+
 export default function LandingPage() {
   return (
     <div className="min-h-screen bg-[#050505] text-white pt-16">
@@ -138,18 +211,14 @@ export default function LandingPage() {
           </div>
           <div className="grid md:grid-cols-2 gap-6">
             <div className="p-8 border border-white/20 bg-white/[0.03] rounded-lg">
-              <AnimatedUnderline delay={200} duration={1800} variant="dark">
-                <h3 className="text-2xl font-medium mb-4 text-white">The Problem</h3>
-              </AnimatedUnderline>
+              <h3 className="text-2xl font-medium mb-4 text-white">The Problem</h3>
               <p className="text-base text-gray-200 leading-relaxed">
                 90% of New Year's resolutions fail. Habit trackers get ignored. 
                 Gym buddies let you skip. There's no real cost to quitting.
               </p>
             </div>
             <div className="p-8 border border-emerald-500/30 bg-emerald-500/10 rounded-lg">
-              <AnimatedUnderline delay={400} duration={1800} variant="pale">
-                <h3 className="text-2xl font-medium mb-4 text-white">Our Solution</h3>
-              </AnimatedUnderline>
+              <h3 className="text-2xl font-medium mb-4 text-white">Our Solution</h3>
               <p className="text-base text-white leading-relaxed">
                 Put real money down. Your stake is locked in a smart contract. 
                 Complete your goal and win. Fail and lose your stake. 
@@ -177,7 +246,7 @@ export default function LandingPage() {
                 icon: Target, 
                 title: "1. Create or Join", 
                 desc: "Browse existing challenges or create your own. Set your goal, stake amount, and duration. Put money down to commit—this money is locked until the challenge ends.",
-                details: "You can join with as little as 0.05 SOL. Your stake is held securely in a smart contract."
+                details: "You can join with as little as $5. Your stake is held securely in a smart contract."
               },
               { 
                 icon: Zap, 
@@ -198,9 +267,9 @@ export default function LandingPage() {
                 <div className="mb-6 text-emerald-500 opacity-50 group-hover:opacity-100 transition-opacity">
                   <item.icon strokeWidth={1} className="w-6 h-6" />
                 </div>
-                <AnimatedUnderline delay={i * 300 + 200} duration={2000} variant={variants[i]}>
-                  <h3 className="text-xl font-medium mb-4 text-white">{item.title}</h3>
-                </AnimatedUnderline>
+                <AnimatedHighlight delay={i * 300 + 200} duration={2000} variant={variants[i]}>
+                  <h3 className="text-xl font-medium mb-4 text-white px-2 py-1">{item.title}</h3>
+                </AnimatedHighlight>
                 <p className="text-base text-gray-200 leading-relaxed max-w-xs mb-3">{item.desc}</p>
                 <p className="text-sm text-gray-400 italic">{item.details}</p>
               </div>
@@ -213,20 +282,20 @@ export default function LandingPage() {
             <h3 className="text-2xl font-medium mb-6 text-white">Example: How Rewards Work</h3>
             <div className="space-y-4 text-base">
               <div className="flex items-center justify-between p-4 border-b border-white/10">
-                <span className="text-gray-200">10 people join at 1 SOL each</span>
-                <span className="font-mono text-white font-medium">10 SOL total</span>
+                <span className="text-gray-200">10 people join at $50 each</span>
+                <span className="font-mono text-white font-medium">$500 total</span>
               </div>
               <div className="flex items-center justify-between p-4 border-b border-white/10">
                 <span className="text-gray-200">3 people fail to complete</span>
-                <span className="font-mono text-gray-300 font-medium">3 SOL (lost stakes)</span>
+                <span className="font-mono text-gray-300 font-medium">$150 (lost stakes)</span>
               </div>
               <div className="flex items-center justify-between p-4 border-b border-emerald-500/30">
                 <span className="text-gray-200">7 winners split the pot</span>
-                <span className="font-mono text-emerald-400 font-medium">~0.43 SOL each</span>
+                <span className="font-mono text-emerald-400 font-medium">~$21 each</span>
               </div>
               <div className="pt-4 border-t border-white/10">
                 <p className="text-sm text-gray-300 leading-relaxed">
-                  Each winner gets their 1 SOL stake back, plus ~0.43 SOL from the prize pool (3 SOL ÷ 7 winners). 
+                  Each winner gets their $50 stake back, plus ~$21 from the prize pool ($150 ÷ 7 winners). 
                   Plus any yield earned during the challenge period.
                 </p>
               </div>
