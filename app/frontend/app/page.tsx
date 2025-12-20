@@ -87,78 +87,6 @@ function AnimatedUnderline({
   );
 }
 
-// Animated highlight component for step titles
-function AnimatedHighlight({ 
-  children, 
-  delay = 0, 
-  duration = 2000,
-  variant = 'emerald',
-  className = '' 
-}: { 
-  children: React.ReactNode; 
-  delay?: number;
-  duration?: number;
-  variant?: 'dark' | 'emerald' | 'pale';
-  className?: string;
-}) {
-  const [isVisible, setIsVisible] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setTimeout(() => setIsVisible(true), delay);
-        }
-      },
-      { threshold: 0.2 }
-    );
-
-    if (ref.current) {
-      observer.observe(ref.current);
-    }
-
-    return () => {
-      if (ref.current) {
-        observer.unobserve(ref.current);
-      }
-    };
-  }, [delay]);
-
-  const getVariantStyles = () => {
-    switch (variant) {
-      case 'dark':
-        return {
-          backgroundColor: '#059669', // emerald-600 (dark green)
-        };
-      case 'pale':
-        return {
-          backgroundColor: '#6ee7b7', // emerald-300 (pale green)
-        };
-      default: // emerald
-        return {
-          backgroundColor: '#34d399', // emerald-400 (standard emerald)
-        };
-    }
-  };
-
-  const styles = getVariantStyles();
-
-  return (
-    <div ref={ref} className={`relative inline-block ${className}`}>
-      <span
-        className="absolute left-0 top-0 h-full w-full transition-all ease-out rounded-sm"
-        style={{
-          backgroundColor: styles.backgroundColor,
-          opacity: 0.35,
-          width: isVisible ? '100%' : '0%',
-          transitionDuration: `${duration}ms`,
-        }}
-      />
-      <span className="relative z-10">{children}</span>
-    </div>
-  );
-}
 
 export default function LandingPage() {
   return (
@@ -261,15 +189,12 @@ export default function LandingPage() {
                 details: "Winners get their stake back plus a share of losers' stakes and any yield earned."
               }
             ].map((item, i) => {
-              const variants: Array<'dark' | 'emerald' | 'pale'> = ['dark', 'emerald', 'pale'];
               return (
               <div key={i} className="flex flex-col items-start group">
                 <div className="mb-6 text-emerald-500 opacity-50 group-hover:opacity-100 transition-opacity">
                   <item.icon strokeWidth={1} className="w-6 h-6" />
                 </div>
-                <AnimatedHighlight delay={i * 300 + 200} duration={2000} variant={variants[i]}>
-                  <h3 className="text-xl font-medium mb-4 text-white px-2 py-1">{item.title}</h3>
-                </AnimatedHighlight>
+                <h3 className="text-xl font-medium mb-4 text-white px-2 py-1">{item.title}</h3>
                 <p className="text-base text-gray-200 leading-relaxed max-w-xs mb-3">{item.desc}</p>
                 <p className="text-sm text-gray-400 italic">{item.details}</p>
               </div>
