@@ -17,7 +17,6 @@ from datetime import datetime, timezone
 import random
 from enum import Enum
 from dataclasses import dataclass
-from collections import deque
 
 # Initialize logger first so we can log import errors
 logger = logging.getLogger(__name__)
@@ -48,17 +47,6 @@ class SocialEventType(str, Enum):
     POOL_CREATED = "pool_created"
     POOL_MIDWAY = "pool_midway"
     POOL_COMPLETED = "pool_completed"
-
-
-@dataclass
-class TweetTask:
-    """Represents a tweet task in the queue."""
-    event_type: SocialEventType
-    pool_id: int
-    created_at: float
-    retry_count: int = 0
-    max_retries: int = 5
-    next_retry_at: Optional[float] = None
 
 
 @dataclass
@@ -95,11 +83,7 @@ class SocialManager:
             "https://commitment-backend.onrender.com/solana/actions",
         )
         
-        # Tweet queue for non-blocking posts
-        self.tweet_queue: asyncio.Queue = asyncio.Queue()
-        self.queue_worker_running = False
         self.rate_limit_until: Optional[float] = None  # Track when rate limit resets (global fallback)
-        self.retry_delays = [60, 300, 900, 1800, 3600]  # Exponential backoff: 1min, 5min, 15min, 30min, 1hr
         
         # Multiple Twitter accounts
         self.twitter_accounts: List[TwitterAccount] = []
@@ -1027,187 +1011,93 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
         pool_id: int,
     ) -> Optional[str]:
         """
-        Queue a tweet for a specific social event (new, midway, completed).
+        Post a tweet immediately for a specific social event (new pool).
         
-        This is the main entry point for event-driven tweets.
-        Returns immediately after queuing - doesn't block on actual posting.
+        Simple: detect new pool -> post tweet immediately.
         """
         try:
             if not self.twitter_enabled or not self.twitter_client:
-                logger.info("Twitter not configured, skipping social event post")
+                logger.debug("Twitter not configured, skipping tweet")
                 return None
             
+            # Check if we've already posted for this pool/event
             key = (pool_id, event_type)
             last = self.last_event_post_time.get(key, 0.0)
-            # Reuse post_interval for event-level spacing
-            if time.time() - last < self.post_interval:
-                logger.debug(f"Skipping event {event_type} for pool {pool_id} (too recent)")
+            if time.time() - last < 3600:  # Don't post more than once per hour per pool
+                logger.debug(f"Skipping {event_type} for pool {pool_id} (already posted recently)")
                 return None
             
-            # Validate pool before queuing
+            # Get pool data
             pool = await self._get_pool(pool_id)
             if not pool:
-                logger.warning(f"Pool {pool_id} not found for event {event_type}")
+                logger.warning(f"Pool {pool_id} not found")
+                return None
+            
+            # Only post for new pools (POOL_CREATED)
+            if event_type is not SocialEventType.POOL_CREATED:
                 return None
             
             status = pool.get("status")
+            is_public = pool.get("is_public", True)
             
-            # Handle POOL_CREATED events
-            if event_type is SocialEventType.POOL_CREATED:
-                recruitment_hours = pool.get("recruitment_period_hours", 24)
-                scheduled_start = pool.get("scheduled_start_time")
-                is_public = pool.get("is_public", True)
-                
-                # Check if pool is public (required for tweets)
-                if not is_public:
-                    logger.debug(f"Skipping POOL_CREATED tweet for pool {pool_id} (not public)")
-                    return None
-                
-                # Allow both scheduled and immediate start pools to get POOL_CREATED tweets
-                # Immediate start pools (recruitment_hours == 0) should still get a tweet when created
-                if status not in ("pending", "active"):
-                    logger.debug(f"Skipping event {event_type} for pool {pool_id} (status={status})")
-                    return None
-                
-                # Log what type of pool this is
-                if recruitment_hours == 0 or scheduled_start is None:
-                    logger.info(
-                        f"Queuing POOL_CREATED tweet for immediate start pool {pool_id} "
-                        f"(recruitment_hours={recruitment_hours}, status={status})"
-                    )
-                else:
-                    logger.info(
-                        f"Queuing POOL_CREATED tweet for scheduled pool {pool_id} "
-                        f"(recruitment_hours={recruitment_hours}, scheduled_start={scheduled_start}, status={status})"
-                    )
-            elif event_type is SocialEventType.POOL_MIDWAY:
-                if status not in ("pending", "active"):
-                    logger.debug(f"Skipping event {event_type} for pool {pool_id} (status={status})")
-                    return None
-            elif event_type is SocialEventType.POOL_COMPLETED:
-                if status not in ("completed", "ended", "finished"):
-                    logger.debug(f"Skipping completed event for pool {pool_id} (status={status})")
-                    return None
+            # Only post for public pools that are pending or active
+            if not is_public:
+                return None
             
-            # Queue the tweet task (non-blocking)
-            task = TweetTask(
-                event_type=event_type,
-                pool_id=pool_id,
-                created_at=time.time(),
-                retry_count=0
-            )
-            await self.tweet_queue.put(task)
-            logger.info(f"Queued {event_type.value} tweet for pool {pool_id} (queue size: {self.tweet_queue.qsize()})")
+            if status not in ("pending", "active"):
+                return None
             
-            # Return a placeholder - actual tweet ID will be logged by worker
-            return "queued"
+            # Post the tweet immediately
+            logger.info(f"Posting POOL_CREATED tweet for pool {pool_id} (status={status})")
             
-        except Exception as e:
-            logger.error(f"Error queuing event update for pool {pool_id}: {e}", exc_info=True)
-            return None
-    
-    async def _tweet_queue_worker(self):
-        """
-        Background worker that processes the tweet queue.
-        Handles rate limits, retries, and exponential backoff.
-        """
-        logger.info("_tweet_queue_worker() called")
-        if self.queue_worker_running:
-            logger.warning("Tweet queue worker already running, skipping duplicate start")
-            return
-        
-        try:
-            logger.info("Setting queue_worker_running = True")
-            self.queue_worker_running = True
-            logger.info("Tweet queue worker started")
-            logger.info(f"Initial queue size: {self.tweet_queue.qsize()}")
-            logger.info(f"Twitter enabled: {self.twitter_enabled}, Accounts: {len(self.twitter_accounts)}")
-        except Exception as e:
-            logger.error(f"Error initializing tweet queue worker: {e}", exc_info=True)
-            import traceback
-            logger.error(traceback.format_exc())
-            self.queue_worker_running = False
-            return
-        
-        last_heartbeat = time.time()
-        while True:
+            stats = await self.get_pool_stats(pool)
+            body = self.generate_new_pool_tweet(pool, stats)
+            pool_pubkey = pool.get("pool_pubkey")
+            blink_url = self.create_blink(pool_id, pool_pubkey)
+            app_url = self.create_app_link(pool_id)
+            goal_type = pool.get("goal_type")
+            full_tweet = self.build_full_tweet(body, blink_url, app_url, goal_type, pool=pool)
+            
+            # Get available account and post
+            account = self.get_next_available_account()
+            if not account:
+                logger.warning(f"No available Twitter account for pool {pool_id}")
+                return None
+            
             try:
-                # Check if we're rate limited
-                current_time = time.time()
-                queue_size = self.tweet_queue.qsize()
-                if queue_size > 0:
-                    logger.info(f"Queue worker active: {queue_size} task(s) in queue")
-                
-                if self.rate_limit_until and current_time < self.rate_limit_until:
-                    wait_time = self.rate_limit_until - current_time
-                    logger.warning(f"Rate limited, waiting {wait_time:.0f} seconds (queue has {queue_size} tasks)")
-                    await asyncio.sleep(min(wait_time, 60))  # Check every minute max
-                    continue
-                
-                # Get next task (with timeout to check rate limits periodically)
-                try:
-                    task: TweetTask = await asyncio.wait_for(
-                        self.tweet_queue.get(), 
-                        timeout=60.0
-                    )
-                    logger.info(f"Processing tweet task: pool {task.pool_id}, event {task.event_type.value} (queue size: {self.tweet_queue.qsize()})")
-                except asyncio.TimeoutError:
-                    # No tasks in queue - this is normal, just continue waiting
-                    queue_size = self.tweet_queue.qsize()
-                    current_time = time.time()
-                    # Log heartbeat every 5 minutes if queue has items
-                    if queue_size > 0 and current_time - last_heartbeat > 300:
-                        logger.warning(f"Queue worker waiting but queue has {queue_size} items - worker is active but may be blocked")
-                        last_heartbeat = current_time
-                    elif queue_size > 0:
-                        logger.warning(f"Queue worker timeout but queue has {queue_size} items - this shouldn't happen")
-                    else:
-                        logger.debug(f"Queue worker waiting for tasks (queue size: {queue_size})")
-                    continue
-                
-                # Check if task should be retried now
-                if task.next_retry_at and current_time < task.next_retry_at:
-                    # Put it back and wait
-                    await self.tweet_queue.put(task)
-                    await asyncio.sleep(min(task.next_retry_at - current_time, 60))
-                    continue
-                
-                # Process the tweet
-                tweet_id = await self._process_tweet_task(task)
+                response = account.client.create_tweet(text=full_tweet)
+                tweet_id = response.data.get("id") if response and response.data else None
                 
                 if tweet_id:
-                    # Success (including duplicate content - tweet already exists)
-                    key = (task.pool_id, task.event_type)
                     self.last_event_post_time[key] = time.time()
-                    if tweet_id == "duplicate":
-                        logger.info(
-                            f"Tweet for pool {task.pool_id} ({task.event_type.value}) already posted "
-                            f"(duplicate detected). Marked as completed."
-                        )
-                    else:
-                        logger.info(f"Successfully posted tweet {tweet_id} for pool {task.pool_id} ({task.event_type.value})")
+                    logger.info(f"Successfully posted tweet {tweet_id} for pool {pool_id}")
+                    return tweet_id
                 else:
-                    # Failed - retry or give up
-                    if task.retry_count < task.max_retries:
-                        task.retry_count += 1
-                        delay = self.retry_delays[min(task.retry_count - 1, len(self.retry_delays) - 1)]
-                        task.next_retry_at = current_time + delay
-                        await self.tweet_queue.put(task)
-                        logger.warning(
-                            f"Tweet failed for pool {task.pool_id}, retrying in {delay}s "
-                            f"(attempt {task.retry_count}/{task.max_retries})"
-                        )
-                    else:
-                        logger.error(
-                            f"Tweet failed for pool {task.pool_id} after {task.max_retries} retries, giving up"
-                        )
-                
-                # Mark task as done
-                self.tweet_queue.task_done()
-                
+                    logger.warning(f"Tweet posted but no ID returned for pool {pool_id}")
+                    return None
+                    
+            except tweepy.Forbidden as e:
+                error_message = str(e).lower()
+                if "duplicate content" in error_message:
+                    logger.info(f"Tweet for pool {pool_id} already exists (duplicate)")
+                    self.last_event_post_time[key] = time.time()
+                    return "duplicate"
+                else:
+                    logger.error(f"Twitter forbidden (403) for pool {pool_id}: {e}")
+                    return None
+            except tweepy.Unauthorized as e:
+                logger.error(f"Twitter authentication failed for pool {pool_id}: {e}")
+                return None
+            except tweepy.TooManyRequests:
+                logger.warning(f"Twitter rate limit reached for pool {pool_id}")
+                return None
             except Exception as e:
-                logger.error(f"Error in tweet queue worker: {e}", exc_info=True)
-                await asyncio.sleep(60)  # Wait before retrying
+                logger.error(f"Error posting tweet for pool {pool_id}: {e}", exc_info=True)
+                return None
+            
+        except Exception as e:
+            logger.error(f"Error in post_event_update for pool {pool_id}: {e}", exc_info=True)
+            return None
     
     def _extract_rate_limit_headers(self, response) -> Dict[str, Any]:
         """Extract rate limit information from Twitter API response headers."""
@@ -1253,411 +1143,59 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
         
         return rate_limit_info
     
-    async def _process_tweet_task(self, task: TweetTask) -> Optional[str]:
-        """Process a single tweet task - actually posts to Twitter using account rotation."""
-        # Get available account
-        account = self.get_next_available_account()
-        if not account:
-            # All accounts rate limited - find earliest reset time
-            reset_times = [
-                a.rate_limit_reset_time for a in self.twitter_accounts
-                if a.rate_limit_reset_time
-            ]
-            if reset_times:
-                min_reset = min(reset_times)
-                self.rate_limit_until = min_reset
-                wait_time = min_reset - time.time()
-                logger.warning(
-                    f"All Twitter accounts rate limited. "
-                    f"Will retry after {wait_time:.0f} seconds "
-                    f"(Account 1: {self.twitter_accounts[0].rate_limit_remaining if self.twitter_accounts else 0} remaining, "
-                    f"Account 2: {self.twitter_accounts[1].rate_limit_remaining if len(self.twitter_accounts) > 1 else 'N/A'} remaining)"
-                )
-            else:
-                # Fallback to 15 minutes
-                self.rate_limit_until = time.time() + 900
-                logger.warning("All Twitter accounts rate limited. Will retry after 900 seconds")
-            return None
-        
-        try:
-            pool = await self._get_pool(task.pool_id)
-            if not pool:
-                logger.warning(f"Pool {task.pool_id} not found, skipping tweet")
-                return None
-            
-            stats = await self.get_pool_stats(pool)
-            
-            # Generate tweet content
-            if task.event_type is SocialEventType.POOL_CREATED:
-                body = self.generate_new_pool_tweet(pool, stats)
-            elif task.event_type is SocialEventType.POOL_MIDWAY:
-                body = self.generate_midway_tweet(pool, stats)
-            elif task.event_type is SocialEventType.POOL_COMPLETED:
-                winners = await self._get_winners(task.pool_id)
-                body = self.generate_completed_tweet(pool, stats, winners)
-            else:
-                logger.warning(f"Unknown social event type: {task.event_type}")
-                return None
-            
-            pool_pubkey = pool.get("pool_pubkey")
-            blink_url = self.create_blink(task.pool_id, pool_pubkey)
-            app_url = self.create_app_link(task.pool_id)
-            goal_type = pool.get("goal_type")
-            # Pass pool dict for accurate crypto challenge detection (includes metadata for DCA pools)
-            full_tweet = self.build_full_tweet(body, blink_url, app_url, goal_type, pool=pool)
-            
-            logger.info(
-                f"Posting {task.event_type.value} update for pool {task.pool_id} "
-                f"using Twitter account {account.account_id} "
-                f"(remaining: {account.rate_limit_remaining}/{account.rate_limit_limit})"
-            )
-            
-            # Post using the selected account
-            response = account.client.create_tweet(text=full_tweet)
-            
-            # Extract and update rate limit info from response headers
-            rate_limit_info = self._extract_rate_limit_headers(response)
-            if rate_limit_info['remaining'] is not None:
-                account.rate_limit_remaining = rate_limit_info['remaining']
-                logger.debug(
-                    f"Account {account.account_id} rate limit: "
-                    f"{account.rate_limit_remaining}/{rate_limit_info.get('limit', account.rate_limit_limit)} remaining"
-                )
-            else:
-                # Estimate - decrement by 1
-                account.rate_limit_remaining = max(0, account.rate_limit_remaining - 1)
-            
-            if rate_limit_info['limit'] is not None:
-                account.rate_limit_limit = rate_limit_info['limit']
-            
-            if rate_limit_info['reset_time'] is not None:
-                account.rate_limit_reset_time = rate_limit_info['reset_time']
-                # Clear rate_limit_until if we have a reset time
-                if account.rate_limit_remaining > 0:
-                    account.rate_limit_until = None
-            
-            tweet_id = response.data.get("id") if response and response.data else None
-            
-            if tweet_id:
-                logger.info(
-                    f"Successfully posted tweet {tweet_id} for pool {task.pool_id} "
-                    f"using account {account.account_id} "
-                    f"(remaining: {account.rate_limit_remaining}/{account.rate_limit_limit})"
-                )
-                return tweet_id
-            else:
-                logger.warning(f"Tweet posted but no ID returned for pool {task.pool_id}")
-                return None
-                
-        except tweepy.Forbidden as e:
-            # Check if this is a duplicate content error
-            error_message = str(e).lower()
-            if "duplicate content" in error_message or "duplicate" in error_message:
-                # Tweet was already posted - treat as success
-                logger.info(
-                    f"Tweet for pool {task.pool_id} ({task.event_type.value}) already exists "
-                    f"(duplicate content). Marking as posted."
-                )
-                # Return a special marker to indicate duplicate (treated as success)
-                return "duplicate"
-            else:
-                # Other 403 errors - log and don't retry
-                error_str = str(e)
-                if "oauth1 app permissions" in error_str.lower() or "permissions" in error_str.lower():
-                    logger.error(
-                        f"Twitter account {account.account_id} forbidden (403) - OAuth permissions issue for pool {task.pool_id}. "
-                        f"ERROR: {e}. "
-                        f"SOLUTION: Go to https://developer.twitter.com/en/portal/dashboard, select your app, "
-                        f"go to 'Settings' > 'User authentication settings', and ensure 'App permissions' is set to 'Read and Write'. "
-                        f"Then regenerate your Access Token and Secret."
-                    )
-                else:
-                    logger.error(
-                        f"Twitter account {account.account_id} forbidden (403) for pool {task.pool_id}: {e}"
-                    )
-                # Mark account as having permission issues - don't retry for a while
-                account.rate_limit_until = time.time() + 3600  # Don't retry for 1 hour
-                account.rate_limit_remaining = 0
-                return None
-        except tweepy.Unauthorized as e:
-            # Invalid credentials - don't retry, mark account as invalid
-            logger.error(
-                f"Twitter account {account.account_id} authentication failed (401 Unauthorized). "
-                f"Check credentials in agent/.env - account may need to be re-authenticated."
-            )
-            account.rate_limit_until = time.time() + 3600  # Don't retry for 1 hour
-            account.rate_limit_remaining = 0
-            return None
-        except tweepy.TooManyRequests as e:
-            # This account is rate limited - extract reset time from headers
-            reset_time = time.time() + 900  # Default 15 minutes
-            
-            # Try to extract from exception
-            if hasattr(e, 'response') and e.response:
-                headers = getattr(e.response, 'headers', {})
-                reset_header = headers.get('x-rate-limit-reset')
-                if reset_header:
-                    try:
-                        reset_time = float(reset_header)
-                    except (ValueError, TypeError):
-                        pass
-            
-            account.rate_limit_until = reset_time
-            account.rate_limit_remaining = 0
-            
-            # Also try to get remaining/limit from headers
-            if hasattr(e, 'response') and e.response:
-                headers = getattr(e.response, 'headers', {})
-                remaining = headers.get('x-rate-limit-remaining')
-                limit = headers.get('x-rate-limit-limit')
-                if remaining is not None:
-                    try:
-                        account.rate_limit_remaining = int(remaining)
-                    except (ValueError, TypeError):
-                        pass
-                if limit is not None:
-                    try:
-                        account.rate_limit_limit = int(limit)
-                    except (ValueError, TypeError):
-                        pass
-                if reset_header:
-                    try:
-                        account.rate_limit_reset_time = float(reset_header)
-                    except (ValueError, TypeError):
-                        pass
-            
-            wait_time = reset_time - time.time()
-            logger.warning(
-                f"Twitter account {account.account_id} rate limited. "
-                f"Will retry after {wait_time:.0f} seconds "
-                f"(reset at: {datetime.fromtimestamp(reset_time, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')})"
-            )
-            
-            # Try next account if available (only once to prevent infinite loop)
-            if task.retry_count < 1 and len(self.twitter_accounts) > 1:
-                next_account = self.get_next_available_account()
-                if next_account and next_account != account:
-                    logger.info(f"Retrying with account {next_account.account_id}")
-                    task.retry_count += 1
-                    return await self._process_tweet_task(task)
-            
-            return None
-        except Exception as e:
-            logger.error(f"Error processing tweet task for pool {task.pool_id}: {e}", exc_info=True)
-            return None
-    
-    async def start_queue_worker(self):
-        """Start the tweet queue worker (called from main agent)."""
-        if self.twitter_enabled and not self.queue_worker_running:
-            await self._tweet_queue_worker()
-    
     async def post_updates(self):
         """
-        Post pool updates to Twitter periodically.
+        Monitor database for new pools and post tweets immediately.
         
-        Runs continuously, posting updates about active pools.
-        Uses the queue system for non-blocking posts with automatic retries.
+        Simple: check for new pools -> post tweet immediately.
         """
-        try:
-            logger.info("=" * 80)
-            logger.info("Starting social media update loop...")
-            logger.info(f"Twitter enabled status: {self.twitter_enabled}")
-            logger.info(f"Queue worker running status: {self.queue_worker_running}")
-            logger.info(f"Twitter accounts count: {len(self.twitter_accounts)}")
-            logger.info("=" * 80)
-        except Exception as e:
-            logger.error(f"Error at start of post_updates: {e}", exc_info=True)
+        logger.info("Starting social media monitor (simple mode: detect -> post)")
         
-        # Start queue worker if Twitter is enabled
-        if self.twitter_enabled:
-            logger.info(f"Twitter is enabled with {len(self.twitter_accounts)} account(s)")
-            # Start the queue worker as a background task
-            # Wrap in try-except to catch any startup errors
-            try:
-                if not self.queue_worker_running:
-                    logger.info("Creating tweet queue worker task...")
-                    # Create the worker task
-                    worker_task = asyncio.create_task(self._tweet_queue_worker())
-                    logger.info(f"Tweet queue worker task created: {worker_task}")
-                    
-                    # Yield control to allow the task to start running
-                    await asyncio.sleep(0)  # Yield to event loop
-                    
-                    # Give it multiple chances to start and log
-                    for i in range(10):
-                        await asyncio.sleep(0.1)
-                        if self.queue_worker_running:
-                            logger.info(f"Tweet queue worker confirmed running after {i+1} checks")
-                            break
-                        # Check if task failed
-                        if worker_task.done():
-                            try:
-                                await worker_task  # This will raise any exception that occurred
-                            except Exception as task_error:
-                                logger.error(f"Worker task failed immediately: {task_error}", exc_info=True)
-                                break
-                    else:
-                        logger.error("Tweet queue worker failed to start - queue_worker_running is still False after 1 second")
-                        logger.error(f"Worker task done: {worker_task.done()}, cancelled: {worker_task.cancelled()}")
-                        if worker_task.done():
-                            try:
-                                await worker_task  # This will raise any exception that occurred
-                            except Exception as task_error:
-                                logger.error(f"Worker task exception: {task_error}", exc_info=True)
-                else:
-                    logger.warning("Tweet queue worker already marked as running")
-            except Exception as e:
-                logger.error(f"Failed to start tweet queue worker: {e}", exc_info=True)
-                import traceback
-                logger.error(traceback.format_exc())
-        else:
-            logger.warning("Twitter not enabled - no Twitter accounts configured or initialization failed. Queue worker not started.")
-            logger.warning("To enable Twitter, configure TWITTER_API_KEY, TWITTER_API_SECRET, TWITTER_ACCESS_TOKEN, and TWITTER_ACCESS_TOKEN_SECRET in agent/.env")
+        if not self.twitter_enabled:
+            logger.warning("Twitter not enabled - configure credentials in agent/.env")
+            while True:
+                await asyncio.sleep(3600)  # Sleep if Twitter not enabled
+            return
+        
+        logger.info(f"Twitter enabled with {len(self.twitter_accounts)} account(s)")
         
         while True:
             try:
-                if not self.twitter_enabled:
-                    logger.info("Twitter not enabled, sleeping for 1 hour...")
-                    await asyncio.sleep(3600)
-                    continue
-                
-                # Get active and pending pools (pending pools need POOL_CREATED tweets)
+                # Get all public pools (pending or active)
                 pools = await execute_query(
                     table="pools",
                     operation="select",
                     filters={"is_public": True}
                 )
                 
-                # Filter to only include active or pending pools
-                pools = [p for p in pools if p.get("status") in ("active", "pending")]
+                # Filter to pending/active pools
+                pools = [p for p in pools if p.get("status") in ("pending", "active")]
                 
                 if not pools:
-                    logger.info("No active or pending public pools found for Twitter posting, sleeping for 1 hour...")
-                    await asyncio.sleep(3600)
+                    logger.debug("No active/pending public pools found")
+                    await asyncio.sleep(60)  # Check every minute
                     continue
                 
-                logger.info(f"Found {len(pools)} active/pending public pools to potentially post about on Twitter")
-                
-                # First, check for newly created pools that haven't been tweeted about yet
-                # This catches immediate start pools and scheduled pools that were activated before getting a tweet
-                new_pool_count = 0
+                # Check each pool - if we haven't tweeted about it, tweet now
                 for pool in pools:
                     pool_id = pool.get("pool_id")
                     if not pool_id:
                         continue
                     
-                    is_public = pool.get("is_public", True)
-                    if not is_public:
-                        continue
-                    
-                    # Check if we've already posted a POOL_CREATED tweet for this pool
+                    # Check if we've already posted for this pool
                     key = (pool_id, SocialEventType.POOL_CREATED)
-                    last_created = self.last_event_post_time.get(key, 0.0)
+                    last_posted = self.last_event_post_time.get(key, 0.0)
                     
-                    # Check if this is a newly created pool that needs a POOL_CREATED tweet
-                    pool_status = pool.get("status")
-                    should_tweet = False
-                    
-                    # Pending pools are newly created and should get a tweet
-                    if pool_status == "pending" and last_created == 0.0:
-                        should_tweet = True
-                        logger.info(f"Pool {pool_id}: Pending pool detected, queuing POOL_CREATED tweet")
-                    # Active pools that were created recently (within last 24 hours) and haven't been tweeted about
-                    elif pool_status == "active":
-                        start_time = pool.get("start_timestamp")
-                        if start_time and time.time() - start_time < 86400 and last_created == 0.0:
-                            should_tweet = True
-                            logger.info(f"Pool {pool_id}: Newly activated pool (created within 24h), queuing POOL_CREATED tweet")
-                    
-                    if should_tweet:
-                        result = await self.post_event_update(
-                            SocialEventType.POOL_CREATED,
-                            pool_id
-                        )
-                        if result:
-                            new_pool_count += 1
-                            await asyncio.sleep(5)  # Small delay between queuing
-                        else:
-                            logger.warning(f"Pool {pool_id}: Failed to queue POOL_CREATED tweet")
+                    # If we haven't posted yet, post now
+                    if last_posted == 0.0:
+                        logger.info(f"New pool {pool_id} detected - posting tweet now")
+                        await self.post_event_update(SocialEventType.POOL_CREATED, pool_id)
+                        await asyncio.sleep(2)  # Small delay between posts
                 
-                # Queue updates for pools that are actually at the midway point
-                # Only check active pools for midway updates (not pending ones)
-                queued_count = 0
-                skipped_recent = 0
-                skipped_not_midway = 0
-                skipped_no_timestamps = 0
-                
-                active_pools = [p for p in pools if p.get("status") == "active"]
-                for pool in active_pools:
-                    pool_id = pool.get("pool_id")
-                    if not pool_id:
-                        continue
-                    
-                    # Check if we've posted recently (rate limiting)
-                    key = (pool_id, SocialEventType.POOL_MIDWAY)
-                    last = self.last_event_post_time.get(key, 0.0)
-                    if time.time() - last < self.post_interval:
-                        skipped_recent += 1
-                        logger.debug(f"Pool {pool_id}: Skipped (posted {int(time.time() - last)}s ago, need {self.post_interval}s)")
-                        continue  # Skip if posted recently
-                    
-                    # Check if pool has required timestamps
-                    start_time = pool.get("start_timestamp")
-                    end_time = pool.get("end_timestamp")
-                    if not start_time or not end_time:
-                        skipped_no_timestamps += 1
-                        logger.debug(f"Pool {pool_id}: Skipped (missing timestamps: start={start_time}, end={end_time})")
-                        continue
-                    
-                    # Check if pool is actually at the midway point
-                    if not self._is_pool_at_midway(pool):
-                        # Log why it's not at midway
-                        current_time = int(time.time())
-                        total_duration = end_time - start_time
-                        elapsed_time = current_time - start_time
-                        if total_duration > 0 and elapsed_time >= 0:
-                            percent_complete = (elapsed_time / total_duration) * 100
-                            skipped_not_midway += 1
-                            logger.debug(
-                                f"Pool {pool_id}: Skipped (not at midway: {percent_complete:.1f}% complete, "
-                                f"needs 45-75%)"
-                            )
-                        else:
-                            skipped_not_midway += 1
-                            logger.debug(f"Pool {pool_id}: Skipped (invalid duration: {total_duration}s, elapsed: {elapsed_time}s)")
-                        continue  # Skip if not at midway point
-                    
-                    # Queue a midway update (non-blocking)
-                    logger.info(f"Pool {pool_id}: Queuing midway update")
-                    result = await self.post_event_update(
-                        SocialEventType.POOL_MIDWAY,
-                        pool_id
-                    )
-                    if result:
-                        queued_count += 1
-                        # Small delay between queuing to avoid overwhelming queue
-                        await asyncio.sleep(5)  # 5 seconds between queuing
-                    else:
-                        logger.warning(f"Pool {pool_id}: Failed to queue midway update (post_event_update returned None)")
-                
-                if new_pool_count > 0:
-                    logger.info(f"Queued {new_pool_count} new pool (POOL_CREATED) tweet(s)")
-                
-                if queued_count > 0:
-                    logger.info(f"Queued {queued_count} midway pool update(s) (queue size: {self.tweet_queue.qsize()})")
-                else:
-                    logger.info(
-                        f"No midway updates queued: "
-                        f"{skipped_recent} posted recently, "
-                        f"{skipped_not_midway} not at midway, "
-                        f"{skipped_no_timestamps} missing timestamps"
-                    )
-                
-                # Sleep for 1 hour before next check
-                await asyncio.sleep(3600)
+                # Check every 30 seconds for new pools
+                await asyncio.sleep(30)
             
             except Exception as e:
-                logger.error(f"Error in social media update loop: {e}", exc_info=True)
-                # Sleep before retrying
-                await asyncio.sleep(300)  # 5 minutes
+                logger.error(f"Error in social media monitor: {e}", exc_info=True)
+                await asyncio.sleep(60)  # Wait before retrying
 

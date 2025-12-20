@@ -178,6 +178,16 @@ Holds all staked SOL in escrow:
 - Transparent on-chain verification
 - Authority checks for sensitive operations
 - No reentrancy vulnerabilities (Solana's transaction model)
+- Recruitment system enforced on-chain (min/max participants)
+
+## Future Enhancements
+
+For mainnet deployment, potential enhancements include:
+- **Yield Generation**: Stakes earn yield during challenge period
+- **Multi-Token Support**: Support for USDC and other SPL tokens
+- **Advanced Distribution**: More flexible reward distribution modes
+- **NFT Badges**: On-chain achievement NFTs for winners
+- **Team Challenges**: Group-based challenges with shared goals
 
 ## Troubleshooting
 

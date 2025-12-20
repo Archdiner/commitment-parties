@@ -5,10 +5,13 @@ FastAPI backend for Commitment Parties - manages pool metadata, check-ins, and S
 ## Overview
 
 REST API that provides:
-- Pool metadata storage and retrieval
+- Pool metadata storage and retrieval with recruitment tracking
 - Check-in submissions for lifestyle challenges
-- User profile management
+- GitHub commit verification via GitHub API
+- Screen time screenshot verification via OpenAI Vision API
+- User profile management with GitHub OAuth integration
 - Solana Actions endpoints for Twitter Blinks integration
+- AI-powered challenge blueprint generation from natural language
 
 ## Setup
 
@@ -53,6 +56,16 @@ PROGRAM_ID=your_program_id_here
 
 # CORS
 CORS_ORIGINS=https://your-frontend-url,http://localhost:3000
+
+# GitHub OAuth (for commit verification)
+GITHUB_CLIENT_ID=your_github_client_id
+GITHUB_CLIENT_SECRET=your_github_client_secret
+
+# OpenAI (for screen time verification)
+OPENAI_API_KEY=your_openai_api_key
+
+# AI Features (optional)
+OPENAI_API_KEY=your_openai_api_key  # For AI challenge generation
 ```
 
 ### Database Setup
@@ -87,24 +100,34 @@ uvicorn main:app --host 0.0.0.0 --port $PORT
 - `GET /health` - API health status
 
 ### Pools
-- `GET /api/pools` - List active pools
+- `GET /api/pools` - List active pools (with filters)
 - `GET /api/pools/{pool_id}` - Get pool details
 - `POST /api/pools` - Create pool metadata
-- `POST /api/pools/create/confirm` - Confirm pool creation
+- `POST /api/pools/create/confirm` - Confirm pool creation (with recruitment system)
+- `GET /api/pools/{pool_id}/participants` - Get pool participants
 
 ### Check-ins
 - `POST /api/checkins` - Submit check-in
 - `GET /api/checkins/{pool_id}/{wallet}` - Get user check-ins
 
+### Verification
+- `POST /api/pools/{pool_id}/participants/{wallet}/verify-github` - Verify GitHub commits
+- `POST /api/pools/{pool_id}/participants/{wallet}/verify-screen-time` - Verify screen time with screenshot
+- `GET /api/pools/{pool_id}/participants/{wallet}/verifications` - Get verification history
+
 ### Users
 - `GET /api/users/{wallet}` - Get user profile
 - `POST /api/users` - Create/update user profile
+- `POST /api/users/{wallet}/link-github` - Link GitHub account via OAuth
+- `GET /api/users/{wallet}/github-status` - Check GitHub verification status
 
 ### Solana Actions (Blinks)
 - `GET /solana/actions/join-pool` - Get action metadata
 - `POST /solana/actions/join-pool` - Build join transaction
 
-### On-chain Actions
+### AI On-chain Actions
+- `POST /api/ai/onchain/generate` - Generate on-chain action from natural language
+- `POST /api/ai/onchain/challenges/parse` - Parse natural language into challenge blueprint
 - `POST /api/ai/onchain/create-pool` - Create pool on-chain
 - `POST /api/ai/onchain/join-pool` - Join pool on-chain
 - `POST /api/ai/onchain/verify` - Submit verification
@@ -133,12 +156,36 @@ backend/
 
 Key tables:
 - `pools` - Pool metadata and configuration
-- `participants` - Pool participants
-- `checkins` - Lifestyle challenge check-ins
-- `verifications` - Agent verification results
-- `users` - User profiles
+  - Includes recruitment tracking: `recruitment_deadline`, `filled_at`, `auto_start_time`
+  - Enforces min_participants (5-50) and max_participants
+- `participants` - Pool participants with verification tracking
+- `checkins` - Lifestyle challenge check-ins (GitHub, screen time, custom)
+- `verifications` - Agent verification results with proof data
+- `users` - User profiles with GitHub OAuth integration
+  - Stores verified GitHub usernames for commit verification
 
 See `sql/schema.sql` for complete schema.
+
+## Verification Systems
+
+### GitHub Commit Verification
+- Uses GitHub OAuth to verify user identity
+- Queries GitHub API for commits within challenge day window
+- Validates commit count and code changes (lines added/modified)
+- Supports repository-specific or all-public-repos verification
+- AI-powered validation to prevent gaming (nonsensical commits)
+
+### Screen Time Verification
+- Accepts screenshot uploads (PNG, JPEG)
+- Uses OpenAI Vision API to extract screen time data
+- Validates date matches current challenge day
+- Checks screen time is below configured limit
+- Returns detailed verification results with extracted data
+
+### Custom Check-in Verification
+- Photo-based with optional GPS validation
+- Time-window based verification (e.g., 5-7am check-ins)
+- Flexible proof requirements per challenge type
 
 ## Deployment
 

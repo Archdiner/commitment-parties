@@ -36,8 +36,12 @@ Autonomous Python agent that monitors commitment pools 24/7, verifies goal compl
 
 The agent runs continuously and performs the following tasks:
 
+- **Pool Activation**: Monitors and activates pools based on recruitment status
+  - Activates pools when scheduled start time arrives
+  - Activates pools 24 hours after minimum participants are reached
+  - Handles pool expiration and refunds for unfilled challenges
 - **Pool Monitoring**: Checks all active pools for goal completion
-- **Verification**: Verifies DCA swaps, HODL balances, and lifestyle check-ins
+- **Verification**: Verifies DCA swaps, HODL balances, GitHub commits, and lifestyle check-ins
 - **Distribution**: Automatically distributes rewards when pools end
 - **Social Integration**: Posts to Twitter about pool activity (optional)
 
@@ -91,6 +95,9 @@ TWITTER_API_KEY=...
 TWITTER_API_SECRET=...
 TWITTER_ACCESS_TOKEN=...
 TWITTER_ACCESS_TOKEN_SECRET=...
+
+# OpenAI (optional, for AI features)
+OPENAI_API_KEY=...
 ```
 
 ## Running
@@ -128,18 +135,29 @@ The agent must run as a persistent service (not serverless). Options:
 
 - **SolanaClient**: RPC client for blockchain interaction
 - **Monitor**: Monitors different challenge types
-  - DCA pools: Daily swap verification
-  - HODL pools: Hourly balance checks
-  - Lifestyle pools: Check-in verification
+  - DCA pools: Daily swap verification via Jupiter/Raydium
+  - HODL pools: Hourly balance checks on-chain
+  - GitHub commit pools: Daily commit verification via GitHub API
+  - Screen time pools: Verification via backend API (screenshot analysis)
+  - Lifestyle pools: Check-in verification for custom habits
 - **Verifier**: Submits verification results to smart contracts
 - **Distributor**: Handles reward distribution when pools end
 - **SocialManager**: Twitter integration for social features
-- **PoolActivator**: Activates pools when recruitment period ends
+- **PoolActivator**: Activates pools based on recruitment status
+  - Scheduled activation (when start time arrives)
+  - Auto-start activation (24h after minimum participants reached)
+  - Expiration handling (refunds for unfilled pools)
 
 ### Monitoring Loops
 
+- **Pool Activation**: Check every minute for pools ready to activate
+  - Scheduled start time reached
+  - Auto-start time reached (24h after filling)
+  - Expiration deadline passed (refund handling)
 - **DCA Pools**: Check daily for Jupiter/Raydium swaps
 - **HODL Pools**: Check hourly for token balance
+- **GitHub Commit Pools**: Check daily for commits via GitHub API
+- **Screen Time Pools**: Check every 5 minutes for verified check-ins
 - **Lifestyle Pools**: Check every 5 minutes for check-ins
 - **Distribution**: Check hourly for ended pools
 
@@ -248,6 +266,44 @@ For each participant:
 Database updated
 ```
 
+**GitHub Commit Pool Monitoring (Daily):**
+```
+Every 24 hours (Eastern Time):
+  ↓
+Agent queries active GitHub commit pools
+  ↓
+For each pool:
+  - Get verified GitHub username from users table
+  - Query GitHub API for commits in challenge day window
+  - Check commit count and code changes (lines)
+  - Validate commits are genuine (AI-powered)
+  ↓
+For each participant:
+  - Verify commits exist for current day
+  - Check min_commits_per_day and min_total_lines_per_day
+  - Submit verification: verify_participant(day, passed)
+  ↓
+Database updated with verification results
+```
+
+**Screen Time Pool Monitoring (Every 5 minutes):**
+```
+Every 5 minutes:
+  ↓
+Agent queries active screen time pools
+  ↓
+For each pool:
+  - Query checkins table for verified submissions
+  - Backend has already verified screenshot via OpenAI Vision
+  - Check verification was successful
+  ↓
+For each participant:
+  - Check if verified check-in exists for current day
+  - Submit verification: verify_participant(day, passed)
+  ↓
+Database updated
+```
+
 **Lifestyle Pool Monitoring (Every 5 minutes):**
 ```
 Every 5 minutes:
@@ -256,9 +312,8 @@ Agent queries active lifestyle pools
   ↓
 For each pool:
   - Query checkins table for recent submissions
-  - For GitHub commits: Query GitHub API
-  - For screen time: Verify screenshot uploads
   - For custom check-ins: Validate submission data
+  - For photo/GPS check-ins: Verify proof data
   ↓
 For each participant:
   - Check if check-in submitted for current day
