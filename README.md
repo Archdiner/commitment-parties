@@ -1,4 +1,4 @@
-# 🎮 Commitment Parties
+# CommitMint
 
 
 
