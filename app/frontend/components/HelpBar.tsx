@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { HelpCircle, X } from 'lucide-react';
+import { X } from 'lucide-react';
 
 export const HelpBar = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -31,15 +31,14 @@ export const HelpBar = () => {
   }, [isOpen]);
 
   return (
-    <div className="fixed top-20 right-4 sm:right-6 z-40">
+    <div className="fixed bottom-6 right-6 z-40">
       <button
         ref={buttonRef}
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs text-gray-400 hover:text-white transition-colors border border-white/10 hover:border-white/20 rounded-lg bg-white/[0.02] hover:bg-white/[0.05]"
+        className="text-xs font-medium tracking-widest uppercase text-emerald-400 hover:border-white border border-transparent transition-all px-3 py-2"
         aria-label="Help"
       >
-        <HelpCircle className="w-4 h-4" />
-        <span className="hidden sm:inline text-[11px]">Help</span>
+        HELP
       </button>
       
       {isOpen && (
@@ -53,7 +52,7 @@ export const HelpBar = () => {
           {/* Dropdown Modal */}
           <div
             ref={dropdownRef}
-            className="absolute top-full right-0 mt-2 w-[calc(100vw-2rem)] sm:w-96 bg-[#0A0A0A] border border-white/20 rounded-xl shadow-2xl z-50 overflow-hidden"
+            className="absolute bottom-full right-0 mb-2 w-[calc(100vw-2rem)] sm:w-96 bg-[#0A0A0A] border border-white/20 rounded-xl shadow-2xl z-50 overflow-hidden"
           >
             <div className="p-4 sm:p-6">
               <div className="flex items-center justify-between mb-4">
@@ -71,9 +70,9 @@ export const HelpBar = () => {
                 <div>
                   <h4 className="text-white font-medium mb-3">Getting Started</h4>
                   <ul className="space-y-2 text-gray-500">
-                    <li>• Install Phantom wallet (free, takes 2 minutes)</li>
-                    <li>• Connect wallet in top-right corner</li>
+                    <li>• Sign in with email or Google. No wallet setup required.</li>
                     <li>• Browse challenges or create your own</li>
+                    <li>• Put money down to commit to your goal</li>
                   </ul>
                 </div>
                 
