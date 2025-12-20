@@ -4,6 +4,8 @@
 
 **CommitMint* is an autonomous AI-powered accountability platform that transforms personal commitments into competitive games with real financial stakes. Users create or join "commitment pools" where they stake SOL or USDC on achieving specific goals over 7-30 days. An AI agent monitors participants 24/7, autonomously verifying goal completion and executing trustless reward distribution via smart contracts.
 
+Watch our [Pitch Video](https://youtu.be/QElM8rBjcgM?si=DJsGAviUDceIgPy1)
+
 ## 💭 Why I Built This
 
 I'm a CS student at Cornell, and I personally struggle with holding myself accountable. I've tried every commitment and habit tracking app under the sun, nothing worked. The problem? There was never a real cost to quitting. So I built the app I wish existed: one where you put real money on the line, where failure has consequences, and where success is rewarded. This isn't just another habit tracker—it's accountability with real stakes.
@@ -119,12 +121,8 @@ commitment-parties/
      - AI-powered validation to prevent gaming
    - **Screen Time Limits**: AI-powered screenshot verification
      - Upload daily screen time screenshots
-     - OpenAI Vision API validates date and time limits
-     - Supports iOS and Android screen time data
-   - **Custom Check-ins**: Photo/GPS-based verification
-     - Upload proof with optional GPS verification
-     - Flexible verification windows (time-based)
-     - AI-assisted validation
+     - OpenAI API validates date and time limits
+     - Supports iOS and Android screen time.
 
 ### Enhanced Recruitment System
 
@@ -152,7 +150,6 @@ commitment-parties/
 - **Distribution Modes**:
   - Competitive: Losers' stakes → Winners
   - Charity: Losers' stakes → Charity
-  - Split: Configurable percentage split
 - **Trustless Escrow**: All stakes locked in smart contracts until challenge completion
 
 ### User Experience
@@ -169,7 +166,6 @@ commitment-parties/
 - **Viral Growth**: Participants can invite others via Twitter
 - **Public/Private Pools**: Control who can join your challenges
 - **Social Sharing**: Easy sharing of challenge links and progress
-- **Leaderboards**: Track progress against other participants
 
 ## 🚀 Coming Soon (Mainnet Features)
 
@@ -196,91 +192,7 @@ This will enable non-crypto users to:
 - **NFT Badges**: Achievement NFTs for completing challenges
 - **Yield Generation**: Stakes earn yield during challenge period
 - **Mobile App**: Native iOS and Android applications
-- **Advanced Analytics**: Detailed progress tracking and insights
-
-## 🔧 Development
-
-### Smart Contracts
-
-```bash
-cd programs/commitment-pool
-anchor build          # Build the program
-anchor test           # Run tests
-anchor deploy         # Deploy to devnet
-```
-
-### Backend API
-
-```bash
-cd backend
-source ../venv/bin/activate
-uvicorn main:app --reload
-```
-
-API available at `http://localhost:8000`
-Interactive docs at `http://localhost:8000/docs`
-
-### Agent
-
-```bash
-cd agent
-source ../venv/bin/activate
-python src/main.py
-```
-
-### Frontend
-
-```bash
-cd app/frontend
-npm run dev
-```
-
-Frontend available at `http://localhost:3000`
-
-## 🧪 Testing
-
-### Smart Contract Tests
-```bash
-cd programs/commitment-pool
-anchor test
-```
-
-### Backend Tests
-```bash
-cd backend
-pytest
-```
-
-### Agent Tests
-```bash
-cd agent
-python test_agent.py
-```
-
-## 📦 Deployment
-
-### Smart Contracts
-1. Build: `anchor build`
-2. Deploy: `anchor deploy --provider.cluster devnet`
-3. Save PROGRAM_ID for other components
-
-### Backend (Railway/Render)
-1. Connect GitHub repository
-2. Set root directory to `backend`
-3. Configure environment variables
-4. Deploy
-
-### Agent (Render Background Worker)
-1. Create Background Worker service
-2. Set root directory to `agent`
-3. Configure environment variables (including agent keypair)
-4. Deploy (requires always-on plan, ~$7/month)
-
-### Frontend (Vercel)
-1. Import GitHub repository
-2. Set root directory to `app/frontend`
-3. Configure environment variables
-4. Deploy
+- **Challenge Creator Rewards**: Reward people who create challenges with the most users.
 
 See component-specific READMEs for detailed deployment instructions.
 
@@ -319,14 +231,6 @@ See component-specific READMEs for detailed deployment instructions.
 
 See `docs/env-templates/` for example configuration files.
 
-## 🔐 Security
-
-- **Never commit private keys or keypairs to git**
-- Use environment variables for all secrets
-- Agent keypair must be kept secure (never exposed)
-- Enable HTTPS for all production services
-- Implement rate limiting on API endpoints
-
 ## 🤝 Contributing
 
 1. Fork the repository
@@ -334,17 +238,6 @@ See `docs/env-templates/` for example configuration files.
 3. Commit your changes (`git commit -m 'Add some amazing feature'`)
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- Built for University Blockchain Conference Hackathon 2025
-- Powered by Solana blockchain
-- Uses Anchor framework for smart contracts
-- Twitter Blinks integration for viral growth
 
 ---
 
