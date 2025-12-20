@@ -1114,16 +1114,28 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
         if self.queue_worker_running:
             logger.warning("Tweet queue worker already running, skipping duplicate start")
             return
-        self.queue_worker_running = True
-        logger.info("Tweet queue worker started")
         
+        try:
+            self.queue_worker_running = True
+            logger.info("Tweet queue worker started")
+            logger.info(f"Initial queue size: {self.tweet_queue.qsize()}")
+        except Exception as e:
+            logger.error(f"Error initializing tweet queue worker: {e}", exc_info=True)
+            self.queue_worker_running = False
+            return
+        
+        last_heartbeat = time.time()
         while True:
             try:
                 # Check if we're rate limited
                 current_time = time.time()
+                queue_size = self.tweet_queue.qsize()
+                if queue_size > 0:
+                    logger.info(f"Queue worker active: {queue_size} task(s) in queue")
+                
                 if self.rate_limit_until and current_time < self.rate_limit_until:
                     wait_time = self.rate_limit_until - current_time
-                    logger.debug(f"Rate limited, waiting {wait_time:.0f} seconds")
+                    logger.warning(f"Rate limited, waiting {wait_time:.0f} seconds (queue has {queue_size} tasks)")
                     await asyncio.sleep(min(wait_time, 60))  # Check every minute max
                     continue
                 
@@ -1133,10 +1145,19 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
                         self.tweet_queue.get(), 
                         timeout=60.0
                     )
-                    logger.debug(f"Processing tweet task: pool {task.pool_id}, event {task.event_type.value}")
+                    logger.info(f"Processing tweet task: pool {task.pool_id}, event {task.event_type.value} (queue size: {self.tweet_queue.qsize()})")
                 except asyncio.TimeoutError:
                     # No tasks in queue - this is normal, just continue waiting
-                    logger.debug(f"Queue worker waiting for tasks (queue size: {self.tweet_queue.qsize()})")
+                    queue_size = self.tweet_queue.qsize()
+                    current_time = time.time()
+                    # Log heartbeat every 5 minutes if queue has items
+                    if queue_size > 0 and current_time - last_heartbeat > 300:
+                        logger.warning(f"Queue worker waiting but queue has {queue_size} items - worker is active but may be blocked")
+                        last_heartbeat = current_time
+                    elif queue_size > 0:
+                        logger.warning(f"Queue worker timeout but queue has {queue_size} items - this shouldn't happen")
+                    else:
+                        logger.debug(f"Queue worker waiting for tasks (queue size: {queue_size})")
                     continue
                 
                 # Check if task should be retried now
@@ -1437,8 +1458,25 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
         # Start queue worker if Twitter is enabled
         if self.twitter_enabled:
             logger.info(f"Twitter is enabled with {len(self.twitter_accounts)} account(s)")
-            asyncio.create_task(self._tweet_queue_worker())
-            logger.info("Tweet queue worker started")
+            # Start the queue worker as a background task
+            # Wrap in try-except to catch any startup errors
+            try:
+                if not self.queue_worker_running:
+                    worker_task = asyncio.create_task(self._tweet_queue_worker())
+                    logger.info("Tweet queue worker task created")
+                    # Give it a moment to start and log
+                    await asyncio.sleep(0.5)
+                    # Verify worker started
+                    if self.queue_worker_running:
+                        logger.info("Tweet queue worker confirmed running")
+                    else:
+                        logger.error("Tweet queue worker failed to start - queue_worker_running is still False")
+                else:
+                    logger.warning("Tweet queue worker already marked as running")
+            except Exception as e:
+                logger.error(f"Failed to start tweet queue worker: {e}", exc_info=True)
+                import traceback
+                logger.error(traceback.format_exc())
         else:
             logger.warning("Twitter not enabled - no Twitter accounts configured or initialization failed. Queue worker not started.")
             logger.warning("To enable Twitter, configure TWITTER_API_KEY, TWITTER_API_SECRET, TWITTER_ACCESS_TOKEN, and TWITTER_ACCESS_TOKEN_SECRET in agent/.env")
