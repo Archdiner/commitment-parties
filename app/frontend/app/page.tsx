@@ -4,6 +4,57 @@ import Link from 'next/link';
 import { ArrowRight, Zap, Target, Trophy } from 'lucide-react';
 import { ButtonPrimary } from '@/components/ui/ButtonPrimary';
 import { SectionLabel } from '@/components/ui/SectionLabel';
+import { useEffect, useRef, useState } from 'react';
+
+// Animated underline component
+function AnimatedUnderline({ 
+  children, 
+  delay = 0, 
+  duration = 2000,
+  className = '' 
+}: { 
+  children: React.ReactNode; 
+  delay?: number;
+  duration?: number;
+  className?: string;
+}) {
+  const [isVisible, setIsVisible] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setTimeout(() => setIsVisible(true), delay);
+        }
+      },
+      { threshold: 0.2 }
+    );
+
+    if (ref.current) {
+      observer.observe(ref.current);
+    }
+
+    return () => {
+      if (ref.current) {
+        observer.unobserve(ref.current);
+      }
+    };
+  }, [delay]);
+
+  return (
+    <div ref={ref} className={`relative inline-block ${className}`}>
+      {children}
+      <span
+        className="absolute bottom-0 left-0 h-[2px] bg-emerald-400 transition-all ease-out"
+        style={{
+          width: isVisible ? '100%' : '0%',
+          transitionDuration: `${duration}ms`,
+        }}
+      />
+    </div>
+  );
+}
 
 export default function LandingPage() {
   return (
@@ -21,13 +72,13 @@ export default function LandingPage() {
             Turn Commitments<br/>
             into <span className="text-emerald-500 font-serif italic font-light">Capital.</span>
           </h1>
-          <p className="max-w-xl mx-auto text-gray-400 font-light text-lg mb-6">
+          <p className="max-w-xl mx-auto text-gray-200 font-light text-xl mb-6">
             Put money on your goals. We verify your progress automatically. <br/>
             Succeed and earn money. Fail and lose your stake. Nothing creates accountability faster.
           </p>
-          <div className="max-w-xl mx-auto mb-12 p-4 border border-white/10 bg-white/[0.02] rounded-lg">
-            <p className="text-xs text-gray-400 leading-relaxed text-center">
-              <span className="text-emerald-400">No crypto experience needed.</span> Sign in with your email to get started. 
+          <div className="max-w-xl mx-auto mb-12 p-4 border border-emerald-500/20 bg-emerald-500/5 rounded-lg">
+            <p className="text-sm text-gray-200 leading-relaxed text-center">
+              <span className="text-emerald-400 font-medium">No crypto experience needed.</span> Sign in with your email to get started. 
               We'll create a wallet for you automatically. You can connect your own wallet later if you prefer.
             </p>
           </div>
@@ -46,23 +97,29 @@ export default function LandingPage() {
       <div className="border-y border-white/10 bg-white/[0.01]">
         <div className="max-w-4xl mx-auto px-6 py-20">
           <div className="text-center mb-12">
-            <h2 className="text-3xl md:text-4xl font-light mb-4">Why This Exists</h2>
-            <p className="text-lg text-gray-400 max-w-2xl mx-auto leading-relaxed">
+            <AnimatedUnderline delay={0} duration={1500}>
+              <h2 className="text-4xl md:text-5xl font-medium mb-4 text-white">Why This Exists</h2>
+            </AnimatedUnderline>
+            <p className="text-xl text-gray-200 max-w-2xl mx-auto leading-relaxed mt-6">
               Most accountability methods fail because there's no real consequence. 
               We solve this by putting real money on the line.
             </p>
           </div>
           <div className="grid md:grid-cols-2 gap-6">
-            <div className="p-6 border border-white/10 bg-white/[0.02] rounded-lg">
-              <h3 className="text-lg font-light mb-3">The Problem</h3>
-              <p className="text-sm text-gray-400 leading-relaxed">
+            <div className="p-8 border border-white/20 bg-white/[0.03] rounded-lg">
+              <AnimatedUnderline delay={200} duration={1800}>
+                <h3 className="text-2xl font-medium mb-4 text-white">The Problem</h3>
+              </AnimatedUnderline>
+              <p className="text-base text-gray-200 leading-relaxed">
                 90% of New Year's resolutions fail. Habit trackers get ignored. 
                 Gym buddies let you skip. There's no real cost to quitting.
               </p>
             </div>
-            <div className="p-6 border border-emerald-500/20 bg-emerald-500/5 rounded-lg">
-              <h3 className="text-lg font-light mb-3">Our Solution</h3>
-              <p className="text-sm text-gray-300 leading-relaxed">
+            <div className="p-8 border border-emerald-500/30 bg-emerald-500/10 rounded-lg">
+              <AnimatedUnderline delay={400} duration={1800}>
+                <h3 className="text-2xl font-medium mb-4 text-white">Our Solution</h3>
+              </AnimatedUnderline>
+              <p className="text-base text-white leading-relaxed">
                 Put real money down. Your stake is locked in a smart contract. 
                 Complete your goal and win. Fail and lose your stake. 
                 Financial stakes create real motivation.
@@ -76,8 +133,10 @@ export default function LandingPage() {
       <div className="border-y border-white/10">
         <div className="max-w-6xl mx-auto px-6 py-20">
           <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-light mb-4">How It Works</h2>
-            <p className="text-lg text-gray-400 max-w-2xl mx-auto">
+            <AnimatedUnderline delay={0} duration={1500}>
+              <h2 className="text-4xl md:text-5xl font-medium mb-4 text-white">How It Works</h2>
+            </AnimatedUnderline>
+            <p className="text-xl text-gray-200 max-w-2xl mx-auto mt-6">
               Three simple steps. Your money is safe, locked in a smart contract until the challenge ends.
             </p>
           </div>
@@ -106,31 +165,35 @@ export default function LandingPage() {
                 <div className="mb-6 text-emerald-500 opacity-50 group-hover:opacity-100 transition-opacity">
                   <item.icon strokeWidth={1} className="w-6 h-6" />
                 </div>
-                <h3 className="text-lg font-light mb-3">{item.title}</h3>
-                <p className="text-sm text-gray-500 font-light leading-relaxed max-w-xs mb-2">{item.desc}</p>
-                <p className="text-xs text-gray-600 italic">{item.details}</p>
+                <AnimatedUnderline delay={i * 300 + 200} duration={2000}>
+                  <h3 className="text-xl font-medium mb-4 text-white">{item.title}</h3>
+                </AnimatedUnderline>
+                <p className="text-base text-gray-200 leading-relaxed max-w-xs mb-3">{item.desc}</p>
+                <p className="text-sm text-gray-400 italic">{item.details}</p>
               </div>
             ))}
           </div>
 
           {/* Example Calculation */}
-          <div className="max-w-2xl mx-auto p-8 border border-white/10 bg-white/[0.02] rounded-lg">
-            <h3 className="text-xl font-light mb-6">Example: How Rewards Work</h3>
-            <div className="space-y-3 text-sm">
-              <div className="flex items-center justify-between p-3 border-b border-white/5">
-                <span className="text-gray-400">10 people join at 1 SOL each</span>
-                <span className="font-mono text-white">10 SOL total</span>
+          <div className="max-w-2xl mx-auto p-8 border border-white/20 bg-white/[0.03] rounded-lg">
+            <AnimatedUnderline delay={1000} duration={1800}>
+              <h3 className="text-2xl font-medium mb-6 text-white">Example: How Rewards Work</h3>
+            </AnimatedUnderline>
+            <div className="space-y-4 text-base">
+              <div className="flex items-center justify-between p-4 border-b border-white/10">
+                <span className="text-gray-200">10 people join at 1 SOL each</span>
+                <span className="font-mono text-white font-medium">10 SOL total</span>
               </div>
-              <div className="flex items-center justify-between p-3 border-b border-white/5">
-                <span className="text-gray-400">3 people fail to complete</span>
-                <span className="font-mono text-gray-300">3 SOL (lost stakes)</span>
+              <div className="flex items-center justify-between p-4 border-b border-white/10">
+                <span className="text-gray-200">3 people fail to complete</span>
+                <span className="font-mono text-gray-300 font-medium">3 SOL (lost stakes)</span>
               </div>
-              <div className="flex items-center justify-between p-3 border-b border-emerald-500/20">
-                <span className="text-gray-400">7 winners split the pot</span>
-                <span className="font-mono text-emerald-400">~0.43 SOL each</span>
+              <div className="flex items-center justify-between p-4 border-b border-emerald-500/30">
+                <span className="text-gray-200">7 winners split the pot</span>
+                <span className="font-mono text-emerald-400 font-medium">~0.43 SOL each</span>
               </div>
               <div className="pt-4 border-t border-white/10">
-                <p className="text-xs text-gray-500 leading-relaxed">
+                <p className="text-sm text-gray-300 leading-relaxed">
                   Each winner gets their 1 SOL stake back, plus ~0.43 SOL from the prize pool (3 SOL ÷ 7 winners). 
                   Plus any yield earned during the challenge period.
                 </p>
@@ -143,8 +206,10 @@ export default function LandingPage() {
       {/* Challenge Types */}
       <div className="max-w-6xl mx-auto px-6 py-24">
         <div className="text-center mb-12">
-          <h2 className="text-3xl md:text-4xl font-light mb-4">Types of Challenges</h2>
-          <p className="text-lg text-gray-400 max-w-2xl mx-auto">
+          <AnimatedUnderline delay={0} duration={1500}>
+            <h2 className="text-4xl md:text-5xl font-medium mb-4 text-white">Types of Challenges</h2>
+          </AnimatedUnderline>
+          <p className="text-xl text-gray-200 max-w-2xl mx-auto mt-6">
             Choose the type of commitment that fits your goals. All challenges work the same way—put money down, verify daily, win or lose.
           </p>
         </div>
@@ -154,16 +219,16 @@ export default function LandingPage() {
                 <ArrowRight className="w-4 h-4 text-emerald-500" />
              </div>
              <SectionLabel>Protocol A</SectionLabel>
-             <h3 className="text-3xl font-light mb-4">Crypto<br/>Challenges</h3>
-             <p className="text-gray-400 font-light text-sm max-w-sm mb-4 leading-relaxed">
+             <h3 className="text-3xl font-medium mb-4 text-white">Crypto<br/>Challenges</h3>
+             <p className="text-gray-200 font-light text-base max-w-sm mb-4 leading-relaxed">
                Automatically verified on-chain. Hold tokens (HODL) or make daily trades (DCA). 
                No manual check-ins needed—we check your wallet automatically.
              </p>
-             <ul className="space-y-2 text-xs text-gray-400 font-mono uppercase tracking-wide mb-6">
-               <li className="flex items-center gap-2"><div className="w-1 h-1 bg-gray-600 rounded-full"/> Diamond Hands</li>
-               <li className="flex items-center gap-2"><div className="w-1 h-1 bg-gray-600 rounded-full"/> Wallet Activity</li>
+             <ul className="space-y-2 text-sm text-gray-300 font-mono uppercase tracking-wide mb-6">
+               <li className="flex items-center gap-2"><div className="w-1.5 h-1.5 bg-emerald-400 rounded-full"/> Diamond Hands</li>
+               <li className="flex items-center gap-2"><div className="w-1.5 h-1.5 bg-emerald-400 rounded-full"/> Wallet Activity</li>
              </ul>
-             <p className="text-[10px] text-gray-600">
+             <p className="text-xs text-gray-400">
                Perfect for committing to crypto investment habits
              </p>
           </Link>
@@ -172,15 +237,15 @@ export default function LandingPage() {
                 <ArrowRight className="w-4 h-4 text-emerald-500" />
              </div>
              <SectionLabel>Protocol B</SectionLabel>
-             <h3 className="text-3xl font-light mb-4">Lifestyle<br/>Optimization</h3>
-             <p className="text-gray-400 font-light text-sm max-w-sm mb-4 leading-relaxed">
+             <h3 className="text-3xl font-medium mb-4 text-white">Lifestyle<br/>Optimization</h3>
+             <p className="text-gray-200 font-light text-base max-w-sm mb-4 leading-relaxed">
                For real-world goals. Upload photos or screenshots as proof. Our AI verifies your check-ins automatically.
              </p>
-             <ul className="space-y-2 text-xs text-gray-400 font-mono uppercase tracking-wide mb-6">
-               <li className="flex items-center gap-2"><div className="w-1 h-1 bg-gray-600 rounded-full"/> Screen Time</li>
-               <li className="flex items-center gap-2"><div className="w-1 h-1 bg-gray-600 rounded-full"/> Gym Attendance</li>
+             <ul className="space-y-2 text-sm text-gray-300 font-mono uppercase tracking-wide mb-6">
+               <li className="flex items-center gap-2"><div className="w-1.5 h-1.5 bg-cyan-400 rounded-full"/> Screen Time</li>
+               <li className="flex items-center gap-2"><div className="w-1.5 h-1.5 bg-cyan-400 rounded-full"/> Gym Attendance</li>
              </ul>
-             <p className="text-[10px] text-gray-600">
+             <p className="text-xs text-gray-400">
                Perfect for gym, coding, productivity, or any daily habit
              </p>
           </Link>
@@ -190,8 +255,10 @@ export default function LandingPage() {
       {/* Get Started CTA */}
       <div className="border-y border-white/10 bg-white/[0.01]">
         <div className="max-w-4xl mx-auto px-6 py-20 text-center">
-          <h2 className="text-3xl md:text-4xl font-light mb-6">Ready to Get Started?</h2>
-          <p className="text-lg text-gray-400 mb-8 max-w-2xl mx-auto">
+          <AnimatedUnderline delay={0} duration={1500}>
+            <h2 className="text-4xl md:text-5xl font-medium mb-6 text-white">Ready to Get Started?</h2>
+          </AnimatedUnderline>
+          <p className="text-xl text-gray-200 mb-8 max-w-2xl mx-auto">
             Sign in with your email to begin. No crypto experience needed—we'll handle everything.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
