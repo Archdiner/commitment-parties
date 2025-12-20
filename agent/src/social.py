@@ -1111,16 +1111,21 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
         Background worker that processes the tweet queue.
         Handles rate limits, retries, and exponential backoff.
         """
+        logger.info("_tweet_queue_worker() called")
         if self.queue_worker_running:
             logger.warning("Tweet queue worker already running, skipping duplicate start")
             return
         
         try:
+            logger.info("Setting queue_worker_running = True")
             self.queue_worker_running = True
             logger.info("Tweet queue worker started")
             logger.info(f"Initial queue size: {self.tweet_queue.qsize()}")
+            logger.info(f"Twitter enabled: {self.twitter_enabled}, Accounts: {len(self.twitter_accounts)}")
         except Exception as e:
             logger.error(f"Error initializing tweet queue worker: {e}", exc_info=True)
+            import traceback
+            logger.error(traceback.format_exc())
             self.queue_worker_running = False
             return
         
@@ -1453,7 +1458,15 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
         Runs continuously, posting updates about active pools.
         Uses the queue system for non-blocking posts with automatic retries.
         """
-        logger.info("Starting social media update loop...")
+        try:
+            logger.info("=" * 80)
+            logger.info("Starting social media update loop...")
+            logger.info(f"Twitter enabled status: {self.twitter_enabled}")
+            logger.info(f"Queue worker running status: {self.queue_worker_running}")
+            logger.info(f"Twitter accounts count: {len(self.twitter_accounts)}")
+            logger.info("=" * 80)
+        except Exception as e:
+            logger.error(f"Error at start of post_updates: {e}", exc_info=True)
         
         # Start queue worker if Twitter is enabled
         if self.twitter_enabled:
@@ -1462,15 +1475,35 @@ Make it exciting, use emojis, and keep it under 250 characters. Include a call t
             # Wrap in try-except to catch any startup errors
             try:
                 if not self.queue_worker_running:
+                    logger.info("Creating tweet queue worker task...")
+                    # Create the worker task
                     worker_task = asyncio.create_task(self._tweet_queue_worker())
-                    logger.info("Tweet queue worker task created")
-                    # Give it a moment to start and log
-                    await asyncio.sleep(0.5)
-                    # Verify worker started
-                    if self.queue_worker_running:
-                        logger.info("Tweet queue worker confirmed running")
+                    logger.info(f"Tweet queue worker task created: {worker_task}")
+                    
+                    # Yield control to allow the task to start running
+                    await asyncio.sleep(0)  # Yield to event loop
+                    
+                    # Give it multiple chances to start and log
+                    for i in range(10):
+                        await asyncio.sleep(0.1)
+                        if self.queue_worker_running:
+                            logger.info(f"Tweet queue worker confirmed running after {i+1} checks")
+                            break
+                        # Check if task failed
+                        if worker_task.done():
+                            try:
+                                await worker_task  # This will raise any exception that occurred
+                            except Exception as task_error:
+                                logger.error(f"Worker task failed immediately: {task_error}", exc_info=True)
+                                break
                     else:
-                        logger.error("Tweet queue worker failed to start - queue_worker_running is still False")
+                        logger.error("Tweet queue worker failed to start - queue_worker_running is still False after 1 second")
+                        logger.error(f"Worker task done: {worker_task.done()}, cancelled: {worker_task.cancelled()}")
+                        if worker_task.done():
+                            try:
+                                await worker_task  # This will raise any exception that occurred
+                            except Exception as task_error:
+                                logger.error(f"Worker task exception: {task_error}", exc_info=True)
                 else:
                     logger.warning("Tweet queue worker already marked as running")
             except Exception as e:
