@@ -4,7 +4,6 @@ import { Zap, Target, Trophy, ArrowRight, Mail, User, CheckCircle, Loader2 } fro
 import { ButtonPrimary } from '@/components/ui/ButtonPrimary';
 import { SectionLabel } from '@/components/ui/SectionLabel';
 import { useEffect, useRef, useState } from 'react';
-import { usePrivy } from '@privy-io/react-auth';
 import { submitWaitlistSignup } from '@/lib/api';
 
 // Animated underline component with green shade variants
@@ -90,50 +89,20 @@ function AnimatedUnderline({
 
 
 export default function LandingPage() {
-  const { login, authenticated, user: privyUser, ready, logout } = usePrivy();
-
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     whyUse: '',
     whatWantToSee: '',
   });
-  const [authMethod, setAuthMethod] = useState<'manual' | 'google'>('manual');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
   const formRef = useRef<HTMLDivElement>(null);
 
-  // When user authenticates via Google/Privy, extract their info
-  useEffect(() => {
-    if (authenticated && privyUser) {
-      const email = privyUser.email?.address || 
-                    privyUser.google?.email || '';
-      const name = privyUser.google?.name || 
-                   privyUser.email?.address?.split('@')[0] || '';
-      
-      if (email) {
-        setFormData(prev => ({
-          ...prev,
-          name: prev.name || name,
-          email: prev.email || email,
-        }));
-        setAuthMethod('google');
-      }
-    }
-  }, [authenticated, privyUser]);
-
   const scrollToForm = () => {
-    formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  };
-
-  const handleGoogleSignIn = async () => {
-    try {
-      await login();
-    } catch (error) {
-      console.error('Google sign-in failed:', error);
-    }
+    formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -151,7 +120,7 @@ export default function LandingPage() {
       await submitWaitlistSignup({
         name: formData.name.trim(),
         email: formData.email.trim(),
-        auth_method: authMethod,
+        auth_method: 'manual',
         why_use: formData.whyUse.trim() || undefined,
         what_want_to_see: formData.whatWantToSee.trim() || undefined,
       });
@@ -363,49 +332,6 @@ export default function LandingPage() {
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-6">
-              {/* Google Sign-In Option */}
-              <div className="text-center mb-2">
-                {authenticated ? (
-                  <div className="inline-flex items-center gap-2 px-4 py-2 border border-emerald-500/30 bg-emerald-500/5 rounded-lg">
-                    <CheckCircle className="w-4 h-4 text-emerald-400" />
-                    <span className="text-sm text-emerald-400">
-                      Signed in{privyUser?.email?.address ? ` as ${privyUser.email.address}` : privyUser?.google?.email ? ` as ${privyUser.google.email}` : ''}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={logout}
-                      className="text-xs text-gray-500 hover:text-gray-300 ml-2 underline"
-                    >
-                      switch
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleGoogleSignIn}
-                    className="inline-flex items-center gap-3 px-6 py-3 border border-white/20 hover:border-white/40 bg-white/[0.03] hover:bg-white/[0.06] rounded-lg transition-all group"
-                  >
-                    <svg className="w-5 h-5" viewBox="0 0 24 24">
-                      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/>
-                      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-                    </svg>
-                    <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
-                      Sign in with Google to auto-fill
-                    </span>
-                  </button>
-                )}
-              </div>
-
-              {!authenticated && (
-                <div className="flex items-center gap-4 my-6">
-                  <div className="flex-1 h-px bg-white/10" />
-                  <span className="text-xs text-gray-500 uppercase tracking-widest">or fill in manually</span>
-                  <div className="flex-1 h-px bg-white/10" />
-                </div>
-              )}
-
               {/* Name & Email */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>

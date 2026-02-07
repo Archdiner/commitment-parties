@@ -1,9 +1,13 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { PrivyProvider } from "@/components/providers/PrivyProvider";
 import { NavbarWrapper } from "@/components/NavbarWrapper";
 import { Footer } from "@/components/Footer";
+
+// NOTE: PrivyProvider removed during pre-launch/landing-page mode.
+// Restore it when re-enabling the full app:
+//   import { PrivyProvider } from "@/components/providers/PrivyProvider";
+//   Wrap children with <PrivyProvider>...</PrivyProvider>
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -31,13 +35,11 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-[#050505] text-white min-h-screen flex flex-col`}
         suppressHydrationWarning
       >
-        <PrivyProvider>
         <NavbarWrapper />
         <main className="flex-1">
           {children}
         </main>
         <Footer />
-        </PrivyProvider>
       </body>
     </html>
   );
