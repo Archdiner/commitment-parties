@@ -1,10 +1,12 @@
 'use client';
 
-import { Navbar } from './Navbar';
+import dynamic from 'next/dynamic';
 
-// NOTE: Previously used dynamic(() => import('./Navbar'), { ssr: false })
-// because Navbar depended on Privy hooks. No longer needed in landing-page mode.
-// Restore dynamic import when re-enabling the full app with Privy.
+// Dynamically import Navbar with SSR disabled to prevent build errors
+// Other pages in the codebase still use Privy hooks which require client-side rendering
+const Navbar = dynamic(() => import('./Navbar').then(mod => ({ default: mod.Navbar })), {
+  ssr: false,
+});
 
 export function NavbarWrapper() {
   return <Navbar />;
