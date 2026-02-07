@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 import logging
 
-from routers import pools, checkins, users, invites, ai_onchain, solana_actions
+from routers import pools, checkins, users, invites, ai_onchain, solana_actions, waitlist
 from config import settings
 
 # Configure logging
@@ -59,6 +59,7 @@ app.include_router(
     prefix="/solana/actions",
     tags=["solana_actions"],
 )
+app.include_router(waitlist.router, prefix="/api/waitlist", tags=["waitlist"])
 
 
 @app.get("/health")

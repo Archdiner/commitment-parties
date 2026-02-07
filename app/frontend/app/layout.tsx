@@ -3,8 +3,6 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { PrivyProvider } from "@/components/providers/PrivyProvider";
 import { NavbarWrapper } from "@/components/NavbarWrapper";
-import { DevBanner } from "@/components/DevBanner";
-import { HelpBar } from "@/components/HelpBar";
 import { Footer } from "@/components/Footer";
 
 const geistSans = Geist({
@@ -18,8 +16,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "CommitMint",
-  description: "AI-Powered Accountability Protocol on Solana",
+  title: "CommitMint - AI-Powered Accountability",
+  description: "Turn commitments into capital. Stake real money on your goals and let AI verify your progress. Coming soon.",
 };
 
 export default function RootLayout({
@@ -35,8 +33,6 @@ export default function RootLayout({
       >
         <PrivyProvider>
         <NavbarWrapper />
-        <DevBanner />
-        <HelpBar />
         <main className="flex-1">
           {children}
         </main>

@@ -9,6 +9,9 @@ const nextConfig: NextConfig = {
   experimental: {
     webpackBuildWorker: true,
   },
+
+  // Empty turbopack config to allow --webpack flag without error in Next.js 16
+  turbopack: {},
   
   webpack: (config, { isServer }) => {
     // Ignore test files and optional dependencies that cause build issues

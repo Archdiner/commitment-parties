@@ -1,10 +1,11 @@
 'use client';
 
-import Link from 'next/link';
-import { ArrowRight, Zap, Target, Trophy } from 'lucide-react';
+import { Zap, Target, Trophy, ArrowRight, Mail, User, CheckCircle, Loader2 } from 'lucide-react';
 import { ButtonPrimary } from '@/components/ui/ButtonPrimary';
 import { SectionLabel } from '@/components/ui/SectionLabel';
 import { useEffect, useRef, useState } from 'react';
+import { usePrivy } from '@privy-io/react-auth';
+import { submitWaitlistSignup } from '@/lib/api';
 
 // Animated underline component with green shade variants
 function AnimatedUnderline({ 
@@ -49,21 +50,21 @@ function AnimatedUnderline({
       case 'dark':
         return {
           height: '2px',
-          backgroundColor: '#059669', // emerald-600 (dark green)
+          backgroundColor: '#059669',
           bottom: '0px',
           left: '0px',
         };
       case 'pale':
         return {
           height: '2px',
-          backgroundColor: '#6ee7b7', // emerald-300 (pale green)
+          backgroundColor: '#6ee7b7',
           bottom: '0px',
           left: '0px',
         };
-      default: // emerald
+      default:
         return {
           height: '2px',
-          backgroundColor: '#34d399', // emerald-400 (standard emerald)
+          backgroundColor: '#34d399',
           bottom: '0px',
           left: '0px',
         };
@@ -89,6 +90,80 @@ function AnimatedUnderline({
 
 
 export default function LandingPage() {
+  const { login, authenticated, user: privyUser, ready, logout } = usePrivy();
+
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    whyUse: '',
+    whatWantToSee: '',
+  });
+  const [authMethod, setAuthMethod] = useState<'manual' | 'google'>('manual');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSubmitted, setIsSubmitted] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  const formRef = useRef<HTMLDivElement>(null);
+
+  // When user authenticates via Google/Privy, extract their info
+  useEffect(() => {
+    if (authenticated && privyUser) {
+      const email = privyUser.email?.address || 
+                    privyUser.google?.email || '';
+      const name = privyUser.google?.name || 
+                   privyUser.email?.address?.split('@')[0] || '';
+      
+      if (email) {
+        setFormData(prev => ({
+          ...prev,
+          name: prev.name || name,
+          email: prev.email || email,
+        }));
+        setAuthMethod('google');
+      }
+    }
+  }, [authenticated, privyUser]);
+
+  const scrollToForm = () => {
+    formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+
+  const handleGoogleSignIn = async () => {
+    try {
+      await login();
+    } catch (error) {
+      console.error('Google sign-in failed:', error);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage('');
+
+    if (!formData.name.trim() || !formData.email.trim()) {
+      setErrorMessage('Please enter your name and email.');
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      await submitWaitlistSignup({
+        name: formData.name.trim(),
+        email: formData.email.trim(),
+        auth_method: authMethod,
+        why_use: formData.whyUse.trim() || undefined,
+        what_want_to_see: formData.whatWantToSee.trim() || undefined,
+      });
+      setIsSubmitted(true);
+    } catch (error: any) {
+      console.error('Waitlist signup failed:', error);
+      setErrorMessage(error?.message || 'Something went wrong. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#050505] text-white pt-16">
       {/* Hero */}
@@ -110,17 +185,13 @@ export default function LandingPage() {
           </p>
           <div className="max-w-xl mx-auto mb-12 p-4 border border-emerald-500/20 bg-emerald-500/5 rounded-lg">
             <p className="text-sm text-gray-200 leading-relaxed text-center">
-              <span className="text-emerald-400 font-medium">No crypto experience needed.</span> Sign in with your email to get started. 
-              We'll create a wallet for you automatically. You can connect your own wallet later if you prefer.
+              <span className="text-emerald-400 font-medium">We're building something special.</span> Sign up below to be the first to know when CommitMint launches.
             </p>
           </div>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link href="/pools">
-              <ButtonPrimary icon={ArrowRight}>Browse Challenges</ButtonPrimary>
-            </Link>
-            <Link href="/create" className="px-6 py-3 text-xs font-medium tracking-widest uppercase border border-white/20 hover:border-white text-white transition-all flex items-center justify-center">
-              Create Challenge
-            </Link>
+            <ButtonPrimary icon={ArrowRight} onClick={scrollToForm}>
+              Join the Waitlist
+            </ButtonPrimary>
           </div>
         </div>
       </div>
@@ -157,7 +228,7 @@ export default function LandingPage() {
         </div>
       </div>
 
-      {/* How It Works - Expanded */}
+      {/* How It Works */}
       <div className="border-y border-white/10">
         <div className="max-w-6xl mx-auto px-6 py-20">
           <div className="text-center mb-16">
@@ -173,7 +244,7 @@ export default function LandingPage() {
               { 
                 icon: Target, 
                 title: "1. Create or Join", 
-                desc: "Browse existing challenges or create your own. Set your goal, stake amount, and duration. Put money down to commit—this money is locked until the challenge ends.",
+                desc: "Browse existing challenges or create your own. Set your goal, stake amount, and duration. Put money down to commit.",
                 details: "You can join with as little as $5. Your stake is held securely in a smart contract."
               },
               { 
@@ -188,8 +259,7 @@ export default function LandingPage() {
                 desc: "If you complete your challenge, you split the prize pool with other winners. If you fail, you lose your stake to the winners.",
                 details: "Winners get their stake back plus a share of losers' stakes and any yield earned."
               }
-            ].map((item, i) => {
-              return (
+            ].map((item, i) => (
               <div key={i} className="flex flex-col items-start group">
                 <div className="mb-6 text-emerald-500 opacity-50 group-hover:opacity-100 transition-opacity">
                   <item.icon strokeWidth={1} className="w-6 h-6" />
@@ -198,8 +268,7 @@ export default function LandingPage() {
                 <p className="text-base text-gray-200 leading-relaxed max-w-xs mb-3">{item.desc}</p>
                 <p className="text-sm text-gray-400 italic">{item.details}</p>
               </div>
-            );
-            })}
+            ))}
           </div>
 
           {/* Example Calculation */}
@@ -220,7 +289,7 @@ export default function LandingPage() {
               </div>
               <div className="pt-4 border-t border-white/10">
                 <p className="text-sm text-gray-300 leading-relaxed">
-                  Each winner gets their $50 stake back, plus ~$21 from the prize pool ($150 ÷ 7 winners). 
+                  Each winner gets their $50 stake back, plus ~$21 from the prize pool ($150 / 7 winners). 
                   Plus any yield earned during the challenge period.
                 </p>
               </div>
@@ -236,19 +305,16 @@ export default function LandingPage() {
             <h2 className="text-4xl md:text-5xl font-medium mb-4 text-white">Types of Challenges</h2>
           </AnimatedUnderline>
           <p className="text-xl text-gray-200 max-w-2xl mx-auto mt-6">
-            Choose the type of commitment that fits your goals. All challenges work the same way—put money down, verify daily, win or lose.
+            Choose the type of commitment that fits your goals. All challenges work the same way - put money down, verify daily, win or lose.
           </p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-px bg-white/10 border border-white/10">
-          <Link href="/pools?type=crypto" className="group p-12 bg-[#050505] hover:bg-white/[0.01] transition-colors cursor-pointer relative">
-             <div className="absolute top-6 right-6 opacity-0 group-hover:opacity-100 transition-opacity">
-                <ArrowRight className="w-4 h-4 text-emerald-500" />
-             </div>
+          <div className="group p-12 bg-[#050505] relative">
              <SectionLabel>Protocol A</SectionLabel>
              <h3 className="text-3xl font-medium mb-4 text-white">Crypto<br/>Challenges</h3>
              <p className="text-gray-200 font-light text-base max-w-sm mb-4 leading-relaxed">
                Automatically verified on-chain. Hold tokens (HODL) or make daily trades (DCA). 
-               No manual check-ins needed—we check your wallet automatically.
+               No manual check-ins needed - we check your wallet automatically.
              </p>
              <ul className="space-y-2 text-sm text-gray-300 font-mono uppercase tracking-wide mb-6">
                <li className="flex items-center gap-2"><div className="w-1.5 h-1.5 bg-emerald-400 rounded-full"/> Diamond Hands</li>
@@ -257,11 +323,8 @@ export default function LandingPage() {
              <p className="text-xs text-gray-400">
                Perfect for committing to crypto investment habits
              </p>
-          </Link>
-          <Link href="/pools?type=lifestyle" className="group p-12 bg-[#050505] hover:bg-white/[0.01] transition-colors cursor-pointer relative">
-             <div className="absolute top-6 right-6 opacity-0 group-hover:opacity-100 transition-opacity">
-                <ArrowRight className="w-4 h-4 text-emerald-500" />
-             </div>
+          </div>
+          <div className="group p-12 bg-[#050505] relative">
              <SectionLabel>Protocol B</SectionLabel>
              <h3 className="text-3xl font-medium mb-4 text-white">Lifestyle<br/>Optimization</h3>
              <p className="text-gray-200 font-light text-base max-w-sm mb-4 leading-relaxed">
@@ -274,28 +337,166 @@ export default function LandingPage() {
              <p className="text-xs text-gray-400">
                Perfect for gym, coding, productivity, or any daily habit
              </p>
-          </Link>
+          </div>
         </div>
       </div>
 
-      {/* Get Started CTA */}
-      <div className="border-y border-white/10 bg-white/[0.01]">
-        <div className="max-w-4xl mx-auto px-6 py-20 text-center">
-          <h2 className="text-4xl md:text-5xl font-medium mb-6 text-white">Ready to Get Started?</h2>
-          <p className="text-xl text-gray-200 mb-8 max-w-2xl mx-auto">
-            Sign in with your email to begin. No crypto experience needed—we'll handle everything.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
-            <Link href="/pools">
-              <ButtonPrimary icon={ArrowRight}>Browse Challenges</ButtonPrimary>
-            </Link>
-            <Link 
-              href="/create" 
-              className="px-6 py-3 text-xs font-medium tracking-widest uppercase border border-white/20 hover:border-white text-white transition-all flex items-center justify-center"
-            >
-              Create Challenge
-            </Link>
+      {/* Waitlist Signup Form */}
+      <div ref={formRef} className="border-y border-white/10 bg-white/[0.01]">
+        <div className="max-w-2xl mx-auto px-6 py-20">
+          <div className="text-center mb-12">
+            <AnimatedUnderline delay={0} duration={1500} variant="emerald">
+              <h2 className="text-4xl md:text-5xl font-medium mb-4 text-white">Get Early Access</h2>
+            </AnimatedUnderline>
+            <p className="text-xl text-gray-200 max-w-xl mx-auto mt-6">
+              Be the first to know when CommitMint launches. Join the waitlist and help us build what you need.
+            </p>
           </div>
+
+          {isSubmitted ? (
+            <div className="text-center p-12 border border-emerald-500/30 bg-emerald-500/5 rounded-lg">
+              <CheckCircle className="w-12 h-12 text-emerald-400 mx-auto mb-4" />
+              <h3 className="text-2xl font-medium text-white mb-3">You're on the list!</h3>
+              <p className="text-gray-300 text-base leading-relaxed">
+                Thanks for signing up. We'll reach out when CommitMint is ready for you.
+              </p>
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-6">
+              {/* Google Sign-In Option */}
+              <div className="text-center mb-2">
+                {authenticated ? (
+                  <div className="inline-flex items-center gap-2 px-4 py-2 border border-emerald-500/30 bg-emerald-500/5 rounded-lg">
+                    <CheckCircle className="w-4 h-4 text-emerald-400" />
+                    <span className="text-sm text-emerald-400">
+                      Signed in{privyUser?.email?.address ? ` as ${privyUser.email.address}` : privyUser?.google?.email ? ` as ${privyUser.google.email}` : ''}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={logout}
+                      className="text-xs text-gray-500 hover:text-gray-300 ml-2 underline"
+                    >
+                      switch
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleGoogleSignIn}
+                    className="inline-flex items-center gap-3 px-6 py-3 border border-white/20 hover:border-white/40 bg-white/[0.03] hover:bg-white/[0.06] rounded-lg transition-all group"
+                  >
+                    <svg className="w-5 h-5" viewBox="0 0 24 24">
+                      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/>
+                      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                    </svg>
+                    <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+                      Sign in with Google to auto-fill
+                    </span>
+                  </button>
+                )}
+              </div>
+
+              {!authenticated && (
+                <div className="flex items-center gap-4 my-6">
+                  <div className="flex-1 h-px bg-white/10" />
+                  <span className="text-xs text-gray-500 uppercase tracking-widest">or fill in manually</span>
+                  <div className="flex-1 h-px bg-white/10" />
+                </div>
+              )}
+
+              {/* Name & Email */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="name" className="block text-xs uppercase tracking-widest text-gray-500 mb-2">
+                    Name
+                  </label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                    <input
+                      id="name"
+                      type="text"
+                      placeholder="Your name"
+                      value={formData.name}
+                      onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                      className="w-full bg-white/[0.03] border border-white/10 focus:border-emerald-500/50 rounded-lg px-4 py-3 pl-10 text-sm text-white placeholder-gray-600 outline-none transition-colors"
+                      required
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label htmlFor="email" className="block text-xs uppercase tracking-widest text-gray-500 mb-2">
+                    Email
+                  </label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                    <input
+                      id="email"
+                      type="email"
+                      placeholder="you@example.com"
+                      value={formData.email}
+                      onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                      className="w-full bg-white/[0.03] border border-white/10 focus:border-emerald-500/50 rounded-lg px-4 py-3 pl-10 text-sm text-white placeholder-gray-600 outline-none transition-colors"
+                      required
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Why do you want to use CommitMint? */}
+              <div>
+                <label htmlFor="whyUse" className="block text-xs uppercase tracking-widest text-gray-500 mb-2">
+                  Why do you want to use CommitMint?
+                </label>
+                <textarea
+                  id="whyUse"
+                  placeholder="What goals are you trying to hit? What's held you back before?"
+                  value={formData.whyUse}
+                  onChange={(e) => setFormData(prev => ({ ...prev, whyUse: e.target.value }))}
+                  rows={3}
+                  className="w-full bg-white/[0.03] border border-white/10 focus:border-emerald-500/50 rounded-lg px-4 py-3 text-sm text-white placeholder-gray-600 outline-none transition-colors resize-none"
+                />
+              </div>
+
+              {/* What would you like to see? */}
+              <div>
+                <label htmlFor="whatWantToSee" className="block text-xs uppercase tracking-widest text-gray-500 mb-2">
+                  What would you like to see from CommitMint?
+                </label>
+                <textarea
+                  id="whatWantToSee"
+                  placeholder="What features matter most to you? What would make this app a must-have?"
+                  value={formData.whatWantToSee}
+                  onChange={(e) => setFormData(prev => ({ ...prev, whatWantToSee: e.target.value }))}
+                  rows={3}
+                  className="w-full bg-white/[0.03] border border-white/10 focus:border-emerald-500/50 rounded-lg px-4 py-3 text-sm text-white placeholder-gray-600 outline-none transition-colors resize-none"
+                />
+              </div>
+
+              {/* Error Message */}
+              {errorMessage && (
+                <div className="p-3 border border-red-500/30 bg-red-500/5 rounded-lg">
+                  <p className="text-sm text-red-400">{errorMessage}</p>
+                </div>
+              )}
+
+              {/* Submit */}
+              <div className="pt-2">
+                <ButtonPrimary
+                  type="submit"
+                  disabled={isSubmitting}
+                  icon={isSubmitting ? Loader2 : ArrowRight}
+                  className="w-full"
+                >
+                  {isSubmitting ? 'Signing up...' : 'Join the Waitlist'}
+                </ButtonPrimary>
+                <p className="text-xs text-gray-600 text-center mt-3">
+                  We'll never share your email. Unsubscribe anytime.
+                </p>
+              </div>
+            </form>
+          )}
         </div>
       </div>
     </div>

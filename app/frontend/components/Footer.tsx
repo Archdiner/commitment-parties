@@ -1,7 +1,6 @@
 'use client';
 
 import React from 'react';
-import Link from 'next/link';
 import { Github } from 'lucide-react';
 
 export const Footer = () => {
@@ -10,7 +9,7 @@ export const Footer = () => {
   return (
     <footer className="border-t border-white/10 bg-[#050505] mt-auto">
       <div className="max-w-[1400px] mx-auto px-6 py-12">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
           {/* Brand */}
           <div className="space-y-4">
             <div className="flex items-center gap-3">
@@ -21,75 +20,23 @@ export const Footer = () => {
               </div>
             </div>
             <p className="text-sm text-gray-400 leading-relaxed">
-              Turn your commitments into capital. Stake SOL on your goals and let AI verify your progress.
+              Turn your commitments into capital. Stake real money on your goals and let AI verify your progress.
             </p>
           </div>
 
-          {/* Quick Links */}
+          {/* About */}
           <div>
-            <h3 className="text-xs uppercase tracking-widest text-gray-500 mb-4">Quick Links</h3>
-            <ul className="space-y-3">
-              <li>
-                <Link href="/" className="text-sm text-gray-400 hover:text-emerald-400 transition-colors">
-                  Home
-                </Link>
-              </li>
-              <li>
-                <Link href="/pools" className="text-sm text-gray-400 hover:text-emerald-400 transition-colors">
-                  Browse Challenges
-                </Link>
-              </li>
-              <li>
-                <Link href="/create" className="text-sm text-gray-400 hover:text-emerald-400 transition-colors">
-                  Create Challenge
-                </Link>
-              </li>
-              <li>
-                <Link href="/dashboard" className="text-sm text-gray-400 hover:text-emerald-400 transition-colors">
-                  Dashboard
-                </Link>
-              </li>
-            </ul>
+            <h3 className="text-xs uppercase tracking-widest text-gray-500 mb-4">About</h3>
+            <p className="text-sm text-gray-400 leading-relaxed">
+              CommitMint is an AI-powered accountability platform built on Solana. 
+              Put money on your goals, verify daily, and earn rewards for following through.
+            </p>
           </div>
 
-          {/* Resources */}
+          {/* Connect */}
           <div>
-            <h3 className="text-xs uppercase tracking-widest text-gray-500 mb-4">Resources</h3>
-            <ul className="space-y-3">
-              <li>
-                <Link href="/faq" className="text-sm text-gray-400 hover:text-emerald-400 transition-colors">
-                  FAQ
-                </Link>
-              </li>
-              <li>
-                <Link href="/how-to" className="text-sm text-gray-400 hover:text-emerald-400 transition-colors">
-                  How to Guide
-                </Link>
-              </li>
-            </ul>
-          </div>
-
-          {/* Legal & Contact */}
-          <div>
-            <h3 className="text-xs uppercase tracking-widest text-gray-500 mb-4">Legal</h3>
-            <ul className="space-y-3 mb-6">
-              <li>
-                <Link href="/terms" className="text-sm text-gray-400 hover:text-emerald-400 transition-colors">
-                  Terms of Service
-                </Link>
-              </li>
-              <li>
-                <Link href="/privacy" className="text-sm text-gray-400 hover:text-emerald-400 transition-colors">
-                  Privacy Policy
-                </Link>
-              </li>
-              <li>
-                <Link href="/contact" className="text-sm text-gray-400 hover:text-emerald-400 transition-colors">
-                  Contact Us
-                </Link>
-              </li>
-            </ul>
-            <div className="flex items-center gap-4 mt-6">
+            <h3 className="text-xs uppercase tracking-widest text-gray-500 mb-4">Connect</h3>
+            <div className="flex items-center gap-4">
               <a 
                 href="https://github.com/Archdiner/commitment-parties" 
                 target="_blank" 
@@ -100,6 +47,9 @@ export const Footer = () => {
                 <Github className="w-5 h-5" />
               </a>
             </div>
+            <p className="text-sm text-gray-500 mt-4">
+              Sign up above to get notified when we launch.
+            </p>
           </div>
         </div>
 
@@ -107,17 +57,17 @@ export const Footer = () => {
         <div className="pt-8 border-t border-white/5 space-y-4">
           <div className="flex flex-col md:flex-row justify-between items-center gap-4">
             <p className="text-xs text-gray-500">
-              © {currentYear} CommitMint. All rights reserved.
+              &copy; {currentYear} CommitMint. All rights reserved.
             </p>
             <div className="flex items-center gap-6 text-xs text-gray-500">
               <span>Built on Solana</span>
-              <span>•</span>
+              <span>&bull;</span>
               <span>AI-Powered Accountability</span>
             </div>
           </div>
           <div className="text-center pt-4">
             <p className="text-xs text-gray-500">
-              Built with ❤️ for accountability and positive behavior change
+              Built with love for accountability and positive behavior change
             </p>
           </div>
         </div>
@@ -125,4 +75,3 @@ export const Footer = () => {
     </footer>
   );
 };
-

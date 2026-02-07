@@ -940,3 +940,31 @@ export async function verifyScreenTime(
 
   return response.json();
 }
+
+/**
+ * Waitlist signup models
+ */
+export interface WaitlistSignupRequest {
+  name: string;
+  email: string;
+  auth_method: 'manual' | 'google';
+  why_use?: string;
+  what_want_to_see?: string;
+}
+
+export interface WaitlistSignupResponse {
+  success: boolean;
+  message: string;
+}
+
+/**
+ * Submit a waitlist signup
+ */
+export async function submitWaitlistSignup(
+  data: WaitlistSignupRequest
+): Promise<WaitlistSignupResponse> {
+  return fetchApi<WaitlistSignupResponse>('/api/waitlist', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
